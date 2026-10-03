@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { flushSync } from 'react-dom';
-import { Canvas, zoomBy } from './canvas/Canvas';
+import { Canvas, spawnFrom, zoomBy } from './canvas/Canvas';
 import { copySelection, pasteClipboard, useStore } from './model/store';
 import { ExportPanel } from './ui/ExportPanel';
 import { Inspector } from './ui/Inspector';
@@ -22,10 +22,12 @@ function useHotkeys() {
       const ime = e.keyCode === 229;
       const key = ime && /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
       const nodeIds = s.selection.filter((id) => s.doc.nodes.some((n) => n.id === id));
-      const editable = nodeIds.length === 1 && s.doc.nodes.find((n) => n.id === nodeIds[0])?.type !== 'sequence';
+      // A single selected shape or connector takes text directly.
+      const only = s.selection.length === 1 ? s.selection[0] : '';
+      const editable = !!only && s.doc.nodes.find((n) => n.id === only)?.type !== 'sequence';
       // Typing with the IME on a selected shape starts editing: mount and focus the
       // editor synchronously and let this very keystroke flow into it.
-      const typeToEdit = () => flushSync(() => s.setEditing(nodeIds[0]));
+      const typeToEdit = () => flushSync(() => s.setEditing(only));
       if (ime && !mod && editable) return typeToEdit();
       let handled = true;
       if (mod && key === 'z') e.shiftKey ? s.redo() : s.undo();
@@ -42,13 +44,14 @@ function useHotkeys() {
       else if (mod && key === 's') saveFile();
       else if (mod && (key === '=' || key === '+')) zoomBy(1.25);
       else if (mod && key === '-') zoomBy(0.8);
+      else if (mod && key.startsWith('arrow') && nodeIds.length === 1) spawnFrom(nodeIds[0], key === 'arrowleft' ? 'left' : key === 'arrowright' ? 'right' : key === 'arrowup' ? 'top' : 'bottom');
       else if (mod) handled = false;
       else if (key === 'backspace' || key === 'delete') s.removeIds(s.selection);
       else if (key === 'escape') {
         if (s.panel) s.setPanel(null);
         else if (s.tool !== 'select') s.setTool('select');
         else s.select([]);
-      } else if (key === 'enter' && nodeIds.length === 1) s.setEditing(nodeIds[0]);
+      } else if (key === 'enter' && editable) s.setEditing(only);
       else if (key.startsWith('arrow') && nodeIds.length) {
         const step = e.shiftKey ? 1 : 10;
         const dx = key === 'arrowleft' ? -step : key === 'arrowright' ? step : 0;

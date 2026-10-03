@@ -13,7 +13,7 @@ export function ExportPanel() {
   const [page, setPage] = useState(0);
   const [msg, setMsg] = useState('');
 
-  const sheets = useMemo(() => cadSheets(doc, opts), [doc, opts]);
+  const { sheets, textMm } = useMemo(() => cadSheets(doc, opts), [doc, opts]);
   const image = useMemo(() => boardImage(doc, background), [doc, background]);
   const name = safeName(doc.meta.title);
   const sheet = sheets[Math.min(page, sheets.length - 1)];
@@ -65,9 +65,16 @@ export function ExportPanel() {
                   />
                   機材表・ケーブル表のシートを付ける
                 </label>
-                <p className="hint">表題欄はボード情報（何も選択していないときの右パネル）から入ります。</p>
-                <button className="primary wide" onClick={run(() => printSheets(sheets, doc.meta.title), '印刷ダイアログで「PDF として保存」を選んでください。')}>
-                  PDF（全 {sheets.length} シート）
+                <p className="hint">
+                  JIS Z 8311 準拠の図面枠（とじ代 20mm・中心マーク・格子参照・比較目盛・表題欄）。表題欄はボード情報（何も選択していないときの右パネル）から入ります。
+                </p>
+                {textMm < 2.5 && (
+                  <p className="error">
+                    図が大きく、最小の文字高さが約 {textMm.toFixed(1)}mm になります（JIS Z 8313 の最小は 2.5mm）。{opts.paper === 'A4' ? 'A3 にするか、' : ''}ボードを分けると読みやすくなります。
+                  </p>
+                )}
+                <button className="primary wide" onClick={run(() => printSheets(sheets, doc.meta.title), '印刷ダイアログで送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。')}>
+                  PDF（{opts.paper} 横・全 {sheets.length} シート）
                 </button>
               </>
             ) : (

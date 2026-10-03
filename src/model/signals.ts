@@ -13,7 +13,7 @@ export interface Signal {
 }
 
 export const SIGNALS: Signal[] = [
-  { id: 'flow', label: 'フロー（矢印）', prefix: '', color: '#475569', dash: '', cable: false },
+  { id: 'flow', label: 'フロー（矢印）', prefix: '', color: '#76869a', dash: '', cable: false },
   { id: 'hdmi', label: 'HDMI', prefix: 'HDMI', color: '#2563eb', dash: '', cable: true },
   { id: 'sdi', label: 'SDI', prefix: 'SDI', color: '#16a34a', dash: '9 3', cable: true },
   { id: 'dp', label: 'DisplayPort', prefix: 'DP', color: '#7c3aed', dash: '9 3 2 3', cable: true },
@@ -33,7 +33,7 @@ export const signalOf = (id: SignalId): Signal => byId.get(id) ?? byId.get('othe
 export const isSignal = (id: string): boolean => byId.has(id);
 
 export const PALETTE: Record<ColorKey, { fill: string; stroke: string }> = {
-  white: { fill: '#ffffff', stroke: '#64748b' },
+  white: { fill: '#ffffff', stroke: '#b4bfcc' },
   gray: { fill: '#f1f5f9', stroke: '#64748b' },
   blue: { fill: '#dbeafe', stroke: '#3b82f6' },
   green: { fill: '#dcfce7', stroke: '#22c55e' },

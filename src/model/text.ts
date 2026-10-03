@@ -30,13 +30,16 @@ export function wrapText(text: string, maxWidth: number, font: string): string[]
     let line = '';
     for (const tok of tokens) {
       const overflow = line !== '' && measure(line + tok, font) > maxWidth;
-      if (overflow && !NO_START.test(tok)) {
+      if (overflow && NO_START.test(tok) && line.length > 1) {
+        // Punctuation may not start a line: carry the preceding character down
+        // with it, the same way the browser's `line-break: strict` does.
+        out.push(line.slice(0, -1).trimEnd());
+        line = line.slice(-1) + tok;
+      } else if (overflow) {
         out.push(line.trimEnd());
         line = tok.trim() ? tok : '';
       } else {
         line += tok;
-        // Punctuation hangs past the edge rather than starting the next line.
-        if (overflow) continue;
       }
       // A single token wider than the box is split per character.
       while (measure(line, font) > maxWidth && line.length > 1) {

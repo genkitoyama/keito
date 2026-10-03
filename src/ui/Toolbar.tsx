@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { viewCenter } from '../canvas/Canvas';
+import { insertNode, viewCenter } from '../canvas/Canvas';
 import { snap } from '../model/geometry';
 import { PRESETS, type Preset, allIds, makeDevice } from '../model/presets';
 import { type Tool, useStore } from '../model/store';
@@ -72,7 +72,13 @@ export function Toolbar() {
     <>
       <nav className="toolbar">
         {TOOLS.map((t) => (
-          <button key={t.tool} className={tool === t.tool ? 'on' : ''} title={`${t.label} (${t.key})`} onClick={() => st().setTool(t.tool)}>
+          <button
+            key={t.tool}
+            className={tool === t.tool ? 'on' : ''}
+            title={`${t.label} (${t.key})`}
+            // Clicking drops the shape straight onto the board, ready to type; the key arms the tool for click-to-place.
+            onClick={() => (t.tool === 'select' || t.tool === 'pan' ? st().setTool(t.tool) : insertNode(t.tool))}
+          >
             {t.icon}
           </button>
         ))}

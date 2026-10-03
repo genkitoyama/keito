@@ -258,3 +258,39 @@ export function frameOf(doc: Doc, n: Node): Node | null {
   }
   return best;
 }
+
+const hopCache = new WeakMap<Doc, Map<string, Map<number, number[]>>>();
+
+/**
+ * Where each edge's horizontal segments are crossed by another edge's vertical
+ * segment: edge id → segment index → x positions. Drawings show these as hops.
+ */
+export function crossings(doc: Doc): Map<string, Map<number, number[]>> {
+  const hit = hopCache.get(doc);
+  if (hit) return hit;
+  const routes = routeEdges(doc);
+  const verticals: { id: string; x: number; y0: number; y1: number }[] = [];
+  for (const [id, pts] of routes) {
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      if (Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) > 1) verticals.push({ id, x: a.x, y0: Math.min(a.y, b.y), y1: Math.max(a.y, b.y) });
+    }
+  }
+  const out = new Map<string, Map<number, number[]>>();
+  for (const [id, pts] of routes) {
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      if (Math.abs(a.y - b.y) > 0.5) continue;
+      const lo = Math.min(a.x, b.x) + 8;
+      const hi = Math.max(a.x, b.x) - 8;
+      const xs = verticals.filter((v) => v.id !== id && v.x > lo && v.x < hi && a.y > v.y0 + 1 && a.y < v.y1 - 1).map((v) => v.x);
+      if (!xs.length) continue;
+      if (!out.has(id)) out.set(id, new Map());
+      out.get(id)!.set(i - 1, [...new Set(xs)]);
+    }
+  }
+  hopCache.set(doc, out);
+  return out;
+}

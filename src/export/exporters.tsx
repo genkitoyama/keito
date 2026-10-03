@@ -49,7 +49,10 @@ export async function copyPng(blob: Blob): Promise<void> {
   await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
 }
 
-/** Vector PDF via the print dialog — the system fonts render Japanese without embedding. */
+/**
+ * Vector PDF via the print dialog — the system fonts render Japanese without embedding.
+ * The named `@page` size with `landscape` makes the dialog default to a landscape sheet.
+ */
 export function printSheets(sheets: Sheet[], title: string): void {
   if (!sheets.length) return;
   const { w, h } = sheets[0];
@@ -59,7 +62,7 @@ export function printSheets(sheets: Sheet[], title: string): void {
   const d = frame.contentDocument!;
   d.open();
   d.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title.replace(/[<&]/g, '')}</title>
-<style>@page{size:${w}mm ${h}mm;margin:0}html,body{margin:0}
+<style>@page{size:${w > 400 ? 'A3' : 'A4'} landscape;margin:0}html,body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 .sheet{width:${w}mm;height:${h}mm;page-break-after:always;overflow:hidden}
 .sheet:last-child{page-break-after:auto}svg{display:block}</style></head>
 <body>${sheets.map((s) => `<div class="sheet">${s.svg}</div>`).join('')}</body></html>`);
