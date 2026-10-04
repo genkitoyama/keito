@@ -19,10 +19,10 @@ import {
 } from '../model/geometry';
 import { type CreateKind, allIds, makeEdge, makeImage, makeNode } from '../model/presets';
 import { SEQUENCE_SAMPLE } from '../model/sequence';
-import { COLOR_KEYS, PALETTE, STICKY } from '../model/signals';
+import { COLOR_KEYS, PALETTE, STICKY, STRONG } from '../model/signals';
 import { copySelection, pasteClipboard, useStore } from '../model/store';
 import { wrapText } from '../model/text';
-import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, type ShapeKind, hasText } from '../model/types';
+import { type Doc, type EdgeEnd, type FillStyle, type Node, type Pt, type Rect, type ShapeKind, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
 import { EdgeView, INK, NodeView, SCREEN, TEXT, textSize, textWidth } from './render';
 
@@ -113,7 +113,7 @@ export async function insertImages(files: File[], at?: Pt): Promise<void> {
 function spawnRect(doc: Doc, src: Node, side: Dir): Rect {
   const r = nodeRect(src);
   const horizontal = side === 'left' || side === 'right';
-  const h = src.type === 'shape' ? Math.min(src.h, src.shape === 'diamond' ? 90 : 70) : src.type === 'sticky' ? Math.min(src.h, 160) : src.h;
+  const h = src.type === 'shape' ? Math.min(src.h, src.shape === 'diamond' ? 90 : src.shape === 'cloud' ? 100 : 70) : src.type === 'sticky' ? Math.min(src.h, 160) : src.h;
   const out: Rect = {
     x: side === 'right' ? r.x + r.w + SPAWN_GAP : side === 'left' ? r.x - r.w - SPAWN_GAP : r.x,
     // Centres stay aligned so the connector runs dead straight.
@@ -137,7 +137,9 @@ export function spawnFrom(id: string, side: Dir): void {
   if (!src || !canConnect(src)) return;
   const taken = allIds(s.doc);
   const kind: CreateKind = src.type === 'shape' ? src.shape : src.type;
-  const n = { ...makeNode(kind, 0, 0, taken, '', src.type === 'text' ? undefined : src.color), ...spawnRect(s.doc, src, side) };
+  // The next step inherits the look of the one it grows from.
+  const look = src.type === 'shape' ? { fill: src.fill, dash: src.dash } : {};
+  const n = { ...makeNode(kind, 0, 0, taken, '', src.type === 'text' ? undefined : src.color), ...look, ...spawnRect(s.doc, src, side) };
   const edge = makeEdge(taken, { node: src.id }, { node: n.id }, 'flow');
   s.mutate((d) => ({ ...d, nodes: [...d.nodes, n], edges: [...d.edges, edge] }));
   s.select([n.id]);
@@ -150,7 +152,7 @@ function neededHeight(n: Node, text: string): number | null {
   const size = textSize(n);
   const lines = wrapText(text, textWidth(n), `400 ${size}px ${SCREEN.font}`).length;
   const shape = n.type === 'shape' ? n.shape : '';
-  const need = (lines * size * TEXT.lineHeight + 22) * (shape === 'diamond' ? 1.7 : shape === 'ellipse' ? 1.3 : 1);
+  const need = (lines * size * TEXT.lineHeight + 22) * (shape === 'diamond' ? 1.7 : shape === 'cloud' ? 1.5 : shape === 'ellipse' ? 1.3 : 1);
   return need > n.h ? Math.ceil(need / 10) * 10 : null;
 }
 
@@ -217,19 +219,37 @@ export function Canvas() {
     const typing = (t: EventTarget | null): boolean =>
       t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
     const down = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !typing(e.target)) {
-        e.preventDefault();
-        setSpace(true);
-      }
+      // ⌘/Ctrl+Space switches the input source or opens Spotlight; the OS then
+      // swallows the key-up, which would leave the canvas stuck in pan mode.
+      if (e.code !== 'Space' || typing(e.target)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return setSpace(false);
+      e.preventDefault();
+      setSpace(true);
     };
-    const up = (e: KeyboardEvent) => e.code === 'Space' && setSpace(false);
+    // Any key-up ends space-pan: the Space key-up itself can go missing when focus moves away.
+    const up = () => setSpace(false);
+    // Leaving the window mid-gesture must not leave a drag or pan half-finished.
+    const reset = () => {
+      drag.current = null;
+      setSpace(false);
+      setBusy(false);
+      setGhost(null);
+      setGuides({});
+    };
     window.addEventListener('keydown', down);
     window.addEventListener('keyup', up);
+    window.addEventListener('blur', reset);
     return () => {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', reset);
     };
   }, []);
+
+  // An edit target that no longer exists (deleted, undone, replaced by another tab) must not block the UI.
+  useEffect(() => {
+    if (editing && !doc.nodes.some((n) => n.id === editing) && !doc.edges.some((e) => e.id === editing)) st().setEditing(null);
+  }, [editing, doc]);
 
   const onBackgroundDown = (e: RPointerEvent) => {
     if (e.button === 1 || tool === 'pan' || space) {
@@ -627,7 +647,23 @@ function arrowGlyph(p: Pt, side: Dir, s: number): string {
   return `M${p.x - ux * s},${p.y - uy * s} L${tip.x},${tip.y} M${wing(1)} L${tip.x},${tip.y} L${wing(-1)}`;
 }
 
-const SHAPE_ICON: Record<ShapeKind, string> = { rect: '▭', round: '⬭', diamond: '◇', ellipse: '◯' };
+const FILLS: [FillStyle, string, string][] = [
+  ['tint', '◧', '淡い塗り'],
+  ['solid', '■', 'ベタ塗り'],
+  ['outline', '□', '白地に枠線'],
+  ['none', '⬚', '塗りなし（透過）'],
+];
+
+/** Swatch as the colour will actually appear with the node's current fill style. */
+function swatch(n: Node, c: (typeof COLOR_KEYS)[number]): CSSProperties {
+  if (n.type === 'sticky') return { background: STICKY[c].fill, borderColor: STICKY[c].stroke };
+  const style = n.type === 'shape' ? (n.fill ?? 'tint') : 'tint';
+  if (style === 'tint') return { background: PALETTE[c].fill, borderColor: PALETTE[c].stroke };
+  if (style === 'solid') return { background: STRONG[c].fill, borderColor: STRONG[c].fill };
+  return { background: style === 'none' ? 'transparent' : '#fff', borderColor: STRONG[c].fill };
+}
+
+const SHAPE_ICON: Record<ShapeKind, string> = { rect: '▭', round: '⬭', diamond: '◇', ellipse: '◯', cloud: '☁' };
 
 /** Floating toolbar above the selection: the edits you reach for right after placing something. */
 function QuickBar() {
@@ -644,13 +680,27 @@ function QuickBar() {
     const p = labelPoint(routeEdges(doc).get(edge.id) ?? [{ x: 0, y: 0 }]);
     anchor = { x: p.x, top: p.y - 14, bottom: p.y + 14 };
   }
+  // Keep the bar on screen: above the selection, else below it, and always inside
+  // the canvas — when zoomed in, the selection's edges can be far outside the view.
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const host = el?.parentElement;
+    if (!el || !host || !anchor) return;
+    const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(Math.max(lo, hi), v));
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    let top = view.y + anchor.top * view.k - h - 14;
+    if (top < 6) top = view.y + anchor.bottom * view.k + 14;
+    el.style.left = `${clamp(view.x + anchor.x * view.k, w / 2 + 6, host.clientWidth - w / 2 - 6)}px`;
+    el.style.top = `${clamp(top, 6, host.clientHeight - h - 6)}px`;
+  });
   if (!anchor) return null;
   const one = nodes.length === 1 ? nodes[0] : undefined;
-  const top = view.y + anchor.top * view.k - 50;
   const patch = (p: Partial<Node>) => one && st().updateNode(one.id, p);
   const editId = one ? (hasText(one) ? one.id : undefined) : edge?.id;
   return (
-    <div className="quickbar" style={{ left: view.x + anchor.x * view.k, top: top < 6 ? view.y + anchor.bottom * view.k + 12 : top }} onPointerDown={(e) => e.stopPropagation()}>
+    <div ref={ref} className="quickbar" onPointerDown={(e) => e.stopPropagation()}>
       {one?.type === 'shape' &&
         (Object.keys(SHAPE_ICON) as ShapeKind[]).map((k) => (
           <button key={k} className={one.shape === k ? 'on' : ''} onClick={() => patch({ shape: k })} title="形を変える">
@@ -661,10 +711,27 @@ function QuickBar() {
       {(one?.type === 'shape' || one?.type === 'sticky') &&
         COLOR_KEYS.map((c) => (
           <button key={c} className={`dot ${one.color === c ? 'on' : ''}`} onClick={() => patch({ color: c })} title="色">
-            <span style={{ background: (one.type === 'sticky' ? STICKY : PALETTE)[c].fill, borderColor: (one.type === 'sticky' ? STICKY : PALETTE)[c].stroke }} />
+            <span style={swatch(one, c)} />
           </button>
         ))}
       {(one?.type === 'shape' || one?.type === 'sticky') && <i />}
+      {one?.type === 'shape' &&
+        FILLS.map(([f, icon, title]) => (
+          <button key={f} className={(one.fill ?? 'tint') === f ? 'on' : ''} onClick={() => patch({ fill: f })} title={title}>
+            {icon}
+          </button>
+        ))}
+      {one?.type === 'shape' && (
+        <button className={one.dash ? 'on' : ''} onClick={() => patch({ dash: !one.dash })} title="枠を点線に">
+          ┄
+        </button>
+      )}
+      {one?.type === 'shape' && <i />}
+      {edge && (
+        <button className={edge.dash ? 'on' : ''} onClick={() => st().updateEdge(edge.id, { dash: !edge.dash })} title="点線にする">
+          ┄
+        </button>
+      )}
       {editId && (
         <button onClick={() => st().setEditing(editId)} title="文字を編集 (Enter)">
           Ｔ
@@ -762,6 +829,7 @@ function TextEditor({ id }: { id: string }) {
     // Same width, size and line height as the SVG text, so nothing jumps on commit.
     const tw = textWidth(node);
     style = { left: view.x + (node.x + (node.w - tw) / 2) * k, top: view.y + node.y * k, width: tw * k, height: node.h * k, fontSize: textSize(node) * k };
+    if (node.type === 'shape' && node.fill === 'solid') style.color = STRONG[node.color].text;
   }
   return (
     <div

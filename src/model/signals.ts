@@ -42,6 +42,18 @@ export const PALETTE: Record<ColorKey, { fill: string; stroke: string }> = {
   red: { fill: '#fee2e2', stroke: '#ef4444' },
   purple: { fill: '#f3e8ff', stroke: '#a855f7' },
 };
+/** Full-strength colours for solid fills and for the border of outline / see-through shapes. */
+export const STRONG: Record<ColorKey, { fill: string; text: string }> = {
+  white: { fill: '#64748b', text: '#ffffff' },
+  gray: { fill: '#475569', text: '#ffffff' },
+  blue: { fill: '#1d6ff2', text: '#ffffff' },
+  green: { fill: '#12a150', text: '#ffffff' },
+  yellow: { fill: '#ffd60a', text: '#27323f' },
+  orange: { fill: '#ff7a00', text: '#ffffff' },
+  red: { fill: '#e60012', text: '#ffffff' },
+  purple: { fill: '#8b2ff0', text: '#ffffff' },
+};
+
 /** Sticky notes use paper colours: more saturated than shapes, with a darker shade for the curl. */
 export const STICKY: Record<ColorKey, { fill: string; stroke: string }> = {
   white: { fill: '#fffdf2', stroke: '#e6dfc0' },

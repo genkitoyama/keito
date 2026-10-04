@@ -18,6 +18,7 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: ReactNode }[] = [
   { tool: 'round', label: '端子', key: 'E', icon: ico(<rect x="3" y="6" width="14" height="8" rx="4" />) },
   { tool: 'diamond', label: '判断', key: 'D', icon: ico(<path d="M10 3l7 7-7 7-7-7z" />) },
   { tool: 'ellipse', label: '楕円', key: 'O', icon: ico(<ellipse cx="10" cy="10" rx="7" ry="5" />) },
+  { tool: 'cloud', label: '雲（コメント）', key: 'C', icon: ico(<path d="M6 15a3.5 3.5 0 0 1-.6-6.95A4.5 4.5 0 0 1 14 7.2 3.9 3.9 0 0 1 14.2 15z" />) },
   { tool: 'sticky', label: '付箋', key: 'S', icon: ico(<path d="M4 4h12v8l-4 4H4zM16 12h-4v4" />) },
   { tool: 'text', label: 'テキスト', key: 'T', icon: ico(<path d="M5 5h10M10 5v10" />) },
   { tool: 'frame', label: 'エリア枠', key: 'F', icon: ico(<rect x="3" y="4" width="14" height="12" rx="1" strokeDasharray="3 2" />) },

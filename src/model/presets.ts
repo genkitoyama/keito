@@ -113,6 +113,7 @@ const SIZE: Record<CreateKind, [number, number]> = {
   round: [140, 50],
   diamond: [150, 90],
   ellipse: [140, 70],
+  cloud: [180, 100],
   sticky: [160, 160],
   text: [160, 40],
   frame: [460, 320],

@@ -3,7 +3,7 @@ import { freshId } from '../model/presets';
 import { COLOR_KEYS, PALETTE, SIGNALS, STICKY } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, useStore } from '../model/store';
-import type { Arrow, DeviceNode, DocMeta, Edge, Node, Port, ShapeKind } from '../model/types';
+import type { Arrow, DeviceNode, DocMeta, Edge, FillStyle, Node, Port, ShapeKind } from '../model/types';
 
 /** Text input that records one undo step per editing burst instead of per keystroke. */
 function Field({ label, value, onChange, multiline, type = 'text', placeholder }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean; type?: string; placeholder?: string }) {
@@ -139,7 +139,7 @@ function PortName({ value, onChange }: { value: string; onChange: (v: string) =>
   );
 }
 
-const SHAPE_LABEL: Record<ShapeKind, string> = { rect: '四角', round: '端子（角丸）', diamond: '判断（ひし形）', ellipse: '楕円' };
+const SHAPE_LABEL: Record<ShapeKind, string> = { rect: '四角', round: '端子（角丸）', diamond: '判断（ひし形）', ellipse: '楕円', cloud: '雲（コメント）' };
 
 function NodePanel({ n }: { n: Node }) {
   const patch = (p: Partial<Node>, record = false) => useStore.getState().updateNode(n.id, p, record);
@@ -206,6 +206,23 @@ function NodePanel({ n }: { n: Node }) {
           </select>
         </label>
       )}
+      {n.type === 'shape' && (
+        <>
+          <label className="field">
+            <span>塗り</span>
+            <select value={n.fill ?? 'tint'} onChange={(e) => patch({ fill: e.target.value as FillStyle }, true)}>
+              <option value="tint">淡い塗り</option>
+              <option value="solid">ベタ塗り</option>
+              <option value="outline">白地に枠線</option>
+              <option value="none">塗りなし（透過）</option>
+            </select>
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={!!n.dash} onChange={(e) => patch({ dash: e.target.checked }, true)} />
+            枠を点線にする
+          </label>
+        </>
+      )}
       {(n.type === 'shape' || n.type === 'sticky') && <Colors sticky={n.type === 'sticky'} value={n.color} onPick={(color) => patch({ color }, true)} />}
     </>
   );
@@ -231,6 +248,10 @@ function EdgePanel({ e }: { e: Edge }) {
           <option value="end">終点</option>
           <option value="both">両端</option>
         </select>
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={!!e.dash} onChange={(ev) => patch({ dash: ev.target.checked }, true)} />
+        点線にする
       </label>
       <Field label="備考" value={e.note} onChange={(v) => patch({ note: v })} />
       <button onClick={() => patch({ from: e.to, to: e.from }, true)}>向きを反転</button>

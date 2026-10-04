@@ -78,11 +78,14 @@ shapes:
   - { id: s2, shape: diamond, text: LiDARが検知？, color: yellow }
   - { id: s3, shape: rect, text: インタラクション映像を再生, color: blue }
   - { id: s4, shape: rect, text: 待機ループ映像 }
+  - { id: s5, shape: rect, text: 緊急停止, color: red, fill: solid }
   - { id: memo1, shape: sticky, text: "TODO: 電源容量の確認。\\nPJ は 200V 系統？" }
+  - { id: c1, shape: cloud, text: "検知範囲は\\n現地で調整", color: blue, fill: none, dash: true }
 flows:
   - { from: s1, to: s2 }
   - { from: s2, to: s3, label: はい }
   - { from: s2, to: s4, label: いいえ }
+  - { from: s4, to: s5, label: 異常時, dash: true }
 sequences:
   - id: seq1
     text: |

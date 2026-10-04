@@ -3,7 +3,7 @@ import { docBounds, frameOf } from './geometry';
 import { autoLayout } from './layout';
 import { freshId, makeEdge, parsePort, presetOf, presetPorts } from './presets';
 import { isSignal } from './signals';
-import type { ColorKey, DeviceNode, Doc, Edge, EdgeEnd, FrameNode, Node, ShapeKind } from './types';
+import type { ColorKey, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FrameNode, Node, ShapeKind } from './types';
 import { PALETTE } from './signals';
 
 /** Schema reference shown in the editor and given to the AI. */
@@ -33,9 +33,11 @@ cables:
     label: メイン映像      # 任意
 shapes:                    # フローチャート・付箋
   - id: s1
-    shape: rect            # rect round diamond ellipse sticky text
+    shape: rect            # rect round diamond ellipse cloud(コメント用の雲) sticky text
     text: 開始
     color: blue            # white gray blue green yellow orange red purple
+    fill: solid            # 任意。tint(既定・淡色) solid(ベタ塗り。red で真っ赤) outline(白地) none(透過)
+    dash: true             # 任意。枠を点線に（cables / flows でも dash: true で点線）
 flows:                     # 矢印コネクタ（shapes / devices どちらも可）
   - { from: s1, to: s2, label: はい }
 images:                    # 埋め込み画像。データ本体は id で引き継がれる（src に data URL / URL も可）
@@ -101,6 +103,7 @@ export function toYaml(doc: Doc): string {
       put(o, 'label', e.label);
       put(o, 'note', e.note);
       if (e.arrow !== 'none') o.arrow = e.arrow;
+      if (e.dash) o.dash = true;
       return o;
     });
   }
@@ -110,6 +113,10 @@ export function toYaml(doc: Doc): string {
     out.shapes = shapes.map((s) => {
       const o: Obj = { id: s.id, shape: s.type === 'shape' ? s.shape : s.type, text: s.text };
       if (s.type !== 'text') put(o, 'color', s.color);
+      if (s.type === 'shape') {
+        if (s.fill && s.fill !== 'tint') o.fill = s.fill;
+        if (s.dash) o.dash = true;
+      }
       o.pos = [r(s.x), r(s.y)];
       o.size = [r(s.w), r(s.h)];
       return o;
@@ -122,6 +129,7 @@ export function toYaml(doc: Doc): string {
       const o: Obj = { from: refOf(doc, e.from), to: refOf(doc, e.to) };
       put(o, 'label', e.label);
       if (e.arrow !== 'end') o.arrow = e.arrow;
+      if (e.dash) o.dash = true;
       return o;
     });
   }
@@ -144,12 +152,13 @@ export function toYaml(doc: Doc): string {
   return y.toString({ lineWidth: 0 });
 }
 
-const SHAPES: ShapeKind[] = ['rect', 'round', 'diamond', 'ellipse'];
+const SHAPES: ShapeKind[] = ['rect', 'round', 'diamond', 'ellipse', 'cloud'];
 const DEFAULT_SIZE: Record<string, [number, number]> = {
   rect: [140, 60],
   round: [140, 50],
   diamond: [150, 90],
   ellipse: [140, 70],
+  cloud: [180, 100],
   sticky: [160, 160],
   text: [160, 40],
 };
@@ -224,7 +233,10 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     const color = (str(v.color) in PALETTE ? str(v.color) : undefined) as ColorKey | undefined;
     if (kind === 'sticky') nodes.push({ ...base, type: 'sticky', color: color ?? 'yellow' });
     else if (kind === 'text') nodes.push({ ...base, type: 'text' });
-    else nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white' });
+    else {
+      const fill = ['solid', 'outline', 'none'].includes(str(v.fill)) ? (str(v.fill) as FillStyle) : undefined;
+      nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined });
+    }
     if (v.area) areaHint.set(id, str(v.area));
   });
 
@@ -279,6 +291,7 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     e.label = str(v.label);
     e.note = str(v.note);
     if (v.arrow === 'end' || v.arrow === 'both') e.arrow = v.arrow;
+    if (v.dash === true) e.dash = true;
     edges.push(e);
   });
   arr(root.flows).forEach((v, i) => {
@@ -287,6 +300,7 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     const e = makeEdge(taken, resolve(v.from, where, 'right', 'other'), resolve(v.to, where, 'left', 'other'), 'flow');
     e.label = str(v.label);
     if (v.arrow === 'none' || v.arrow === 'both') e.arrow = v.arrow;
+    if (v.dash === true) e.dash = true;
     edges.push(e);
   });
 

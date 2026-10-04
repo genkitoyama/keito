@@ -1,8 +1,10 @@
 export type SignalId = string;
 export type PortSide = 'left' | 'right';
-export type ShapeKind = 'rect' | 'round' | 'diamond' | 'ellipse';
+export type ShapeKind = 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud';
 export type ColorKey = 'white' | 'gray' | 'blue' | 'green' | 'yellow' | 'orange' | 'red' | 'purple';
 export type Arrow = 'none' | 'end' | 'both';
+/** tint: pale fill + coloured border (default) / solid: full-strength fill / outline: white fill / none: see-through. */
+export type FillStyle = 'tint' | 'solid' | 'outline' | 'none';
 
 export interface Pt {
   x: number;
@@ -28,6 +30,9 @@ export interface ShapeNode extends Base {
   type: 'shape';
   shape: ShapeKind;
   color: ColorKey;
+  fill?: FillStyle;
+  /** Dashed border. */
+  dash?: boolean;
 }
 export interface StickyNode extends Base {
   type: 'sticky';
@@ -77,6 +82,8 @@ export interface Edge {
   length: number | null;
   arrow: Arrow;
   note: string;
+  /** Dashed line on the board (e.g. optional / future connections). */
+  dash?: boolean;
 }
 
 export interface DocMeta {

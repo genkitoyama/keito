@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { DEV, crossings, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { cableIds } from '../model/lists';
 import { SEQ, parseSequence } from '../model/sequence';
-import { PALETTE, STICKY, signalOf } from '../model/signals';
+import { PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { measure, wrapText } from '../model/text';
 import type { DeviceNode, Doc, Edge, Node, Pt, SequenceNode } from '../model/types';
 
@@ -35,7 +35,7 @@ export const mid = (y: number, size: number): number => y + size * 0.36;
 
 /** Width available to the text of a node — the editor wraps to the same width. */
 export function textWidth(n: Node): number {
-  if (n.type === 'shape') return n.shape === 'diamond' ? n.w * 0.6 : n.shape === 'ellipse' ? n.w * 0.72 : n.w - 20;
+  if (n.type === 'shape') return n.shape === 'diamond' ? n.w * 0.6 : n.shape === 'ellipse' ? n.w * 0.72 : n.shape === 'cloud' ? n.w * 0.66 : n.w - 20;
   if (n.type === 'sticky') return n.w - 24;
   return n.w;
 }
@@ -180,6 +180,47 @@ function Sequence({ n, theme }: { n: SequenceNode; theme: Theme }) {
   return <g>{out}</g>;
 }
 
+/**
+ * Scalloped cloud outline filling the box: evenly spaced points on an inset
+ * ellipse joined by outward arcs, with a bump centred on each side midpoint so
+ * connectors meet the outline.
+ */
+function cloudPath(x: number, y: number, w: number, h: number): string {
+  const perimeter = Math.PI * (w + h) * 0.5;
+  const n = Math.max(8, Math.round(perimeter / 34 / 4) * 4);
+  const chord = perimeter / n;
+  const R = 0.62; // arc radius relative to the chord
+  const inset = chord * (R - Math.sqrt(R * R - 0.25));
+  const rx = Math.max(4, w / 2 - inset);
+  const ry = Math.max(4, h / 2 - inset);
+  // Walk the ellipse finely so the bumps are spaced by arc length, not by angle.
+  const STEPS = 720;
+  const fine: { x: number; y: number; len: number }[] = [];
+  let len = 0;
+  for (let i = 0; i <= STEPS; i++) {
+    const a = (i / STEPS) * Math.PI * 2;
+    const p = { x: x + w / 2 + rx * Math.cos(a), y: y + h / 2 + ry * Math.sin(a) };
+    if (i) len += Math.hypot(p.x - fine[i - 1].x, p.y - fine[i - 1].y);
+    fine.push({ ...p, len });
+  }
+  const pts: Pt[] = [];
+  let j = 0;
+  for (let i = 0; i < n; i++) {
+    const target = ((i + 0.5) / n) * len;
+    while (fine[j].len < target) j++;
+    pts.push(fine[j]);
+  }
+  const f = (v: number): string => v.toFixed(1);
+  let d = `M${f(pts[0].x)},${f(pts[0].y)}`;
+  for (let i = 1; i <= n; i++) {
+    const a = pts[i - 1];
+    const b = pts[i % n];
+    const r = Math.hypot(b.x - a.x, b.y - a.y) * R;
+    d += ` A${f(r)},${f(r)} 0 0 1 ${f(b.x)},${f(b.y)}`;
+  }
+  return `${d} Z`;
+}
+
 export function NodeView({ n, theme }: { n: Node; theme: Theme }) {
   const { x, y } = n;
   const { w, h } = nodeSize(n);
@@ -246,21 +287,35 @@ export function NodeView({ n, theme }: { n: Node; theme: Theme }) {
       );
     }
     case 'shape': {
-      const c = theme.mono ? { fill: '#fff', stroke: '#000' } : PALETTE[n.color];
+      const style = n.fill ?? 'tint';
+      const strong = STRONG[n.color];
+      const c = theme.mono
+        ? { fill: style === 'none' ? 'none' : '#fff', stroke: '#000' }
+        : style === 'tint'
+          ? PALETTE[n.color]
+          : style === 'solid'
+            ? { fill: strong.fill, stroke: strong.fill }
+            : { fill: style === 'none' ? 'none' : '#fff', stroke: strong.fill };
+      const ink = !theme.mono && style === 'solid' ? strong.text : INK;
       const sw = theme.mono ? lw(theme, 0.35) : 2;
+      const k = theme.mono ? (theme.unit * 25.4) / 96 : 1;
+      // A see-through shape must still be grabbable anywhere inside its outline.
+      const paint = { fill: c.fill, stroke: c.stroke, strokeWidth: sw, strokeDasharray: n.dash ? `${7 * k} ${5 * k}` : undefined, pointerEvents: c.fill === 'none' ? ('all' as const) : undefined };
       let body: ReactNode;
       if (n.shape === 'diamond') {
-        body = <polygon points={`${cx},${y} ${x + w},${cy} ${cx},${y + h} ${x},${cy}`} fill={c.fill} stroke={c.stroke} strokeWidth={sw} strokeLinejoin="round" />;
+        body = <polygon points={`${cx},${y} ${x + w},${cy} ${cx},${y + h} ${x},${cy}`} {...paint} strokeLinejoin="round" />;
+      } else if (n.shape === 'cloud') {
+        body = <path d={cloudPath(x, y, w, h)} {...paint} strokeLinejoin="round" />;
       } else if (n.shape === 'ellipse') {
-        body = <ellipse cx={cx} cy={cy} rx={w / 2} ry={h / 2} fill={c.fill} stroke={c.stroke} strokeWidth={sw} />;
+        body = <ellipse cx={cx} cy={cy} rx={w / 2} ry={h / 2} {...paint} />;
       } else {
         const rx = n.shape === 'round' ? h / 2 : theme.mono ? 0 : 4;
-        body = <rect x={x} y={y} width={w} height={h} rx={rx} fill={c.fill} stroke={c.stroke} strokeWidth={sw} />;
+        body = <rect x={x} y={y} width={w} height={h} rx={rx} {...paint} />;
       }
       return (
         <g>
           {body}
-          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={TEXT.shape} theme={theme} />
+          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={TEXT.shape} fill={ink} theme={theme} />
         </g>
       );
     }
@@ -293,8 +348,11 @@ function hopPath(pts: Pt[], hops: Map<number, number[]> | undefined, r: number):
 export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; theme: Theme; hideLabel?: boolean }) {
   const pts = routeEdges(doc).get(e.id);
   if (!pts || pts.length < 2) return null;
-  const { stroke, dash } = signalStroke(e.signal, theme);
   const flow = e.signal === 'flow';
+  const signal = signalStroke(e.signal, theme);
+  const stroke = signal.stroke;
+  // On drawings the dash pattern already encodes the cable type, so only flows take the user's dash.
+  const dash = e.dash && (!theme.mono || flow) ? '7 6' : signal.dash;
   const label = hideLabel ? '' : edgeLabel(doc, e);
   const at = labelPoint(pts);
   const size = flow ? 12 : 10.5;

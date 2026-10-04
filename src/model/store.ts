@@ -14,7 +14,7 @@ import { allIds, freshId, randomId } from './presets';
 import { SAMPLE_YAML } from './sample';
 import { type Doc, type Edge, type Node, emptyMeta } from './types';
 
-export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'sticky' | 'text' | 'frame' | 'sequence';
+export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
 export type Panel = null | 'lists' | 'text' | 'export' | 'library';
 export interface View {
   x: number;
