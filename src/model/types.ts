@@ -53,7 +53,14 @@ export interface DeviceNode extends Base {
 export interface SequenceNode extends Base {
   type: 'sequence';
 }
-export type Node = ShapeNode | StickyNode | TextNode | FrameNode | DeviceNode | SequenceNode;
+/** Embedded picture (raster or SVG) as a data URL. `text` is its name. */
+export interface ImageNode extends Base {
+  type: 'image';
+  src: string;
+}
+export type Node = ShapeNode | StickyNode | TextNode | FrameNode | DeviceNode | SequenceNode | ImageNode;
+/** Nodes whose `text` is edited in place on the canvas. */
+export const hasText = (n: Node): boolean => n.type !== 'sequence' && n.type !== 'image';
 export type NodeType = Node['type'];
 
 export interface EdgeEnd {

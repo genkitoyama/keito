@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { flushSync } from 'react-dom';
-import { Canvas, spawnFrom, zoomBy } from './canvas/Canvas';
+import { Canvas, insertImages, spawnFrom, zoomBy } from './canvas/Canvas';
+import { hasText } from './model/types';
 import { copySelection, pasteClipboard, useStore } from './model/store';
 import { ExportPanel } from './ui/ExportPanel';
 import { Inspector } from './ui/Inspector';
@@ -8,6 +9,12 @@ import { ListsPanel } from './ui/ListsPanel';
 import { TextPanel } from './ui/TextPanel';
 import { TOOL_KEYS, Toolbar } from './ui/Toolbar';
 import { TopBar, saveFile } from './ui/TopBar';
+
+/** Copy on the board, and clear any picture left on the system clipboard so the next paste is this copy. */
+function copyOut() {
+  copySelection();
+  if (useStore.getState().selection.length) navigator.clipboard?.writeText('').catch(() => {});
+}
 
 function useHotkeys() {
   useEffect(() => {
@@ -24,7 +31,8 @@ function useHotkeys() {
       const nodeIds = s.selection.filter((id) => s.doc.nodes.some((n) => n.id === id));
       // A single selected shape or connector takes text directly.
       const only = s.selection.length === 1 ? s.selection[0] : '';
-      const editable = !!only && s.doc.nodes.find((n) => n.id === only)?.type !== 'sequence';
+      const onlyNode = s.doc.nodes.find((n) => n.id === only);
+      const editable = !!only && (!onlyNode || hasText(onlyNode));
       // Typing with the IME on a selected shape starts editing: mount and focus the
       // editor synchronously and let this very keystroke flow into it.
       const typeToEdit = () => flushSync(() => s.setEditing(only));
@@ -32,11 +40,11 @@ function useHotkeys() {
       let handled = true;
       if (mod && key === 'z') e.shiftKey ? s.redo() : s.undo();
       else if (mod && key === 'y') s.redo();
-      else if (mod && key === 'c') copySelection();
+      else if (mod && key === 'c') copyOut();
       else if (mod && key === 'x') {
-        copySelection();
+        copyOut();
         s.removeIds(s.selection);
-      } else if (mod && key === 'v') pasteClipboard();
+      } else if (mod && key === 'v') return; // handled by the paste event, which can see images
       else if (mod && key === 'd') {
         copySelection();
         pasteClipboard();
@@ -65,8 +73,24 @@ function useHotkeys() {
       else handled = false;
       if (handled) e.preventDefault();
     };
+    // Paste: pictures and SVG markup from the system clipboard become image nodes;
+    // anything else pastes what was last copied on the board.
+    const onPaste = (e: ClipboardEvent) => {
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+      const text = e.clipboardData?.getData('text/plain') ?? '';
+      e.preventDefault();
+      if (files.length) void insertImages(files);
+      else if (/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(text)) void insertImages([new File([text], 'pasted.svg', { type: 'image/svg+xml' })]);
+      else pasteClipboard();
+    };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('paste', onPaste);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('paste', onPaste);
+    };
   }, []);
 }
 

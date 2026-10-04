@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { insertNode, viewCenter } from '../canvas/Canvas';
+import { insertImages, insertNode, viewCenter } from '../canvas/Canvas';
 import { snap } from '../model/geometry';
 import { PRESETS, type Preset, allIds, makeDevice } from '../model/presets';
 import { type Tool, useStore } from '../model/store';
@@ -36,6 +36,15 @@ function addDevice(p: Preset) {
   s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, d] }));
   s.select([d.id]);
   s.setTool('select');
+}
+
+function pickImages() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*,.svg';
+  input.multiple = true;
+  input.onchange = () => void insertImages([...(input.files ?? [])]);
+  input.click();
 }
 
 function Library() {
@@ -82,6 +91,9 @@ export function Toolbar() {
             {t.icon}
           </button>
         ))}
+        <button title="画像・SVG を埋め込む（ドラッグ＆ドロップ、貼り付けでも可）" onClick={pickImages}>
+          {ico(<path d="M3 4h14v12H3zM3 13l4-4 3 3 3-4 4 5M7 7.5h.01" />)}
+        </button>
         <hr />
         <button className={panel === 'library' ? 'on' : ''} title="機材ライブラリ (L)" onClick={() => st().setPanel(panel === 'library' ? null : 'library')}>
           {ico(<path d="M3 6h14v8H3zM6 6V4m8 2V4M6 10h2m2 0h4" />)}

@@ -113,7 +113,7 @@ const SIZE: Record<CreateKind, [number, number]> = {
   round: [140, 50],
   diamond: [150, 90],
   ellipse: [140, 70],
-  sticky: [160, 120],
+  sticky: [160, 160],
   text: [160, 40],
   frame: [460, 320],
   sequence: [0, 0],
@@ -127,6 +127,14 @@ export function makeNode(kind: CreateKind, cx: number, cy: number, taken: Set<st
   if (kind === 'frame') return { ...base, id: freshId(taken, 'area'), type: 'frame', text: text || 'エリア' };
   if (kind === 'sequence') return { ...base, x: cx, y: cy, id: freshId(taken, 'seq'), type: 'sequence' };
   return { ...base, id: freshId(taken, 'n'), type: 'shape', shape: kind, color: color ?? 'white' };
+}
+
+/** Picture node centred on (cx, cy), scaled down to a comfortable size on the board. */
+export function makeImage(taken: Set<string>, img: { src: string; w: number; h: number; name: string }, cx: number, cy: number): Node {
+  const k = Math.min(1, 480 / img.w, 360 / img.h);
+  const w = Math.max(20, Math.round(img.w * k));
+  const h = Math.max(20, Math.round(img.h * k));
+  return { id: freshId(taken, 'img'), type: 'image', x: Math.round(cx - w / 2), y: Math.round(cy - h / 2), w, h, text: img.name, src: img.src };
 }
 
 export function makeEdge(taken: Set<string>, from: Edge['from'], to: Edge['to'], signal: string): Edge {

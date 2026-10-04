@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { freshId } from '../model/presets';
-import { COLOR_KEYS, PALETTE, SIGNALS } from '../model/signals';
+import { COLOR_KEYS, PALETTE, SIGNALS, STICKY } from '../model/signals';
+import { readImageFile } from '../platform/storage';
 import { align, useStore } from '../model/store';
 import type { Arrow, DeviceNode, DocMeta, Edge, Node, Port, ShapeKind } from '../model/types';
 
@@ -27,11 +28,12 @@ function Field({ label, value, onChange, multiline, type = 'text', placeholder }
   );
 }
 
-function Colors({ value, onPick }: { value: string; onPick: (c: (typeof COLOR_KEYS)[number]) => void }) {
+function Colors({ value, onPick, sticky }: { value: string; onPick: (c: (typeof COLOR_KEYS)[number]) => void; sticky?: boolean }) {
+  const palette = sticky ? STICKY : PALETTE;
   return (
     <div className="swatches">
       {COLOR_KEYS.map((c) => (
-        <button key={c} className={c === value ? 'on' : ''} style={{ background: PALETTE[c].fill, borderColor: PALETTE[c].stroke }} onClick={() => onPick(c)} title={c} />
+        <button key={c} className={c === value ? 'on' : ''} style={{ background: palette[c].fill, borderColor: palette[c].stroke }} onClick={() => onPick(c)} title={c} />
       ))}
     </div>
   );
@@ -159,6 +161,37 @@ function NodePanel({ n }: { n: Node }) {
       </>
     );
   }
+  if (n.type === 'image') {
+    const replace = () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = 'image/*,.svg';
+      input.onchange = async () => {
+        const f = input.files?.[0];
+        if (!f) return;
+        try {
+          const img = await readImageFile(f);
+          // Keep the width the picture already has on the board; follow the new proportions.
+          patch({ src: img.src, text: img.name, h: Math.round((n.w * img.h) / img.w) }, true);
+        } catch (e) {
+          alert(e instanceof Error ? e.message : String(e));
+        }
+      };
+      input.click();
+    };
+    return (
+      <>
+        <h3>画像 <code>{n.id}</code></h3>
+        <Field label="名前" value={n.text} onChange={(v) => patch({ text: v })} />
+        <p className="hint">
+          {Math.round(n.w)} × {Math.round(n.h)} px ／ 約 {Math.max(1, Math.round(n.src.length / 1024))} KB
+          <br />
+          角をドラッグで比率を保ったまま拡縮（Shift で自由変形）。
+        </p>
+        <button onClick={replace}>画像を差し替え</button>
+      </>
+    );
+  }
   return (
     <>
       <h3>{n.type === 'shape' ? '図形' : n.type === 'sticky' ? '付箋' : n.type === 'frame' ? 'エリア枠' : 'テキスト'} <code>{n.id}</code></h3>
@@ -173,7 +206,7 @@ function NodePanel({ n }: { n: Node }) {
           </select>
         </label>
       )}
-      {(n.type === 'shape' || n.type === 'sticky') && <Colors value={n.color} onPick={(color) => patch({ color }, true)} />}
+      {(n.type === 'shape' || n.type === 'sticky') && <Colors sticky={n.type === 'sticky'} value={n.color} onPick={(color) => patch({ color }, true)} />}
     </>
   );
 }

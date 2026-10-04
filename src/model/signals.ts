@@ -42,4 +42,15 @@ export const PALETTE: Record<ColorKey, { fill: string; stroke: string }> = {
   red: { fill: '#fee2e2', stroke: '#ef4444' },
   purple: { fill: '#f3e8ff', stroke: '#a855f7' },
 };
+/** Sticky notes use paper colours: more saturated than shapes, with a darker shade for the curl. */
+export const STICKY: Record<ColorKey, { fill: string; stroke: string }> = {
+  white: { fill: '#fffdf2', stroke: '#e6dfc0' },
+  gray: { fill: '#e3e7ec', stroke: '#b9c1cb' },
+  blue: { fill: '#a9dcff', stroke: '#6fb8ea' },
+  green: { fill: '#b5efb0', stroke: '#7fcf7a' },
+  yellow: { fill: '#ffe872', stroke: '#e8c93a' },
+  orange: { fill: '#ffc27a', stroke: '#eb9a40' },
+  red: { fill: '#ffaec0', stroke: '#ee7f98' },
+  purple: { fill: '#d6bdff', stroke: '#b08cf0' },
+};
 export const COLOR_KEYS = Object.keys(PALETTE) as ColorKey[];

@@ -17,12 +17,13 @@ import {
   sidePoint,
   snap,
 } from '../model/geometry';
-import { type CreateKind, allIds, makeEdge, makeNode } from '../model/presets';
+import { type CreateKind, allIds, makeEdge, makeImage, makeNode } from '../model/presets';
 import { SEQUENCE_SAMPLE } from '../model/sequence';
-import { COLOR_KEYS, PALETTE } from '../model/signals';
+import { COLOR_KEYS, PALETTE, STICKY } from '../model/signals';
 import { copySelection, pasteClipboard, useStore } from '../model/store';
 import { wrapText } from '../model/text';
-import type { Doc, EdgeEnd, Node, Pt, Rect, ShapeKind } from '../model/types';
+import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, type ShapeKind, hasText } from '../model/types';
+import { isImageFile, readImageFile } from '../platform/storage';
 import { EdgeView, INK, NodeView, SCREEN, TEXT, textSize, textWidth } from './render';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
@@ -30,7 +31,7 @@ type Drag =
   | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
   | { kind: 'move'; start: Pt; orig: Map<string, Pt>; lead: string; moved: boolean }
   | { kind: 'marquee'; start: Pt; base: string[] }
-  | { kind: 'resize'; id: string; corner: Corner; start: Pt; orig: Rect; moved: boolean }
+  | { kind: 'resize'; id: string; corner: Corner; start: Pt; orig: Rect; moved: boolean; lock?: number }
   | { kind: 'connect'; from: EdgeEnd; at: Pt; side?: Dir; sx: number; sy: number };
 type Ghost = null | { kind: 'marquee'; rect: Rect } | { kind: 'connect'; a: Pt; b: Pt };
 
@@ -85,11 +86,34 @@ export function insertNode(kind: CreateKind, at?: Pt): void {
   if (kind !== 'sequence') s.setEditing(n.id);
 }
 
+/** Embed pictures (PNG / JPEG / GIF / WebP / SVG), side by side around `at` or the view centre. */
+export async function insertImages(files: File[], at?: Pt): Promise<void> {
+  const p = at ?? viewCenter();
+  const ids: string[] = [];
+  let x = p.x;
+  for (const file of files.filter(isImageFile)) {
+    try {
+      const img = await readImageFile(file);
+      const s = st();
+      const n = makeImage(allIds(s.doc), img, x, p.y);
+      x += n.w + 20;
+      s.mutate((d) => ({ ...d, nodes: [...d.nodes, n] }));
+      ids.push(n.id);
+    } catch (e) {
+      alert(`${file.name}: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+  if (ids.length) {
+    st().select(ids);
+    st().setTool('select');
+  }
+}
+
 /** Where a shape spawned from `side` of `src` lands: same width, one gap away, clear of other nodes. */
 function spawnRect(doc: Doc, src: Node, side: Dir): Rect {
   const r = nodeRect(src);
   const horizontal = side === 'left' || side === 'right';
-  const h = src.type === 'shape' ? Math.min(src.h, src.shape === 'diamond' ? 90 : 70) : src.type === 'sticky' ? Math.min(src.h, 120) : src.h;
+  const h = src.type === 'shape' ? Math.min(src.h, src.shape === 'diamond' ? 90 : 70) : src.type === 'sticky' ? Math.min(src.h, 160) : src.h;
   const out: Rect = {
     x: side === 'right' ? r.x + r.w + SPAWN_GAP : side === 'left' ? r.x - r.w - SPAWN_GAP : r.x,
     // Centres stay aligned so the connector runs dead straight.
@@ -226,7 +250,7 @@ export function Canvas() {
     if (e.button !== 0 || tool !== 'select' || space) return;
     e.stopPropagation();
     const s = st();
-    if (doubleClick(n.id) && n.type !== 'sequence') {
+    if (doubleClick(n.id) && hasText(n)) {
       // Double-clicking the body of an area frame adds a box there; its title strip renames it.
       const p = world(e);
       if (n.type === 'frame' && p.y > n.y + 32) return insertNode('rect', p);
@@ -285,7 +309,7 @@ export function Canvas() {
       const pts = routeEdges(s.doc).get(x.id) ?? [];
       return pts.some((a, i) => i > 0 && distToSegment(p, pts[i - 1], a) < tol);
     });
-    const id = n && n.type !== 'sequence' && n.type !== 'frame' ? n.id : (edge?.id ?? (n?.type === 'frame' && p.y < n.y + 32 ? n.id : null));
+    const id = n && hasText(n) && n.type !== 'frame' ? n.id : (edge?.id ?? (n?.type === 'frame' && p.y < n.y + 32 ? n.id : null));
     if (!id) return;
     s.select([id]);
     s.setEditing(id);
@@ -300,7 +324,8 @@ export function Canvas() {
   const onResizeDown = (e: RPointerEvent, n: Node, corner: Corner) => {
     if (e.button !== 0) return;
     e.stopPropagation();
-    begin(e, { kind: 'resize', id: n.id, corner, start: world(e), orig: { x: n.x, y: n.y, w: n.w, h: n.h }, moved: false });
+    // Pictures keep their proportions unless Shift is held.
+    begin(e, { kind: 'resize', id: n.id, corner, start: world(e), orig: { x: n.x, y: n.y, w: n.w, h: n.h }, moved: false, lock: n.type === 'image' ? n.w / n.h : undefined });
   };
 
   /** Snap the dragged node's edges / centre to those of its neighbours; falls back to the grid. */
@@ -392,6 +417,10 @@ export function Canvas() {
       y = Math.min(grid(o.y + dy), o.y + o.h - MIN.h);
       h = o.y + o.h - y;
     }
+    if (d.lock && !e.shiftKey) {
+      h = Math.max(MIN.h, Math.round(w / d.lock));
+      if (d.corner === 'ne' || d.corner === 'nw') y = o.y + o.h - h;
+    }
     s.updateNode(d.id, { x, y, w, h }, false);
   };
 
@@ -459,7 +488,15 @@ export function Canvas() {
     others.flatMap((n) => (n.type === 'device' ? n.ports.map((port) => render(`${n.id}/${port.id}`, portPos(n, port.id)!, { node: n.id, port: port.id })) : []));
 
   return (
-    <div id="canvas" className="canvas">
+    <div
+      id="canvas"
+      className="canvas"
+      onDragOver={(e) => e.dataTransfer.types.includes('Files') && e.preventDefault()}
+      onDrop={(e) => {
+        e.preventDefault();
+        void insertImages([...e.dataTransfer.files], world(e));
+      }}
+    >
       <svg ref={svgRef} width="100%" height="100%" style={{ cursor }} onPointerDown={onBackgroundDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={onDoubleClick}>
         <defs>
           <pattern id="dots" width={20 * view.k} height={20 * view.k} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
@@ -611,7 +648,7 @@ function QuickBar() {
   const one = nodes.length === 1 ? nodes[0] : undefined;
   const top = view.y + anchor.top * view.k - 50;
   const patch = (p: Partial<Node>) => one && st().updateNode(one.id, p);
-  const editId = one && one.type !== 'sequence' ? one.id : edge?.id;
+  const editId = one ? (hasText(one) ? one.id : undefined) : edge?.id;
   return (
     <div className="quickbar" style={{ left: view.x + anchor.x * view.k, top: top < 6 ? view.y + anchor.bottom * view.k + 12 : top }} onPointerDown={(e) => e.stopPropagation()}>
       {one?.type === 'shape' &&
@@ -624,7 +661,7 @@ function QuickBar() {
       {(one?.type === 'shape' || one?.type === 'sticky') &&
         COLOR_KEYS.map((c) => (
           <button key={c} className={`dot ${one.color === c ? 'on' : ''}`} onClick={() => patch({ color: c })} title="色">
-            <span style={{ background: PALETTE[c].fill, borderColor: PALETTE[c].stroke }} />
+            <span style={{ background: (one.type === 'sticky' ? STICKY : PALETTE)[c].fill, borderColor: (one.type === 'sticky' ? STICKY : PALETTE)[c].stroke }} />
           </button>
         ))}
       {(one?.type === 'shape' || one?.type === 'sticky') && <i />}
@@ -700,6 +737,10 @@ function TextEditor({ id }: { id: string }) {
     const text = read();
     if (edge) {
       if (text !== edge.label) s.updateEdge(id, { label: text });
+    } else if (node?.type === 'text' && !text) {
+      // A text box left empty would be an invisible, unselectable leftover.
+      s.setEditing(null);
+      return s.removeIds([id]);
     } else if (node && text !== node.text) {
       const h = neededHeight(node, text);
       // The growth steps already opened an undo entry; fold the text change into it.

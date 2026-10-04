@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { DEV, crossings, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { cableIds } from '../model/lists';
 import { SEQ, parseSequence } from '../model/sequence';
-import { PALETTE, signalOf } from '../model/signals';
+import { PALETTE, STICKY, signalOf } from '../model/signals';
 import { measure, wrapText } from '../model/text';
 import type { DeviceNode, Doc, Edge, Node, Pt, SequenceNode } from '../model/types';
 
@@ -36,7 +36,7 @@ export const mid = (y: number, size: number): number => y + size * 0.36;
 /** Width available to the text of a node — the editor wraps to the same width. */
 export function textWidth(n: Node): number {
   if (n.type === 'shape') return n.shape === 'diamond' ? n.w * 0.6 : n.shape === 'ellipse' ? n.w * 0.72 : n.w - 20;
-  if (n.type === 'sticky') return n.w - 20;
+  if (n.type === 'sticky') return n.w - 24;
   return n.w;
 }
 export const textSize = (n: Node): number => (n.type === 'sticky' ? TEXT.sticky : n.type === 'text' ? TEXT.text : TEXT.shape);
@@ -210,19 +210,35 @@ export function NodeView({ n, theme }: { n: Node; theme: Theme }) {
         </g>
       );
     }
+    case 'image':
+      return <image href={n.src} x={x} y={y} width={w} height={h} preserveAspectRatio="xMidYMid meet" />;
     case 'text':
-      return <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={TEXT.text} theme={theme} />;
+      return (
+        <g>
+          {/* Invisible body so bare text can still be grabbed and dragged. */}
+          <rect x={x} y={y} width={w} height={h} fill="none" pointerEvents="all" />
+          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={TEXT.text} theme={theme} />
+        </g>
+      );
     case 'sticky': {
-      const c = PALETTE[n.color];
-      const fold = 14;
+      const c = STICKY[n.color];
+      // Paper square with the bottom-right corner curling up off the board.
+      const f = Math.min(22, w / 4, h / 4);
+      const paper = `M${x},${y} H${x + w} V${y + h - f} L${x + w - f},${y + h} H${x} Z`;
+      const curl = `M${x + w - f},${y + h} L${x + w - f * 0.82},${y + h - f * 0.82} L${x + w},${y + h - f} Z`;
       return (
         <g>
           {theme.mono ? (
-            <path d={`M${x},${y} H${x + w - fold} L${x + w},${y + fold} V${y + h} H${x} Z M${x + w - fold},${y} V${y + fold} H${x + w}`} fill="#fff" stroke="#000" strokeWidth={lw(theme, 0.18)} />
+            <path d={`${paper} ${curl}`} fill="#fff" stroke="#000" strokeWidth={lw(theme, 0.18)} strokeLinejoin="round" />
           ) : (
             <>
-              <rect x={x + 1.5} y={y + 3} width={w} height={h} rx={3} fill="rgba(15,23,42,0.12)" />
-              <rect x={x} y={y} width={w} height={h} rx={3} fill={c.fill} stroke={c.stroke} strokeWidth={0.8} />
+              <path d={`M${x + 3},${y + 8} H${x + w - 1} V${y + h - f + 5} L${x + w - f + 2},${y + h + 6} H${x + 5} Z`} fill="rgba(15,23,42,0.07)" />
+              <path d={`M${x + 2},${y + 5} H${x + w} V${y + h - f + 3} L${x + w - f + 1},${y + h + 3} H${x + 3} Z`} fill="rgba(15,23,42,0.1)" />
+              <path d={paper} fill={c.fill} />
+              {/* The glued strip along the top edge reads slightly darker. */}
+              <rect x={x} y={y} width={w} height={Math.min(12, h / 6)} fill="rgba(0,0,0,0.018)" />
+              <path d={curl} fill={c.stroke} />
+              <path d={`M${x + w - f},${y + h} L${x + w},${y + h - f}`} stroke="rgba(0,0,0,0.12)" strokeWidth={0.8} />
             </>
           )}
           <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={TEXT.sticky} theme={theme} />

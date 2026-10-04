@@ -6,6 +6,7 @@ import {
   loadBoard,
   removeBoard,
   saveBoard,
+  saveFailed,
 } from '../platform/storage';
 import { fromYaml } from './dsl';
 import { docBounds, nodeRect } from './geometry';
@@ -146,10 +147,18 @@ export const useStore = create<State>((set, get) => ({
 
 // Autosave.
 let timer: number | undefined;
+let warned = false;
 useStore.subscribe((s, prev) => {
   if (s.doc === prev.doc) return;
   clearTimeout(timer);
-  timer = window.setTimeout(() => useStore.setState({ boards: saveBoard(useStore.getState().doc) }), 400);
+  timer = window.setTimeout(() => {
+    useStore.setState({ boards: saveBoard(useStore.getState().doc) });
+    if (saveFailed && !warned) {
+      warned = true;
+      alert('ブラウザの保存容量を超えたため、このボードは自動保存されていません。画像を減らすか小さくするか、「保存」でファイルに書き出してください。');
+    }
+    if (!saveFailed) warned = false;
+  }, 400);
 });
 
 let clipboard: { nodes: Node[]; edges: Edge[] } | null = null;
@@ -218,3 +227,12 @@ export function align(mode: 'left' | 'top' | 'hcenter' | 'vcenter' | 'hspace' | 
   }
   s.mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (pos.has(n.id) ? { ...n, ...pos.get(n.id)! } : n)) }));
 }
+
+// Another tab saved this board: follow it, so two open tabs never overwrite each other with stale copies.
+window.addEventListener('storage', (e) => {
+  const { doc, editing } = useStore.getState();
+  if (e.key !== `keito:board:${doc.id}` || !e.newValue || editing) return;
+  if (e.newValue === JSON.stringify(doc)) return;
+  const next = loadBoard(doc.id);
+  if (next) useStore.setState({ doc: next, selection: [], boards: listBoards() });
+});

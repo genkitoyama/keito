@@ -38,6 +38,8 @@ shapes:                    # フローチャート・付箋
     color: blue            # white gray blue green yellow orange red purple
 flows:                     # 矢印コネクタ（shapes / devices どちらも可）
   - { from: s1, to: s2, label: はい }
+images:                    # 埋め込み画像。データ本体は id で引き継がれる（src に data URL / URL も可）
+  - { id: img1, name: logo, pos: [x, y], size: [w, h] }
 sequences:
   - id: seq1
     text: |
@@ -127,6 +129,11 @@ export function toYaml(doc: Doc): string {
   const seqs = doc.nodes.filter((n) => n.type === 'sequence');
   if (seqs.length) out.sequences = seqs.map((s) => ({ id: s.id, pos: [r(s.x), r(s.y)], text: s.text }));
 
+  // Pictures are listed without their data so the text stays readable; applying
+  // the YAML keeps each picture by id.
+  const images = doc.nodes.filter((n) => n.type === 'image');
+  if (images.length) out.images = images.map((n) => ({ id: n.id, name: n.text, pos: [r(n.x), r(n.y)], size: [r(n.w), r(n.h)] }));
+
   const y = new Document(out);
   // Keep coordinate pairs and port lists on one line.
   visit(y, {
@@ -143,7 +150,7 @@ const DEFAULT_SIZE: Record<string, [number, number]> = {
   round: [140, 50],
   diamond: [150, 90],
   ellipse: [140, 70],
-  sticky: [160, 120],
+  sticky: [160, 160],
   text: [160, 40],
 };
 
@@ -212,7 +219,7 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     const kind = str(v.shape, 'rect');
     const id = claim(v.id, kind === 'sticky' ? 'note' : 'n', `shapes[${i}]`);
     const old = relayout ? undefined : prevById.get(id);
-    const size = nums(v.size, 2) ?? (old && old.type !== 'device' ? [old.w, old.h] : DEFAULT_SIZE[kind] ?? DEFAULT_SIZE.rect);
+    const size = nums(v.size, 2) ?? (old && old.type !== 'device' && old.type !== 'image' ? [old.w, old.h] : DEFAULT_SIZE[kind] ?? DEFAULT_SIZE.rect);
     const base = { id, ...place(id, v.pos), w: size[0], h: size[1], text: str(v.text) };
     const color = (str(v.color) in PALETTE ? str(v.color) : undefined) as ColorKey | undefined;
     if (kind === 'sticky') nodes.push({ ...base, type: 'sticky', color: color ?? 'yellow' });
@@ -225,6 +232,16 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     if (!isObj(v)) throw new Error(`sequences[${i}]: マップではありません`);
     const id = claim(v.id, 'seq', `sequences[${i}]`);
     nodes.push({ id, type: 'sequence', ...place(id, v.pos), w: 0, h: 0, text: str(v.text).trimEnd() });
+  });
+
+  arr(root.images).forEach((v, i) => {
+    if (!isObj(v)) throw new Error(`images[${i}]: マップではありません`);
+    const old = prevById.get(str(v.id));
+    const src = str(v.src) || (old?.type === 'image' ? old.src : '');
+    if (!src) return;
+    const id = claim(v.id, 'img', `images[${i}]`);
+    const size = nums(v.size, 2) ?? (old ? [old.w, old.h] : [200, 150]);
+    nodes.push({ id, type: 'image', ...place(id, v.pos), w: size[0], h: size[1], text: str(v.name), src });
   });
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
