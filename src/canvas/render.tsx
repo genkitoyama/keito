@@ -1,10 +1,10 @@
 import type { ReactNode } from 'react';
-import { DEV, crossings, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
-import { cableIds } from '../model/lists';
+import { DEV, crossings, isTagged, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { cableIds, powerLoads } from '../model/lists';
 import { SEQ, parseSequence } from '../model/sequence';
 import { PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { measure, wrapText } from '../model/text';
-import type { DeviceNode, Doc, Edge, Node, Pt, SequenceNode } from '../model/types';
+import type { DeviceNode, Doc, Edge, Node, Pt, Rect, SequenceNode } from '../model/types';
 
 /** `mono` draws the CAD-style sheet look: black lines, dash patterns instead of colours. */
 export interface Theme {
@@ -80,7 +80,7 @@ function signalStroke(signal: string, theme: Theme): { stroke: string; dash?: st
   return { stroke: theme.color ? s.color : '#000', dash };
 }
 
-function Device({ n, theme }: { n: DeviceNode; theme: Theme }) {
+function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
   const { w, h } = nodeSize(n);
   const { x, y } = n;
   const r = theme.mono ? 0 : 7;
@@ -94,6 +94,7 @@ function Device({ n, theme }: { n: DeviceNode; theme: Theme }) {
       <path d={head} fill={theme.mono ? '#fff' : '#e8edf3'} stroke={line} strokeWidth={sw} />
       <TextBlock x={x + w / 2} y={y + (sub ? 16 : DEV.head / 2)} w={w - 12} text={n.text.split('\n')[0]} size={13} weight={700} theme={theme} />
       {sub && <TextBlock x={x + w / 2} y={y + 33} w={w - 12} text={sub} size={9.5} fill="#64748b" theme={theme} />}
+      {doc && <LoadBadge doc={doc} n={n} theme={theme} />}
       {n.ports.map((p) => {
         const pos = portPos(n, p.id)!;
         const left = p.side === 'left';
@@ -111,6 +112,27 @@ function Device({ n, theme }: { n: DeviceNode; theme: Theme }) {
           </g>
         );
       })}
+    </g>
+  );
+}
+
+/** Load summary above a power source: how many devices it feeds and how many watts they draw. */
+function LoadBadge({ doc, n, theme }: { doc: Doc; n: DeviceNode; theme: Theme }) {
+  const load = powerLoads(doc).get(n.id);
+  if (!load) return null;
+  const watts = load.capacity != null ? `${load.watts} / ${load.capacity}W` : load.watts ? `${load.watts}W` : '';
+  const text = [`⚡ ${load.ids.length}台`, watts, load.over ? '容量超過' : ''].filter(Boolean).join(' · ');
+  const size = 10.5;
+  const bw = measure(text, `600 ${size}px ${theme.font}`) + 12;
+  const bx = n.x + n.w - bw;
+  const by = n.y - 20;
+  const color = theme.mono ? '#000' : load.over ? '#dc2626' : '#b45309';
+  return (
+    <g>
+      <rect x={bx} y={by} width={bw} height={16} rx={theme.mono ? 0 : 8} fill={theme.mono ? '#fff' : load.over ? '#fee2e2' : '#fef3c7'} stroke={color} strokeWidth={theme.mono ? lw(theme, 0.18) : 0.8} />
+      <text x={bx + bw / 2} y={mid(by + 8, size)} fontFamily={theme.font} fontSize={size} fontWeight={600} fill={color} textAnchor="middle">
+        {text}
+      </text>
     </g>
   );
 }
@@ -221,14 +243,14 @@ function cloudPath(x: number, y: number, w: number, h: number): string {
   return `${d} Z`;
 }
 
-export function NodeView({ n, theme }: { n: Node; theme: Theme }) {
+export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }) {
   const { x, y } = n;
   const { w, h } = nodeSize(n);
   const cx = x + w / 2;
   const cy = y + h / 2;
   switch (n.type) {
     case 'device':
-      return <Device n={n} theme={theme} />;
+      return <Device n={n} theme={theme} doc={doc} />;
     case 'sequence':
       return <Sequence n={n} theme={theme} />;
     case 'frame': {
@@ -327,6 +349,14 @@ export function edgeLabel(doc: Doc, e: Edge): string {
   return [id, e.label, e.length != null ? `${e.length}m` : ''].filter(Boolean).join(' · ');
 }
 
+/** Nearest point along the route that differs from pts[i] — hand-placed bends can coincide. */
+function distinct(pts: Pt[], i: number, step: 1 | -1): Pt {
+  for (let j = i + step; j >= 0 && j < pts.length; j += step) {
+    if (Math.hypot(pts[j].x - pts[i].x, pts[j].y - pts[i].y) > 0.5) return pts[j];
+  }
+  return { x: pts[i].x - step, y: pts[i].y };
+}
+
 /** Square-cornered path with a small hop wherever another cable crosses underneath. */
 function hopPath(pts: Pt[], hops: Map<number, number[]> | undefined, r: number): string {
   let d = `M${pts[0].x},${pts[0].y}`;
@@ -345,9 +375,67 @@ function hopPath(pts: Pt[], hops: Map<number, number[]> | undefined, r: number):
   return d;
 }
 
+export interface EdgeTag extends Rect {
+  text: string;
+  /** Short lead from the port to the tag. */
+  from: Pt;
+  to: Pt;
+}
+
+/**
+ * Tag (net label) boxes for an edge drawn without a line: one at each end
+ * naming what is on the other side. Keeps a UPS feeding a dozen devices from
+ * burying the diagram under power cables.
+ */
+export function edgeTags(doc: Doc, e: Edge, theme: Theme): EdgeTag[] {
+  const pts = routeEdges(doc).get(e.id);
+  if (!pts || pts.length < 2) return [];
+  const name = (id: string): string => doc.nodes.find((n) => n.id === id)?.text.split('\n')[0] || id;
+  const id = cableIds(doc).get(e.id);
+  const length = e.length != null ? ` ${e.length}m` : '';
+  const power = e.signal === 'power';
+  const size = 10;
+  const make = (at: Pt, toward: Pt, text: string): EdgeTag => {
+    const horizontal = Math.abs(toward.x - at.x) >= Math.abs(toward.y - at.y);
+    const s = horizontal ? (toward.x >= at.x ? 1 : -1) : toward.y >= at.y ? 1 : -1;
+    const w = measure(text, `${size}px ${theme.font}`) + 10;
+    const h = 15;
+    const lead = 9;
+    if (horizontal) return { text, from: at, to: { x: at.x + s * lead, y: at.y }, x: s > 0 ? at.x + lead : at.x - lead - w, y: at.y - h / 2, w, h };
+    return { text, from: at, to: { x: at.x, y: at.y + s * lead }, x: at.x - w / 2, y: s > 0 ? at.y + lead : at.y - lead - h, w, h };
+  };
+  const first = pts.find((p) => Math.hypot(p.x - pts[0].x, p.y - pts[0].y) > 1) ?? { x: pts[0].x + 1, y: pts[0].y };
+  const end = pts[pts.length - 1];
+  const before = [...pts].reverse().find((p) => Math.hypot(p.x - end.x, p.y - end.y) > 1) ?? { x: end.x - 1, y: end.y };
+  return [
+    make(pts[0], first, `${id ? `${id} ` : ''}→ ${name(e.to.node)}${length}`),
+    make(end, before, `${power ? '⚡' : '←'} ${name(e.from.node)}${e.label ? ` · ${e.label}` : ''}`),
+  ];
+}
+
+function TaggedEdge({ doc, e, theme }: { doc: Doc; e: Edge; theme: Theme }) {
+  const { stroke } = signalStroke(e.signal, theme);
+  const ink = theme.mono && !theme.color ? '#000' : stroke;
+  const width = theme.mono ? lw(theme, 0.25) : 1.5;
+  return (
+    <g>
+      {edgeTags(doc, e, theme).map((t, i) => (
+        <g key={i}>
+          <line x1={t.from.x} y1={t.from.y} x2={t.to.x} y2={t.to.y} stroke={ink} strokeWidth={width} />
+          <rect x={t.x} y={t.y} width={t.w} height={t.h} rx={theme.mono ? 0 : 3} fill="#fff" stroke={ink} strokeWidth={theme.mono ? lw(theme, 0.18) : 1} />
+          <text x={t.x + t.w / 2} y={mid(t.y + t.h / 2, 10)} fontFamily={theme.font} fontSize={10} fill={ink} textAnchor="middle">
+            {t.text}
+          </text>
+        </g>
+      ))}
+    </g>
+  );
+}
+
 export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; theme: Theme; hideLabel?: boolean }) {
   const pts = routeEdges(doc).get(e.id);
   if (!pts || pts.length < 2) return null;
+  if (isTagged(doc, e)) return <TaggedEdge doc={doc} e={e} theme={theme} />;
   const flow = e.signal === 'flow';
   const signal = signalStroke(e.signal, theme);
   const stroke = signal.stroke;
@@ -366,8 +454,8 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
   return (
     <g>
       <path d={d} fill="none" stroke={stroke} strokeWidth={width} strokeDasharray={dash} strokeLinejoin="round" strokeLinecap={flow ? 'round' : undefined} />
-      {(e.arrow !== 'none' || cadArrow) && <polygon points={arrowHead(pts[n - 1], pts[n - 2], head, cadArrow ? 0.3 : 0.42)} fill={stroke} />}
-      {e.arrow === 'both' && <polygon points={arrowHead(pts[0], pts[1], head)} fill={stroke} />}
+      {(e.arrow !== 'none' || cadArrow) && <polygon points={arrowHead(pts[n - 1], distinct(pts, n - 1, -1), head, cadArrow ? 0.3 : 0.42)} fill={stroke} />}
+      {e.arrow === 'both' && <polygon points={arrowHead(pts[0], distinct(pts, 0, 1), head)} fill={stroke} />}
       {label && (
         <g>
           <rect
@@ -395,7 +483,7 @@ export function DocView({ doc, theme }: { doc: Doc; theme: Theme }) {
     <g>
       {doc.nodes.filter((n) => n.type === 'frame').map((n) => <NodeView key={n.id} n={n} theme={theme} />)}
       {doc.edges.map((e) => <EdgeView key={e.id} doc={doc} e={e} theme={theme} />)}
-      {doc.nodes.filter((n) => n.type !== 'frame').map((n) => <NodeView key={n.id} n={n} theme={theme} />)}
+      {doc.nodes.filter((n) => n.type !== 'frame').map((n) => <NodeView key={n.id} n={n} theme={theme} doc={doc} />)}
     </g>
   );
 }

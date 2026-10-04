@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { isTagged } from '../model/geometry';
 import { freshId } from '../model/presets';
 import { COLOR_KEYS, PALETTE, SIGNALS, STICKY } from '../model/signals';
 import { readImageFile } from '../platform/storage';
@@ -49,6 +50,7 @@ const SignalSelect = ({ value, onChange, flow }: { value: string; onChange: (v: 
 
 function MetaPanel() {
   const meta = useStore((s) => s.doc.meta);
+  const powerTags = useStore((s) => s.doc.powerTags !== false);
   const set = (k: keyof DocMeta) => (v: string) => useStore.getState().mutate((d) => ({ ...d, meta: { ...d.meta, [k]: v } }), false);
   return (
     <>
@@ -59,6 +61,10 @@ function MetaPanel() {
       <Field label="作成者" value={meta.author} onChange={set('author')} />
       <Field label="REV" value={meta.rev} onChange={set('rev')} />
       <Field label="会社" value={meta.company} onChange={set('company')} />
+      <label className="check">
+        <input type="checkbox" checked={powerTags} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, powerTags: e.target.checked }))} />
+        電源ケーブルは線を引かずタグで表示
+      </label>
       <p className="hint">
         これらは CAD 風エクスポートの表題欄に入ります。
         <br />
@@ -70,6 +76,8 @@ function MetaPanel() {
     </>
   );
 }
+
+const num = (v: string): number | undefined => (v === '' || isNaN(Number(v)) ? undefined : Number(v));
 
 function DevicePanel({ n }: { n: DeviceNode }) {
   const st = useStore.getState;
@@ -98,6 +106,10 @@ function DevicePanel({ n }: { n: DeviceNode }) {
       <Field label="型番" value={n.model} onChange={(v) => patch({ model: v })} />
       <Field label="カテゴリ" value={n.category} onChange={(v) => patch({ category: v })} />
       <Field label="備考" value={n.note} onChange={(v) => patch({ note: v })} />
+      <div className="grid2">
+        <Field label="消費電力 (W)" type="number" value={n.watts == null ? '' : String(n.watts)} onChange={(v) => patch({ watts: num(v) })} />
+        <Field label="給電容量 (W)" type="number" placeholder="UPS・タップ" value={n.capacity == null ? '' : String(n.capacity)} onChange={(v) => patch({ capacity: num(v) })} />
+      </div>
       {(['left', 'right'] as const).map((side) => (
         <div key={side}>
           <h4>
@@ -229,6 +241,7 @@ function NodePanel({ n }: { n: Node }) {
 }
 
 function EdgePanel({ e }: { e: Edge }) {
+  const tagged = useStore((s) => isTagged(s.doc, e));
   const patch = (p: Partial<Edge>, record = false) => useStore.getState().updateEdge(e.id, p, record);
   return (
     <>
@@ -253,6 +266,13 @@ function EdgePanel({ e }: { e: Edge }) {
         <input type="checkbox" checked={!!e.dash} onChange={(ev) => patch({ dash: ev.target.checked }, true)} />
         点線にする
       </label>
+      {e.signal !== 'flow' && (
+        <label className="check">
+          <input type="checkbox" checked={tagged} onChange={(ev) => patch({ tag: ev.target.checked, route: undefined }, true)} />
+          線を引かず、両端のタグで表示
+        </label>
+      )}
+      {e.route && <button onClick={() => patch({ route: undefined }, true)}>経路を自動に戻す</button>}
       <Field label="備考" value={e.note} onChange={(v) => patch({ note: v })} />
       <button onClick={() => patch({ from: e.to, to: e.from }, true)}>向きを反転</button>
     </>

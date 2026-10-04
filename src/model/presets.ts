@@ -1,4 +1,5 @@
-import type { ColorKey, DeviceNode, Doc, Edge, Node, Port, ShapeKind } from './types';
+import { signalOf } from './signals';
+import type { ColorKey, DeviceNode, Doc, Edge, EdgeEnd, Node, Port, ShapeKind } from './types';
 
 export interface Preset {
   key: string;
@@ -148,5 +149,29 @@ export function makeEdge(taken: Set<string>, from: Edge['from'], to: Edge['to'],
     length: null,
     arrow: signal === 'flow' ? 'end' : 'none',
     note: '',
+  };
+}
+
+/**
+ * Pick the port a cable dropped on a device body should use: a free port of the
+ * same signal on the right side, or a new one when all are taken — so hooking a
+ * dozen devices up to a UPS never means adding ports by hand.
+ */
+export function claimPort(doc: Doc, nodeId: string, signal: string, side: Port['side']): { end: EdgeEnd; doc: Doc } {
+  const n = doc.nodes.find((x) => x.id === nodeId);
+  if (!n || n.type !== 'device' || signal === 'flow') return { end: { node: nodeId }, doc };
+  const used = new Set<string | undefined>();
+  for (const e of doc.edges) {
+    if (e.from.node === nodeId) used.add(e.from.port);
+    if (e.to.node === nodeId) used.add(e.to.port);
+  }
+  // Only the matching side counts: an outlet must never be satisfied by the device's own inlet.
+  const found = n.ports.find((p) => p.signal === signal && p.side === side && !used.has(p.id));
+  if (found) return { end: { node: nodeId, port: found.id }, doc };
+  const count = n.ports.filter((p) => p.signal === signal && p.side === side).length;
+  const port: Port = { id: freshId(new Set(n.ports.map((p) => p.id)), 'p'), name: `${signal === 'power' ? 'AC' : signalOf(signal).prefix} ${count + 1}`, side, signal };
+  return {
+    end: { node: nodeId, port: port.id },
+    doc: { ...doc, nodes: doc.nodes.map((x) => (x.id === nodeId ? { ...n, ports: [...n.ports, port] } : x)) },
   };
 }

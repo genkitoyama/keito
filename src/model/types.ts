@@ -53,6 +53,10 @@ export interface DeviceNode extends Base {
   category: string;
   note: string;
   ports: Port[];
+  /** Power draw in watts. */
+  watts?: number;
+  /** Power this device can supply (UPS, power strip) in watts. */
+  capacity?: number;
 }
 /** `text` is the sequence source. Size is derived from the parsed diagram. */
 export interface SequenceNode extends Base {
@@ -84,6 +88,10 @@ export interface Edge {
   note: string;
   /** Dashed line on the board (e.g. optional / future connections). */
   dash?: boolean;
+  /** Hand-placed bend points between the two ends; absent = routed automatically. */
+  route?: Pt[];
+  /** Draw as a pair of labelled tags instead of a line. Unset: power cables follow the board setting. */
+  tag?: boolean;
 }
 
 export interface DocMeta {
@@ -101,6 +109,8 @@ export interface Doc {
   meta: DocMeta;
   nodes: Node[];
   edges: Edge[];
+  /** Show power cables as tags at both ends rather than lines (default on). */
+  powerTags?: boolean;
 }
 
 export const emptyMeta = (title = '無題のボード'): DocMeta => ({

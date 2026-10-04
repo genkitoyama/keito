@@ -7,6 +7,7 @@ devices:
     name: メインPC
     maker: Apple
     model: Mac Studio M2 Max
+    watts: 370
     category: PC
     area: 制御室
     in: [LAN:lan, USB:usb, AC:power]
@@ -22,6 +23,7 @@ devices:
     name: L2スイッチ
     maker: NETGEAR
     model: GS308
+    watts: 10
     category: ネットワーク
     area: 制御室
     in: [PORT 1:lan]
@@ -30,6 +32,7 @@ devices:
     name: エクステンダー TX
     maker: ATEN
     model: VE811T
+    watts: 5
     category: 延長器
     area: 制御室
     in: [HDMI IN:hdmi]
@@ -46,6 +49,7 @@ devices:
     name: プロジェクター
     maker: Panasonic
     model: PT-RZ990
+    watts: 580
     category: 映像表示
     area: 展示室
     in: [HDMI:hdmi, LAN:lan, AC:power]
@@ -53,6 +57,7 @@ devices:
     name: 操作用モニター
     maker: EIZO
     model: EV2485
+    watts: 30
     category: 映像表示
     area: 制御室
     in: [HDMI:hdmi]
@@ -64,7 +69,20 @@ devices:
     area: 展示室
     in: [DC:power]
     out: [LAN:lan]
+  - id: ups1
+    name: UPS
+    maker: APC
+    model: SMT1500J
+    category: 電源
+    area: 制御室
+    preset: ups
+    capacity: 1200
 cables:
+  - { from: ups1, to: pc1.AC, type: power }
+  - { from: ups1, to: sw1, type: power }
+  - { from: ups1, to: mon1, type: power }
+  - { from: ups1, to: tx1, type: power }
+  - { from: ups1, to: pj1.AC, type: power, length: 30 }
   - { from: sd1.USB, to: pc1.USB, type: usb, length: 1.5 }
   - { from: pc1.HDMI 1, to: tx1.HDMI IN, type: hdmi, length: 2, label: メイン映像 }
   - { from: pc1.HDMI 2, to: mon1.HDMI, type: hdmi, length: 2 }

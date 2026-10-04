@@ -21,6 +21,8 @@ devices:
     category: PC           # 任意
     area: 制御室           # 任意。自動レイアウト時にこの枠へまとめる
     note: 備考             # 任意
+    watts: 120             # 任意。消費電力(W)
+    capacity: 900          # 任意。UPS・電源タップが給電できる容量(W)
     preset: pc             # 任意。in/out を省略したときの既定ポート
     in:  [LAN:lan, AC:power]          # 左側ポート "名前:種別"
     out: ["HDMI 1:hdmi", DP:dp]       # 右側ポート
@@ -31,6 +33,8 @@ cables:
     type: hdmi             # hdmi sdi dp lan usb audio power fiber dmx serial wireless other
     length: 10             # m、任意
     label: メイン映像      # 任意
+    # 電源(type: power)は線を引かず両端のタグで表示される。tag: true/false でケーブルごとに切替、
+    # 全体は先頭の powerTags: false で線表示に。to をポートなしの機材IDにすると空きポートを自動で使う
 shapes:                    # フローチャート・付箋
   - id: s1
     shape: rect            # rect round diamond ellipse cloud(コメント用の雲) sticky text
@@ -75,6 +79,8 @@ export function toYaml(doc: Doc): string {
   const out: Obj = { title: doc.meta.title };
   for (const k of ['project', 'drawingNo', 'author', 'rev', 'company'] as const) put(out, k, doc.meta[k]);
 
+  if (doc.powerTags === false) out.powerTags = false;
+
   const frames = doc.nodes.filter((n) => n.type === 'frame');
   if (frames.length) out.areas = frames.map((f) => ({ name: f.text, rect: [r(f.x), r(f.y), r(f.w), r(f.h)] }));
 
@@ -87,6 +93,8 @@ export function toYaml(doc: Doc): string {
       put(o, 'category', d.category);
       put(o, 'area', frameOf(doc, d)?.text);
       put(o, 'note', d.note);
+      put(o, 'watts', d.watts);
+      put(o, 'capacity', d.capacity);
       o.in = d.ports.filter((p) => p.side === 'left').map((p) => `${p.name}:${p.signal}`);
       o.out = d.ports.filter((p) => p.side === 'right').map((p) => `${p.name}:${p.signal}`);
       o.pos = [r(d.x), r(d.y)];
@@ -104,6 +112,8 @@ export function toYaml(doc: Doc): string {
       put(o, 'note', e.note);
       if (e.arrow !== 'none') o.arrow = e.arrow;
       if (e.dash) o.dash = true;
+      if (e.tag != null) o.tag = e.tag;
+      if (e.route?.length) o.route = e.route.map((p) => [r(p.x), r(p.y)]);
       return o;
     });
   }
@@ -219,6 +229,8 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
       category: str(v.category, preset?.category ?? ''),
       note: str(v.note),
       ports,
+      watts: typeof v.watts === 'number' ? v.watts : undefined,
+      capacity: typeof v.capacity === 'number' ? v.capacity : undefined,
     });
     if (v.area) areaHint.set(id, str(v.area));
   });
@@ -266,6 +278,16 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     const portName = dot < 0 ? '' : s.slice(dot + 1).trim();
     const node = byId.get(nodeId);
     if (!node) throw new Error(`${where}: "${nodeId}" という id の要素がありません`);
+    if (node.type === 'device' && !portName && signal !== 'other' && signal !== 'flow') {
+      // No port named: use a free port of that signal, adding one when all are taken.
+      const used = new Set(edges.flatMap((e) => [e.from.node === nodeId ? e.from.port : undefined, e.to.node === nodeId ? e.to.port : undefined]));
+      let free = node.ports.find((p) => p.signal === signal && p.side === side && !used.has(p.id));
+      if (!free) {
+        free = { id: freshId(new Set(node.ports.map((p) => p.id)), 'p'), name: `${signal === 'power' ? 'AC' : signal.toUpperCase()} ${node.ports.filter((p) => p.signal === signal && p.side === side).length + 1}`, side, signal };
+        node.ports.push(free);
+      }
+      return { node: nodeId, port: free.id };
+    }
     if (node.type !== 'device' || !portName) return { node: nodeId };
     let port = node.ports.find((p) => p.name.normalize('NFKC').toLowerCase() === portName.toLowerCase());
     if (!port) {
@@ -292,6 +314,10 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     e.note = str(v.note);
     if (v.arrow === 'end' || v.arrow === 'both') e.arrow = v.arrow;
     if (v.dash === true) e.dash = true;
+    if (typeof v.tag === 'boolean') e.tag = v.tag;
+    // Hand-placed bends only make sense while the layout they were drawn for is kept.
+    const bends = relayout ? [] : arr(v.route).map((p) => nums(p, 2)).filter((p): p is number[] => !!p);
+    if (bends.length >= 2) e.route = bends.map(([x, y]) => ({ x, y }));
     edges.push(e);
   });
   arr(root.flows).forEach((v, i) => {
@@ -330,7 +356,8 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     const todo = nodes.filter((n) => unplaced.has(n.id));
     const { pos, areas } = autoLayout(
       todo,
-      edges.filter((e) => unplaced.has(e.from.node) && unplaced.has(e.to.node)),
+      // Power feeds don't describe signal flow, so they must not shape the layout.
+      edges.filter((e) => e.signal !== 'power' && unplaced.has(e.from.node) && unplaced.has(e.to.node)),
       (id) => areaHint.get(id) ?? '',
       { x: box ? box.x : 80, y: box ? box.y + box.h + 100 : 80 },
     );
@@ -348,5 +375,6 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
   for (const k of ['title', 'project', 'drawingNo', 'author', 'rev', 'company'] as const) {
     if (root[k] != null) meta[k] = str(root[k]);
   }
-  return { version: 1, id: prev.id, meta, nodes: [...frames, ...nodes], edges };
+  const powerTags = typeof root.powerTags === 'boolean' ? root.powerTags : prev.powerTags;
+  return { version: 1, id: prev.id, meta, nodes: [...frames, ...nodes], edges, powerTags };
 }

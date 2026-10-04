@@ -187,6 +187,7 @@ export function pasteClipboard(offset = 30): void {
     id: freshId(taken, 'e'),
     from: { ...e.from, node: map.get(e.from.node)! },
     to: { ...e.to, node: map.get(e.to.node)! },
+    route: e.route?.map((p) => ({ x: p.x + offset, y: p.y + offset })),
   }));
   s.mutate((d) => ({ ...d, nodes: [...d.nodes, ...nodes], edges: [...d.edges, ...edges] }));
   s.select(nodes.map((n) => n.id));

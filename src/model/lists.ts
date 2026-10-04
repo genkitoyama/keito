@@ -129,3 +129,54 @@ export function toCsv(t: Table): string {
   const cell = (s: string): string => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
   return '﻿' + [t.head, ...t.rows].map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n';
 }
+
+export interface PowerLoad {
+  /** Devices fed from this one. */
+  ids: string[];
+  watts: number;
+  capacity: number | null;
+  over: boolean;
+}
+
+const loadCache = new WeakMap<Doc, Map<string, PowerLoad>>();
+
+/** What each power source (UPS, power strip …) feeds: device id → its load. */
+export function powerLoads(doc: Doc): Map<string, PowerLoad> {
+  const hit = loadCache.get(doc);
+  if (hit) return hit;
+  const byId = new Map(doc.nodes.map((n) => [n.id, n]));
+  const out = new Map<string, PowerLoad>();
+  for (const e of doc.edges) {
+    if (e.signal !== 'power') continue;
+    const src = byId.get(e.from.node);
+    const dst = byId.get(e.to.node);
+    if (src?.type !== 'device' || !dst) continue;
+    const load = out.get(src.id) ?? { ids: [], watts: 0, capacity: src.capacity ?? null, over: false };
+    if (!load.ids.includes(dst.id)) {
+      load.ids.push(dst.id);
+      load.watts += dst.type === 'device' ? (dst.watts ?? 0) : 0;
+    }
+    load.over = load.capacity != null && load.watts > load.capacity;
+    out.set(src.id, load);
+  }
+  loadCache.set(doc, out);
+  return out;
+}
+
+/** Power distribution: one row per fed device, with a total per source. */
+export function powerTable(doc: Doc): Table {
+  const byId = new Map(doc.nodes.map((n) => [n.id, n]));
+  const name = (id: string): string => byId.get(id)?.text.split('\n')[0] ?? id;
+  const rows: string[][] = [];
+  const refs: string[][] = [];
+  for (const [id, load] of powerLoads(doc)) {
+    for (const d of load.ids) {
+      const n = byId.get(d);
+      rows.push([name(id), name(d), n?.type === 'device' && n.watts != null ? String(n.watts) : '', '', '']);
+      refs.push([d]);
+    }
+    rows.push([name(id), `合計 ${load.ids.length} 台`, String(load.watts), load.capacity == null ? '' : String(load.capacity), load.capacity == null ? '' : load.over ? `超過 ${load.watts - load.capacity}` : `余裕 ${load.capacity - load.watts}`]);
+    refs.push([id]);
+  }
+  return { title: '電源系統', head: ['電源元', '接続機器', '消費電力(W)', '容量(W)', '判定'], widths: [24, 30, 16, 14, 16], rows, refs };
+}

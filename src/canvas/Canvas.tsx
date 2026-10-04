@@ -7,6 +7,7 @@ import {
   contains,
   docBounds,
   intersects,
+  isTagged,
   labelPoint,
   nodeAt,
   nodeRect,
@@ -17,19 +18,21 @@ import {
   sidePoint,
   snap,
 } from '../model/geometry';
-import { type CreateKind, allIds, makeEdge, makeImage, makeNode } from '../model/presets';
+import { type CreateKind, allIds, claimPort, makeEdge, makeImage, makeNode } from '../model/presets';
 import { SEQUENCE_SAMPLE } from '../model/sequence';
 import { COLOR_KEYS, PALETTE, STICKY, STRONG } from '../model/signals';
 import { copySelection, pasteClipboard, useStore } from '../model/store';
 import { wrapText } from '../model/text';
 import { type Doc, type EdgeEnd, type FillStyle, type Node, type Pt, type Rect, type ShapeKind, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
-import { EdgeView, INK, NodeView, SCREEN, TEXT, textSize, textWidth } from './render';
+import { EdgeView, INK, NodeView, SCREEN, TEXT, edgeTags, textSize, textWidth } from './render';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
 type Drag =
   | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
-  | { kind: 'move'; start: Pt; orig: Map<string, Pt>; lead: string; moved: boolean }
+  | { kind: 'move'; start: Pt; orig: Map<string, Pt>; routes: Map<string, Pt[]>; lead: string; moved: boolean }
+  | { kind: 'segment'; id: string; seg: number; horizontal: boolean; start: Pt; route: Pt[]; moved: boolean }
+  | { kind: 'reconnect'; id: string; end: 'from' | 'to'; other: Pt }
   | { kind: 'marquee'; start: Pt; base: string[] }
   | { kind: 'resize'; id: string; corner: Corner; start: Pt; orig: Rect; moved: boolean; lock?: number }
   | { kind: 'connect'; from: EdgeEnd; at: Pt; side?: Dir; sx: number; sy: number };
@@ -304,7 +307,10 @@ export function Canvas() {
         }
       }
     }
-    if (orig.has(lead)) begin(e, { kind: 'move', start: world(e), orig, lead, moved: false });
+    // Hand-placed bends travel with a cable when both of its ends are being moved.
+    const routes = new Map<string, Pt[]>();
+    for (const edge of now.edges) if (edge.route && orig.has(edge.from.node) && orig.has(edge.to.node)) routes.set(edge.id, edge.route);
+    if (orig.has(lead)) begin(e, { kind: 'move', start: world(e), orig, routes, lead, moved: false });
   };
 
   const onEdgeDown = (e: RPointerEvent, id: string) => {
@@ -333,6 +339,18 @@ export function Canvas() {
     if (!id) return;
     s.select([id]);
     s.setEditing(id);
+  };
+
+  const onSegmentDown = (e: RPointerEvent, id: string, seg: number, horizontal: boolean, route: Pt[]) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    begin(e, { kind: 'segment', id, seg, horizontal, start: world(e), route, moved: false });
+  };
+
+  const onEndDown = (e: RPointerEvent, id: string, end: 'from' | 'to', other: Pt) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    begin(e, { kind: 'reconnect', id, end, other });
   };
 
   const onHandleDown = (e: RPointerEvent, from: EdgeEnd, at: Pt, side?: Dir) => {
@@ -398,6 +416,25 @@ export function Canvas() {
       if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 4) setGhost({ kind: 'connect', a: d.at, b: p });
       return;
     }
+    if (d.kind === 'reconnect') {
+      setGhost({ kind: 'connect', a: d.other, b: p });
+      return;
+    }
+    if (d.kind === 'segment') {
+      const delta = d.horizontal ? p.y - d.start.y : p.x - d.start.x;
+      if (!d.moved) {
+        if (Math.abs(delta) * s.view.k < 3) return;
+        d.moved = true;
+        s.checkpoint();
+      }
+      // Slide the segment sideways: both of its bend points move together.
+      const route = d.route.map((q, i) => {
+        if (i !== d.seg && i !== d.seg + 1) return q;
+        return d.horizontal ? { x: q.x, y: e.altKey ? q.y + delta : snap(q.y + delta) } : { x: e.altKey ? q.x + delta : snap(q.x + delta), y: q.y };
+      });
+      s.updateEdge(d.id, { route }, false);
+      return;
+    }
     let dx = p.x - d.start.x;
     let dy = p.y - d.start.y;
     if (!d.moved) {
@@ -420,6 +457,7 @@ export function Canvas() {
             const o = d.orig.get(n.id);
             return o ? { ...n, x: Math.round(o.x + sx), y: Math.round(o.y + sy) } : n;
           }),
+          edges: d.routes.size ? doc.edges.map((edge) => (d.routes.has(edge.id) ? { ...edge, route: d.routes.get(edge.id)!.map((q) => ({ x: q.x + sx, y: q.y + sy })) } : edge)) : doc.edges,
         }),
         false,
       );
@@ -450,6 +488,20 @@ export function Canvas() {
     setGhost(null);
     setGuides({});
     setBusy(false);
+    if (d?.kind === 'reconnect') {
+      const s = st();
+      const p = world(e);
+      const edge = s.doc.edges.find((x) => x.id === d.id);
+      if (!edge) return;
+      const keep = d.end === 'from' ? edge.to : edge.from;
+      const over = nodeAt(s.doc, p);
+      const hit: EdgeEnd | null = portAt(s.doc, p) ?? (over && over.type !== 'frame' ? { node: over.id } : null);
+      if (!hit || hit.node === keep.node) return;
+      // Dropped on a device body: take a free port of the cable's type on the matching side.
+      const claimed = hit.port ? { end: hit, doc: s.doc } : claimPort(s.doc, hit.node, edge.signal, d.end === 'from' ? 'right' : 'left');
+      s.setDoc({ ...claimed.doc, edges: claimed.doc.edges.map((x) => (x.id === d.id ? { ...x, [d.end]: claimed.end, route: undefined } : x)) });
+      return;
+    }
     if (d?.kind !== 'connect') return;
     const s = st();
     // A plain click on a side dot adds the next shape in that direction.
@@ -468,8 +520,13 @@ export function Canvas() {
       // Cables run output → input regardless of which end the drag started from.
       if (portOf(s.doc, from)?.side === 'left' && portOf(s.doc, to)?.side !== 'left') [from, to] = [to, from];
       const signal = portOf(s.doc, from)?.signal ?? portOf(s.doc, to)?.signal ?? 'flow';
+      // An end dropped on a device body takes a free port of that signal (a new one if all are used),
+      // so a row of devices can be plugged into a UPS without managing its outlets by hand.
+      let next = s.doc;
+      if (!from.port) ({ end: from, doc: next } = claimPort(next, from.node, signal, 'right'));
+      if (!to.port) ({ end: to, doc: next } = claimPort(next, to.node, signal, 'left'));
       const edge = makeEdge(taken, from, to, signal);
-      s.mutate((doc) => ({ ...doc, edges: [...doc.edges, edge] }));
+      s.setDoc({ ...next, edges: [...next.edges, edge] });
       s.select([edge.id]);
     } else if (canConnect(source) && Math.hypot(p.x - d.at.x, p.y - d.at.y) > 30) {
       // Dropping on empty canvas puts the next shape right there.
@@ -487,6 +544,7 @@ export function Canvas() {
   const frames = doc.nodes.filter((n) => n.type === 'frame');
   const others = doc.nodes.filter((n) => n.type !== 'frame');
   const single = selection.length === 1 ? doc.nodes.find((n) => n.id === selection[0]) : undefined;
+  const selectedEdge = selection.length === 1 ? doc.edges.find((e) => e.id === selection[0]) : undefined;
   const handleNode = doc.nodes.find((n) => n.id === hover && canConnect(n)) ?? (single && canConnect(single) ? single : undefined);
   const hs = 8 / view.k;
   const idle = tool === 'select' && !editing && !busy;
@@ -501,7 +559,7 @@ export function Canvas() {
       onPointerLeave={() => setHover((h) => (h === n.id ? null : h))}
       style={{ cursor: tool === 'select' && !space ? 'move' : undefined }}
     >
-      <NodeView n={editing === n.id && canConnect(n) ? { ...n, text: '' } : n} theme={SCREEN} />
+      <NodeView n={editing === n.id && canConnect(n) ? { ...n, text: '' } : n} theme={SCREEN} doc={doc} />
     </g>
   );
   const devicePorts = (render: (key: string, p: Pt, end: EdgeEnd) => ReactNode) =>
@@ -530,6 +588,17 @@ export function Canvas() {
           {doc.edges.map((e) => {
             const pts = routes.get(e.id);
             if (!pts) return null;
+            if (isTagged(doc, e)) {
+              // No line to grab: the two tags are the cable's handles.
+              return (
+                <g key={e.id} onPointerDown={(ev) => onEdgeDown(ev, e.id)} style={{ cursor: 'pointer' }}>
+                  <EdgeView doc={doc} e={e} theme={SCREEN} />
+                  {edgeTags(doc, e, SCREEN).map((t, i) => (
+                    <rect key={i} x={t.x - 2} y={t.y - 2} width={t.w + 4} height={t.h + 4} rx={4} fill="transparent" stroke={sel.has(e.id) ? ACCENT : 'none'} strokeWidth={2 / view.k} />
+                  ))}
+                </g>
+              );
+            }
             const d = pathD(pts, 8);
             return (
               <g key={e.id} onPointerDown={(ev) => onEdgeDown(ev, e.id)} style={{ cursor: 'pointer' }}>
@@ -598,6 +667,9 @@ export function Canvas() {
             })}
 
           {idle && devicePorts((key, p, end) => <circle key={key} className="port-hit" cx={p.x} cy={p.y} r={9} onPointerDown={(e) => onHandleDown(e, end, p)} />)}
+          {idle && selectedEdge && !isTagged(doc, selectedEdge) && (
+            <EdgeHandles pts={routes.get(selectedEdge.id) ?? []} k={view.k} manual={!!selectedEdge.route} onSegment={(ev, seg, h, route) => onSegmentDown(ev, selectedEdge.id, seg, h, route)} onEnd={(ev, end, other) => onEndDown(ev, selectedEdge.id, end, other)} />
+          )}
           {/* While a cable is being dragged, the port under the cursor lights up as the drop target. */}
           {ghost?.kind === 'connect' &&
             devicePorts((key, p) =>
@@ -619,6 +691,65 @@ export function Canvas() {
         <button onClick={() => st().fit()} title="全体表示 (⇧1)">全体</button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Handles on a selected cable: a grip on every segment that can slide sideways,
+ * and a knob on each end to plug it into a different port.
+ */
+function EdgeHandles({ pts, k, manual, onSegment, onEnd }: {
+  pts: Pt[];
+  k: number;
+  manual: boolean;
+  onSegment: (e: RPointerEvent, seg: number, horizontal: boolean, route: Pt[]) => void;
+  onEnd: (e: RPointerEvent, end: 'from' | 'to', other: Pt) => void;
+}) {
+  if (pts.length < 2) return null;
+  const a = pts[0];
+  const b = pts[pts.length - 1];
+  const grips: { at: Pt; seg: number; horizontal: boolean; route: Pt[] }[] = [];
+  const inner = pts.slice(1, -1);
+  if (inner.length >= 2) {
+    for (let i = 0; i + 1 < inner.length; i++) {
+      const p = inner[i];
+      const q = inner[i + 1];
+      const horizontal = Math.abs(p.y - q.y) < 0.5;
+      if (Math.hypot(q.x - p.x, q.y - p.y) < (manual ? 1 : 16)) continue;
+      grips.push({ at: { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }, seg: i, horizontal, route: inner });
+    }
+  } else if (inner.length === 0 && Math.hypot(b.x - a.x, b.y - a.y) > 60) {
+    // A straight cable has nothing to slide yet: give it a pair of bends near each end to pull out into a detour.
+    const horizontal = Math.abs(a.y - b.y) < 0.5;
+    if (horizontal || Math.abs(a.x - b.x) < 0.5) {
+      const s = horizontal ? Math.sign(b.x - a.x) * 18 : Math.sign(b.y - a.y) * 18;
+      const p = horizontal ? { x: a.x + s, y: a.y } : { x: a.x, y: a.y + s };
+      const q = horizontal ? { x: b.x - s, y: b.y } : { x: b.x, y: b.y - s };
+      grips.push({ at: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, seg: 1, horizontal, route: [p, { ...p }, { ...q }, q] });
+    }
+  }
+  const long = 16 / k;
+  const short = 6 / k;
+  return (
+    <g>
+      {grips.map((g) => (
+        <rect
+          key={g.seg}
+          x={g.at.x - (g.horizontal ? long : short) / 2}
+          y={g.at.y - (g.horizontal ? short : long) / 2}
+          width={g.horizontal ? long : short}
+          height={g.horizontal ? short : long}
+          rx={short / 2}
+          fill="#fff"
+          stroke={ACCENT}
+          strokeWidth={1.5 / k}
+          style={{ cursor: g.horizontal ? 'ns-resize' : 'ew-resize' }}
+          onPointerDown={(e) => onSegment(e, g.seg, g.horizontal, g.route)}
+        />
+      ))}
+      <circle cx={a.x} cy={a.y} r={5.5 / k} fill="#fff" stroke={ACCENT} strokeWidth={2 / k} style={{ cursor: 'grab' }} onPointerDown={(e) => onEnd(e, 'from', b)} />
+      <circle cx={b.x} cy={b.y} r={5.5 / k} fill="#fff" stroke={ACCENT} strokeWidth={2 / k} style={{ cursor: 'grab' }} onPointerDown={(e) => onEnd(e, 'to', a)} />
+    </g>
   );
 }
 
@@ -677,7 +808,8 @@ function QuickBar() {
   let anchor: { x: number; top: number; bottom: number } | null = null;
   if (box) anchor = { x: box.x + box.w / 2, top: box.y, bottom: box.y + box.h };
   else if (edge) {
-    const p = labelPoint(routeEdges(doc).get(edge.id) ?? [{ x: 0, y: 0 }]);
+    const tag = isTagged(doc, edge) ? edgeTags(doc, edge, SCREEN)[0] : undefined;
+    const p = tag ? { x: tag.x + tag.w / 2, y: tag.y + tag.h / 2 } : labelPoint(routeEdges(doc).get(edge.id) ?? [{ x: 0, y: 0 }]);
     anchor = { x: p.x, top: p.y - 14, bottom: p.y + 14 };
   }
   // Keep the bar on screen: above the selection, else below it, and always inside
@@ -727,6 +859,16 @@ function QuickBar() {
         </button>
       )}
       {one?.type === 'shape' && <i />}
+      {edge?.route && (
+        <button onClick={() => st().updateEdge(edge.id, { route: undefined })} title="経路を自動に戻す">
+          ↺
+        </button>
+      )}
+      {edge && edge.signal !== 'flow' && (
+        <button className={isTagged(doc, edge) ? 'on' : ''} onClick={() => st().updateEdge(edge.id, { tag: !isTagged(doc, edge), route: undefined })} title="線を引かず、両端のタグで表示">
+          ⚑
+        </button>
+      )}
       {edge && (
         <button className={edge.dash ? 'on' : ''} onClick={() => st().updateEdge(edge.id, { dash: !edge.dash })} title="点線にする">
           ┄

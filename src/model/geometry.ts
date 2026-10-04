@@ -136,6 +136,11 @@ export function route(a: Anchor, b: Anchor, lane = 0): Pt[] {
   return simplify(pts);
 }
 
+/** Whether an edge is drawn as a pair of tags (net labels) instead of a line. */
+export const isTagged = (doc: Doc, e: Edge): boolean => e.tag ?? (e.signal === 'power' && doc.powerTags !== false);
+
+const orthogonal = (pts: Pt[]): boolean => pts.every((p, i) => i === 0 || Math.abs(p.x - pts[i - 1].x) < 0.5 || Math.abs(p.y - pts[i - 1].y) < 0.5);
+
 const routeCache = new WeakMap<Doc, Map<string, Pt[]>>();
 
 /** Routed polyline for every edge of the doc (memoised per doc snapshot). */
@@ -160,6 +165,22 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
     const cb = center(nodeRect(b));
     const pa = anchorOf(a, e.from, cb);
     const pb = anchorOf(b, e.to, ca);
+    if (e.route && e.route.length >= 2 && !isTagged(doc, e)) {
+      // Hand-placed bends: the first and last follow their end so the outer segments stay square.
+      const mid = e.route.map((p) => ({ x: p.x, y: p.y }));
+      const ma = e.from.port ? pa : anchorOf(a, e.from, mid[0]);
+      const mb = e.to.port ? pb : anchorOf(b, e.to, mid[mid.length - 1]);
+      if (isH(ma.dir)) mid[0].y = ma.y;
+      else mid[0].x = ma.x;
+      if (isH(mb.dir)) mid[mid.length - 1].y = mb.y;
+      else mid[mid.length - 1].x = mb.x;
+      const pts = [{ x: ma.x, y: ma.y }, ...mid, { x: mb.x, y: mb.y }];
+      // If the nodes moved so far that the bends no longer line up, fall back to automatic routing.
+      if (orthogonal(pts)) {
+        out.set(e.id, pts);
+        continue;
+      }
+    }
     // Re-aim port-less ends at the real attachment point of the other end.
     out.set(e.id, route(e.from.port ? pa : anchorOf(a, e.from, pb), e.to.port ? pb : anchorOf(b, e.to, pa), lane));
   }
@@ -269,8 +290,10 @@ export function crossings(doc: Doc): Map<string, Map<number, number[]>> {
   const hit = hopCache.get(doc);
   if (hit) return hit;
   const routes = routeEdges(doc);
+  const tagged = new Set(doc.edges.filter((e) => isTagged(doc, e)).map((e) => e.id));
   const verticals: { id: string; x: number; y0: number; y1: number }[] = [];
   for (const [id, pts] of routes) {
+    if (tagged.has(id)) continue;
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1];
       const b = pts[i];
@@ -279,6 +302,7 @@ export function crossings(doc: Doc): Map<string, Map<number, number[]>> {
   }
   const out = new Map<string, Map<number, number[]>>();
   for (const [id, pts] of routes) {
+    if (tagged.has(id)) continue;
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1];
       const b = pts[i];
