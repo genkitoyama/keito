@@ -3,7 +3,7 @@ import { isTagged } from '../model/geometry';
 import { freshId } from '../model/presets';
 import { COLOR_KEYS, PALETTE, SIGNALS, STICKY } from '../model/signals';
 import { readImageFile } from '../platform/storage';
-import { align, useStore } from '../model/store';
+import { align, storeImage, useStore } from '../model/store';
 import type { Arrow, DeviceNode, DocMeta, Edge, FillStyle, Node, Port, ShapeKind } from '../model/types';
 
 /** Text input that records one undo step per editing burst instead of per keystroke. */
@@ -184,7 +184,7 @@ function NodePanel({ n }: { n: Node }) {
         try {
           const img = await readImageFile(f);
           // Keep the width the picture already has on the board; follow the new proportions.
-          patch({ src: img.src, text: img.name, h: Math.round((n.w * img.h) / img.w) }, true);
+          patch({ src: await storeImage(img.src), text: img.name, h: Math.round((n.w * img.h) / img.w) }, true);
         } catch (e) {
           alert(e instanceof Error ? e.message : String(e));
         }
@@ -196,7 +196,7 @@ function NodePanel({ n }: { n: Node }) {
         <h3>画像 <code>{n.id}</code></h3>
         <Field label="名前" value={n.text} onChange={(v) => patch({ text: v })} />
         <p className="hint">
-          {Math.round(n.w)} × {Math.round(n.h)} px ／ 約 {Math.max(1, Math.round(n.src.length / 1024))} KB
+          {Math.round(n.w)} × {Math.round(n.h)} px{n.src.startsWith('asset:') ? ` ／ ${n.src.slice(6)}` : ''}
           <br />
           角をドラッグで比率を保ったまま拡縮（Shift で自由変形）。
         </p>

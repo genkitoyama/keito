@@ -2,10 +2,11 @@ import { fromYaml } from '../model/dsl';
 import { randomId } from '../model/presets';
 import { type Panel, emptyDoc, useStore } from '../model/store';
 import type { Doc } from '../model/types';
-import { download, pickTextFile, safeName } from '../platform/storage';
+import { download, inlineImages, pickTextFile, safeName } from '../platform/storage';
 
-export function saveFile(): void {
-  const doc = useStore.getState().doc;
+/** Export the board as one self-contained file, pictures included. */
+export async function saveFile(): Promise<void> {
+  const doc = await inlineImages(useStore.getState().doc);
   download(`${safeName(doc.meta.title)}.keito.json`, JSON.stringify(doc, null, 2), 'application/json');
 }
 
@@ -20,6 +21,8 @@ async function openFile(): Promise<void> {
       doc = JSON.parse(f.text) as Doc;
       if (doc.version !== 1 || !Array.isArray(doc.nodes) || !Array.isArray(doc.edges)) throw new Error('keito のファイルではありません');
     }
+    // An opened file becomes a board of its own rather than replacing one that shares its id.
+    if (useStore.getState().boards.some((b) => b.id === doc.id)) doc = { ...doc, id: randomId() };
     useStore.getState().newBoard(doc);
   } catch (e) {
     alert(`開けませんでした: ${e instanceof Error ? e.message : e}`);
@@ -32,6 +35,8 @@ export function TopBar() {
   const panel = useStore((s) => s.panel);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
+  const saving = useStore((s) => s.saving);
+  const mode = useStore((s) => s.mode);
   const st = useStore.getState;
   const toggle = (p: Panel) => st().setPanel(panel === p ? null : p);
   const list = boards.some((b) => b.id === doc.id) ? boards : [{ id: doc.id, title: doc.meta.title, updated: 0 }, ...boards];
@@ -45,7 +50,7 @@ export function TopBar() {
         ))}
       </select>
       <button onClick={() => st().newBoard()} title="新しいボード">＋新規</button>
-      <button onClick={() => st().newBoard({ ...doc, id: randomId(), meta: { ...doc.meta, title: `${doc.meta.title} のコピー` } })}>複製</button>
+      <button onClick={async () => st().newBoard({ ...(await inlineImages(doc)), id: randomId(), meta: { ...doc.meta, title: `${doc.meta.title} のコピー` } })}>複製</button>
       <button
         onClick={() => {
           if (confirm(`「${doc.meta.title}」を削除しますか？`)) st().deleteBoard(doc.id);
@@ -58,7 +63,10 @@ export function TopBar() {
       <button disabled={!canRedo} onClick={() => st().redo()} title="やり直す (⇧⌘Z)">↷</button>
       <span className="sep" />
       <button onClick={openFile} title="ファイルを開く (.keito.json / .yaml)">開く</button>
-      <button onClick={saveFile} title="ファイルに保存 (⌘S)">保存</button>
+      <button onClick={() => void saveFile()} title="1 つのファイルに書き出す (⌘S)">書き出し</button>
+      <span className={`save-state ${saving}`} title={mode === 'server' ? 'boards フォルダに自動保存' : 'このブラウザ内に自動保存'}>
+        {saving === 'error' ? '保存できていません' : saving === 'saving' ? '保存中…' : mode === 'server' ? 'フォルダに保存済み' : 'ブラウザに保存済み'}
+      </span>
       <span className="grow" />
       <button className={panel === 'lists' ? 'on' : ''} onClick={() => toggle('lists')}>機材・ケーブル表</button>
       <button className={panel === 'text' ? 'on' : ''} onClick={() => toggle('text')}>テキスト / AI</button>

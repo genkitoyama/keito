@@ -1,11 +1,22 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { type CadOptions, type Paper, cadSheets } from '../export/cad';
 import { boardImage, copyPng, printSheets, sheetImage, toPng } from '../export/exporters';
 import { useStore } from '../model/store';
-import { download, safeName } from '../platform/storage';
+import type { Doc } from '../model/types';
+import { download, inlineImages, safeName } from '../platform/storage';
 
 export function ExportPanel() {
-  const doc = useStore((s) => s.doc);
+  const board = useStore((s) => s.doc);
+  // Exports must stand alone, so pictures kept in the board's folder are pulled back in first.
+  const [inlined, setInlined] = useState<{ from: Doc; doc: Doc } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void inlineImages(board).then((d) => live && setInlined({ from: board, doc: d }));
+    return () => {
+      live = false;
+    };
+  }, [board]);
+  const doc = inlined?.from === board ? inlined.doc : board;
   const [mode, setMode] = useState<'cad' | 'image'>('cad');
   const [opts, setOpts] = useState<CadOptions>({ paper: 'A3', color: false, tables: true });
   const [background, setBackground] = useState(true);

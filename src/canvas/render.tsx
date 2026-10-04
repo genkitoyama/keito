@@ -5,6 +5,7 @@ import { SEQ, parseSequence } from '../model/sequence';
 import { PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { measure, wrapText } from '../model/text';
 import type { DeviceNode, Doc, Edge, Node, Pt, Rect, SequenceNode } from '../model/types';
+import { assetUrl } from '../platform/storage';
 
 /** `mono` draws the CAD-style sheet look: black lines, dash patterns instead of colours. */
 export interface Theme {
@@ -274,7 +275,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
       );
     }
     case 'image':
-      return <image href={n.src} x={x} y={y} width={w} height={h} preserveAspectRatio="xMidYMid meet" />;
+      return <image href={assetUrl(doc?.id, n.src)} x={x} y={y} width={w} height={h} preserveAspectRatio="xMidYMid meet" />;
     case 'text':
       return (
         <g>

@@ -49,7 +49,7 @@ function useHotkeys() {
         copySelection();
         pasteClipboard();
       } else if (mod && key === 'a') s.select(s.doc.nodes.map((n) => n.id));
-      else if (mod && key === 's') saveFile();
+      else if (mod && key === 's') void saveFile();
       else if (mod && (key === '=' || key === '+')) zoomBy(1.25);
       else if (mod && key === '-') zoomBy(0.8);
       else if (mod && key.startsWith('arrow') && nodeIds.length === 1) spawnFrom(nodeIds[0], key === 'arrowleft' ? 'left' : key === 'arrowright' ? 'right' : key === 'arrowup' ? 'top' : 'bottom');
@@ -96,7 +96,9 @@ function useHotkeys() {
 
 export function App() {
   const panel = useStore((s) => s.panel);
+  const ready = useStore((s) => s.ready);
   useHotkeys();
+  if (!ready) return <div className="loading">ボードを読み込み中…</div>;
   return (
     <div className="app">
       <TopBar />

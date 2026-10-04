@@ -1,13 +1,5 @@
 import { create } from 'zustand';
-import {
-  type BoardInfo,
-  currentBoardId,
-  listBoards,
-  loadBoard,
-  removeBoard,
-  saveBoard,
-  saveFailed,
-} from '../platform/storage';
+import { type Backend, type BoardInfo, connect, externalize, localBoards } from '../platform/storage';
 import { fromYaml } from './dsl';
 import { docBounds, nodeRect } from './geometry';
 import { allIds, freshId, randomId } from './presets';
@@ -23,18 +15,23 @@ export interface View {
 }
 
 const HISTORY = 100;
+const CURRENT = 'keito:current';
 
 export const emptyDoc = (title?: string): Doc => ({ version: 1, id: randomId(), meta: emptyMeta(title), nodes: [], edges: [] });
 
-function initialDoc(): Doc {
-  const id = currentBoardId();
-  const doc = (id && loadBoard(id)) || listBoards().map((b) => loadBoard(b.id)).find(Boolean);
-  if (doc) return doc;
+function sampleDoc(): Doc {
   try {
     return fromYaml(SAMPLE_YAML, emptyDoc());
   } catch {
     return emptyDoc();
   }
+}
+
+/** Each board has its own address: `#/b/<id>`. */
+const boardInUrl = (): string | null => /^#\/b\/([\w-]+)/.exec(location.hash)?.[1] ?? null;
+function showInUrl(id: string): void {
+  if (boardInUrl() !== id) history.replaceState(null, '', `${location.pathname}${location.search}#/b/${id}`);
+  localStorage.setItem(CURRENT, id);
 }
 
 interface State {
@@ -47,6 +44,11 @@ interface State {
   view: View;
   editing: string | null;
   panel: Panel;
+  /** False until the first board has been loaded from storage. */
+  ready: boolean;
+  /** Where boards are kept: a folder on disk (server) or this browser (local). */
+  mode: 'server' | 'local';
+  saving: 'saved' | 'saving' | 'error';
 
   /** Push the current doc onto the undo stack (call before a drag or a burst of edits). */
   checkpoint(): void;
@@ -69,17 +71,25 @@ interface State {
   deleteBoard(id: string): void;
 }
 
+let backend: Backend | null = null;
+/** The doc as last read from or written to storage; equal to the current doc means nothing to save. */
+let stored: Doc | null = null;
+let timer: number | undefined;
+
 export const useStore = create<State>((set, get) => ({
-  doc: initialDoc(),
+  doc: emptyDoc(),
   past: [],
   future: [],
-  boards: listBoards(),
+  boards: [],
   selection: [],
   tool: 'select',
   view: { x: 0, y: 0, k: 1 },
   editing: null,
   // `?panel=export` etc. opens a panel on load (handy for deep links).
   panel: (new URLSearchParams(location.search).get('panel') as Panel) || null,
+  ready: false,
+  mode: 'local',
+  saving: 'saved',
 
   checkpoint: () => set((s) => ({ past: [...s.past.slice(-HISTORY), s.doc], future: [] })),
   setDoc: (doc, record = true) => {
@@ -124,41 +134,149 @@ export const useStore = create<State>((set, get) => ({
     const k = Math.min(1.25, (width - 120) / Math.max(1, box.w), (height - 120) / Math.max(1, box.h));
     set({ view: { k, x: (width - box.w * k) / 2 - box.x * k, y: (height - box.h * k) / 2 - box.y * k } });
   },
-  openBoard: (id) => {
-    const doc = loadBoard(id);
-    if (!doc) return;
-    saveBoard(get().doc);
-    set({ doc, past: [], future: [], selection: [], editing: null, boards: saveBoard(doc) });
-    requestAnimationFrame(get().fit);
-  },
-  newBoard: (doc = emptyDoc()) => {
-    saveBoard(get().doc);
-    set({ doc, past: [], future: [], selection: [], editing: null, boards: saveBoard(doc) });
-    requestAnimationFrame(get().fit);
-  },
-  deleteBoard: (id) => {
-    const boards = removeBoard(id);
-    if (id !== get().doc.id) return set({ boards });
-    const next = boards.map((b) => loadBoard(b.id)).find(Boolean) ?? emptyDoc();
-    set({ doc: next, past: [], future: [], selection: [], editing: null, boards: saveBoard(next) });
-    requestAnimationFrame(get().fit);
-  },
+  openBoard: (id) => void run(async (b) => {
+    if (id === get().doc.id) return;
+    await flush();
+    const doc = await b.load(id);
+    if (doc) show(doc);
+  }),
+  newBoard: (doc = emptyDoc()) => void run(async (b) => {
+    await flush();
+    // A file opened from elsewhere may carry its pictures inline; give them a home in the board's folder.
+    const next = await externalize(doc, b);
+    show(next);
+    await persist(next);
+  }),
+  deleteBoard: (id) => void run(async (b) => {
+    if (id === get().doc.id) clearTimeout(timer);
+    await b.remove(id);
+    const boards = await b.list();
+    set({ boards });
+    if (id !== get().doc.id) return;
+    let next: Doc | null = null;
+    for (const info of boards) if ((next = await b.load(info.id))) break;
+    if (next) return show(next);
+    next = emptyDoc();
+    show(next);
+    await persist(next);
+  }),
 }));
 
-// Autosave.
-let timer: number | undefined;
-let warned = false;
-useStore.subscribe((s, prev) => {
-  if (s.doc === prev.doc) return;
+/** Run a storage action; a failure surfaces as the "save failed" state instead of an unhandled rejection. */
+async function run(fn: (b: Backend) => Promise<void>): Promise<void> {
+  if (!backend) return;
+  try {
+    await fn(backend);
+  } catch (e) {
+    console.error(e);
+    useStore.setState({ saving: 'error' });
+  }
+}
+
+/** Put a freshly loaded (or created) board on screen. */
+function show(doc: Doc): void {
+  stored = doc;
+  useStore.setState({ doc, past: [], future: [], selection: [], editing: null });
+  showInUrl(doc.id);
+  requestAnimationFrame(useStore.getState().fit);
+}
+
+async function persist(doc: Doc): Promise<void> {
+  if (!backend) return;
+  useStore.setState({ saving: 'saving' });
+  try {
+    await backend.save(doc);
+    stored = doc;
+    const info: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now() };
+    useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], saving: s.doc === doc ? 'saved' : 'saving' }));
+  } catch (e) {
+    console.error(e);
+    useStore.setState({ saving: 'error' });
+  }
+}
+
+/** Write any pending change now (before switching boards or leaving the page). */
+async function flush(): Promise<void> {
   clearTimeout(timer);
-  timer = window.setTimeout(() => {
-    useStore.setState({ boards: saveBoard(useStore.getState().doc) });
-    if (saveFailed && !warned) {
-      warned = true;
-      alert('ブラウザの保存容量を超えたため、このボードは自動保存されていません。画像を減らすか小さくするか、「保存」でファイルに書き出してください。');
+  const { doc, ready } = useStore.getState();
+  if (ready && doc !== stored) await persist(doc);
+}
+
+// Autosave shortly after every change.
+useStore.subscribe((s, prev) => {
+  if (!s.ready || s.doc === prev.doc || s.doc === stored) return;
+  clearTimeout(timer);
+  useStore.setState({ saving: 'saving' });
+  timer = window.setTimeout(() => void persist(useStore.getState().doc), 500);
+});
+
+/** Store a picture for the current board; returns the `src` an image node should keep. */
+export async function storeImage(dataUrl: string): Promise<string> {
+  if (!backend || backend.mode === 'local') return dataUrl;
+  // The board's folder must exist before a picture can go into it.
+  if (!useStore.getState().boards.some((b) => b.id === useStore.getState().doc.id)) await flush();
+  return backend.putAsset(useStore.getState().doc.id, dataUrl);
+}
+
+/** First run against the on-disk store: carry over the boards this browser was keeping. */
+async function migrate(b: Backend): Promise<void> {
+  if (b.mode !== 'server' || localStorage.getItem('keito:migrated')) return;
+  const have = new Set((await b.list()).map((x) => x.id));
+  for (const doc of localBoards()) {
+    if (!have.has(doc.id)) await b.save(await externalize(doc, b));
+  }
+  // The browser copies are left in place as a backup.
+  localStorage.setItem('keito:migrated', new Date().toISOString());
+}
+
+/** Connect to storage and load the board named in the URL (or the last one used). */
+export async function boot(): Promise<void> {
+  try {
+    backend = await connect();
+    await migrate(backend);
+    let boards = await backend.list();
+    const wanted = boardInUrl() ?? localStorage.getItem(CURRENT);
+    let doc = wanted ? await backend.load(wanted) : null;
+    for (const info of boards) {
+      if (doc) break;
+      doc = await backend.load(info.id);
     }
-    if (!saveFailed) warned = false;
-  }, 400);
+    if (!doc) {
+      doc = sampleDoc();
+      await backend.save(doc);
+      boards = await backend.list();
+    }
+    useStore.setState({ boards, mode: backend.mode, ready: true });
+    show(doc);
+  } catch (e) {
+    console.error(e);
+    useStore.setState({ ready: true, saving: 'error' });
+  }
+}
+
+// Following a link or the back button to another board.
+window.addEventListener('hashchange', () => {
+  const id = boardInUrl();
+  if (id && useStore.getState().ready) useStore.getState().openBoard(id);
+});
+
+// Coming back to the tab: pick up what another tab (or an edit to the file) saved meanwhile.
+window.addEventListener('focus', () => void run(async (b) => {
+  const s = useStore.getState();
+  if (!s.ready || s.editing || s.doc !== stored) return;
+  const fresh = await b.load(s.doc.id);
+  if (fresh && useStore.getState().doc === s.doc && JSON.stringify(fresh) !== JSON.stringify(s.doc)) {
+    stored = fresh;
+    useStore.setState({ doc: fresh, selection: [] });
+  }
+}));
+
+window.addEventListener('pagehide', () => {
+  const { doc, ready } = useStore.getState();
+  // Last-moment save: keepalive lets the request outlive the page.
+  if (ready && doc !== stored && backend?.mode === 'server') {
+    void fetch(`/api/boards/${doc.id}`, { method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(doc) });
+  }
 });
 
 let clipboard: { nodes: Node[]; edges: Edge[] } | null = null;
@@ -228,12 +346,3 @@ export function align(mode: 'left' | 'top' | 'hcenter' | 'vcenter' | 'hspace' | 
   }
   s.mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (pos.has(n.id) ? { ...n, ...pos.get(n.id)! } : n)) }));
 }
-
-// Another tab saved this board: follow it, so two open tabs never overwrite each other with stale copies.
-window.addEventListener('storage', (e) => {
-  const { doc, editing } = useStore.getState();
-  if (e.key !== `keito:board:${doc.id}` || !e.newValue || editing) return;
-  if (e.newValue === JSON.stringify(doc)) return;
-  const next = loadBoard(doc.id);
-  if (next) useStore.setState({ doc: next, selection: [], boards: listBoards() });
-});

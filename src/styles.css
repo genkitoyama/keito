@@ -605,3 +605,19 @@ textarea.code {
 .preview.checker {
   background: repeating-conic-gradient(#e2e8f0 0% 25%, #f8fafc 0% 50%) 0 0 / 20px 20px;
 }
+
+.loading {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--sub);
+}
+.save-state {
+  font-size: 11px;
+  color: var(--sub);
+  margin-left: 4px;
+}
+.save-state.error {
+  color: var(--danger);
+  font-weight: 600;
+}

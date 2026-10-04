@@ -21,7 +21,7 @@ import {
 import { type CreateKind, allIds, claimPort, makeEdge, makeImage, makeNode } from '../model/presets';
 import { SEQUENCE_SAMPLE } from '../model/sequence';
 import { COLOR_KEYS, PALETTE, STICKY, STRONG } from '../model/signals';
-import { copySelection, pasteClipboard, useStore } from '../model/store';
+import { copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
 import { wrapText } from '../model/text';
 import { type Doc, type EdgeEnd, type FillStyle, type Node, type Pt, type Rect, type ShapeKind, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
@@ -97,6 +97,8 @@ export async function insertImages(files: File[], at?: Pt): Promise<void> {
   for (const file of files.filter(isImageFile)) {
     try {
       const img = await readImageFile(file);
+      // On disk the picture goes into the board's folder; the node only keeps a reference.
+      img.src = await storeImage(img.src);
       const s = st();
       const n = makeImage(allIds(s.doc), img, x, p.y);
       x += n.w + 20;
