@@ -10,6 +10,32 @@
   font-family: -apple-system, 'Hiragino Sans', 'Noto Sans JP', 'Yu Gothic UI', sans-serif;
   font-size: 13px;
   color: var(--ink);
+  /* Toolbar sizing: --q is one quick-bar button, --tb the left toolbar width, --ico its icons. */
+  --q: 30px;
+  --tb: 48px;
+  --ico: 20px;
+}
+/* Toolbars grow with the window so they stay easy to hit on large displays. */
+@media (min-width: 1800px) {
+  :root {
+    --q: 36px;
+    --tb: 58px;
+    --ico: 24px;
+  }
+}
+@media (min-width: 2400px) {
+  :root {
+    --q: 44px;
+    --tb: 70px;
+    --ico: 30px;
+  }
+}
+@media (min-width: 3000px) {
+  :root {
+    --q: 52px;
+    --tb: 82px;
+    --ico: 36px;
+  }
 }
 * {
   box-sizing: border-box;
@@ -122,8 +148,8 @@ textarea:focus {
 }
 
 .toolbar {
-  width: 48px;
-  padding: 6px;
+  width: var(--tb);
+  padding: calc(var(--tb) / 8);
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
@@ -137,7 +163,11 @@ textarea:focus {
   flex-direction: column;
   align-items: center;
   gap: 1px;
-  font-size: 9px;
+  font-size: calc(var(--ico) * 0.45);
+}
+.toolbar svg {
+  width: var(--ico);
+  height: var(--ico);
 }
 .toolbar button.on {
   border-color: var(--accent);
@@ -151,7 +181,7 @@ textarea:focus {
 
 .library {
   position: absolute;
-  left: 54px;
+  left: calc(var(--tb) + 6px);
   top: 8px;
   bottom: 8px;
   width: 230px;
@@ -253,9 +283,9 @@ textarea:focus {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 4px;
+  padding: calc(var(--q) / 7);
   background: #27323f;
-  border-radius: 9px;
+  border-radius: calc(var(--q) / 3);
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.25);
   z-index: 4;
   white-space: nowrap;
@@ -264,11 +294,11 @@ textarea:focus {
   border: 0;
   background: transparent;
   color: #e2e8f0;
-  width: 28px;
-  height: 28px;
+  width: var(--q);
+  height: var(--q);
   padding: 0;
-  border-radius: 6px;
-  font-size: 14px;
+  border-radius: calc(var(--q) / 5);
+  font-size: calc(var(--q) / 2);
   display: grid;
   place-items: center;
 }
@@ -278,17 +308,17 @@ textarea:focus {
   color: #fff;
 }
 .quickbar button.dot {
-  width: 22px;
+  width: calc(var(--q) * 0.8);
 }
 .quickbar button.dot span {
-  width: 14px;
-  height: 14px;
+  width: calc(var(--q) / 2);
+  height: calc(var(--q) / 2);
   border-radius: 50%;
   border: 1.5px solid;
 }
 .quickbar i {
   width: 1px;
-  height: 18px;
+  height: calc(var(--q) * 0.6);
   background: #46566a;
   margin: 0 3px;
 }
