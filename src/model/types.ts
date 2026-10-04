@@ -92,6 +92,8 @@ export interface Edge {
   note: string;
   /** Dashed line on the board (e.g. optional / future connections). */
   dash?: boolean;
+  /** Where the label sits along the line, 0–1 from the start (default: the middle). */
+  labelAt?: number;
   /** Hand-placed bend points between the two ends; absent = routed automatically. */
   route?: Pt[];
   /** Draw as a pair of labelled tags instead of a line. Unset: power cables follow the board setting. */

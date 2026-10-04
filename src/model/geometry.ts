@@ -82,7 +82,8 @@ const stub = (a: Anchor): Pt => {
 };
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
-function simplify(pts: Pt[]): Pt[] {
+/** Drop repeated points and bends that lie on a straight run. */
+export function simplify(pts: Pt[]): Pt[] {
   const out: Pt[] = [];
   for (const p of pts) {
     const a = out[out.length - 2];
@@ -210,10 +211,10 @@ export function pathD(pts: Pt[], radius = 6): string {
   return `${d} L${last.x},${last.y}`;
 }
 
-/** Point halfway along the polyline — where the label sits. */
-export function labelPoint(pts: Pt[]): Pt {
+/** Point a fraction `at` of the way along the polyline — where the label sits (default: halfway). */
+export function labelPoint(pts: Pt[], at = 0.5): Pt {
   const lens = pts.slice(1).map((p, i) => Math.hypot(p.x - pts[i].x, p.y - pts[i].y));
-  let rest = lens.reduce((a, b) => a + b, 0) / 2;
+  let rest = lens.reduce((a, b) => a + b, 0) * at;
   for (let i = 0; i < lens.length; i++) {
     if (rest <= lens[i] && lens[i] > 0) {
       const t = rest / lens[i];
@@ -317,4 +318,27 @@ export function crossings(doc: Doc): Map<string, Map<number, number[]>> {
   }
   hopCache.set(doc, out);
   return out;
+}
+
+/** How far along a polyline (0–1 of its length) the point closest to `p` lies. */
+export function nearestT(pts: Pt[], p: Pt): number {
+  const lens = pts.slice(1).map((q, i) => Math.hypot(q.x - pts[i].x, q.y - pts[i].y));
+  const total = lens.reduce((a, b) => a + b, 0);
+  if (!total) return 0.5;
+  let best = Infinity;
+  let at = 0;
+  let acc = 0;
+  for (let i = 0; i < lens.length; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const l = lens[i];
+    const u = l ? Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / (l * l))) : 0;
+    const d = Math.hypot(p.x - (a.x + (b.x - a.x) * u), p.y - (a.y + (b.y - a.y) * u));
+    if (d < best) {
+      best = d;
+      at = acc + l * u;
+    }
+    acc += l;
+  }
+  return at / total;
 }

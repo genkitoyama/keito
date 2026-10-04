@@ -408,9 +408,10 @@ textarea:focus {
   white-space: nowrap;
   pointer-events: none;
   opacity: 0;
+  transition: opacity 0.12s;
   z-index: 40;
 }
-[data-tip]:hover::after {
+[data-tip][data-tip-on]::after {
   opacity: 1;
 }
 .tips-down [data-tip]::after,

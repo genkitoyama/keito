@@ -8,6 +8,7 @@ import {
   intersects,
   isTagged,
   labelPoint,
+  nearestT,
   nodeAt,
   nodeRect,
   pathD,
@@ -15,6 +16,7 @@ import {
   portPos,
   routeEdges,
   sidePoint,
+  simplify,
   snap,
 } from '../model/geometry';
 import { type CreateKind, allIds, claimPort, makeEdge, makeImage, makeNode } from '../model/presets';
@@ -24,7 +26,7 @@ import { copySelection, pasteClipboard, storeImage, useStore } from '../model/st
 import { wrapText } from '../model/text';
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
-import { EdgeView, INK, NodeView, SCREEN, TEXT, edgeTags, textSize, textWeight, textWidth } from './render';
+import { EdgeView, INK, NodeView, SCREEN, TEXT, edgeLabelBox, edgeTags, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
@@ -33,6 +35,7 @@ type Drag =
   | { kind: 'move'; start: Pt; orig: Map<string, Pt>; routes: Map<string, Pt[]>; lead: string; moved: boolean }
   | { kind: 'segment'; id: string; seg: number; horizontal: boolean; start: Pt; route: Pt[]; moved: boolean }
   | { kind: 'reconnect'; id: string; end: 'from' | 'to'; other: Pt }
+  | { kind: 'label'; id: string; start: Pt; moved: boolean }
   | { kind: 'marquee'; start: Pt; base: string[] }
   | { kind: 'resize'; id: string; corner: Corner; start: Pt; orig: Rect; moved: boolean; lock?: number }
   | { kind: 'connect'; from: EdgeEnd; at: Pt; side?: Dir; sx: number; sy: number };
@@ -343,6 +346,19 @@ export function Canvas() {
     s.setEditing(id);
   };
 
+  const onLabelDown = (e: RPointerEvent, id: string) => {
+    if (e.button !== 0 || tool !== 'select' || space) return;
+    e.stopPropagation();
+    const s = st();
+    if (doubleClick(id)) {
+      s.select([id]);
+      s.setEditing(id);
+      return;
+    }
+    s.select(e.shiftKey ? [...s.selection.filter((x) => x !== id), id] : [id]);
+    begin(e, { kind: 'label', id, start: world(e), moved: false });
+  };
+
   const onSegmentDown = (e: RPointerEvent, id: string, seg: number, horizontal: boolean, route: Pt[]) => {
     if (e.button !== 0) return;
     e.stopPropagation();
@@ -422,6 +438,19 @@ export function Canvas() {
       setGhost({ kind: 'connect', a: d.other, b: p });
       return;
     }
+    if (d.kind === 'label') {
+      if (!d.moved) {
+        if (Math.hypot(p.x - d.start.x, p.y - d.start.y) * s.view.k < 3) return;
+        d.moved = true;
+        s.checkpoint();
+      }
+      const pts = routeEdges(s.doc).get(d.id);
+      if (!pts) return;
+      // The label slides along its line; near the middle it settles back on the default spot.
+      const t = Math.min(0.96, Math.max(0.04, nearestT(pts, p)));
+      s.updateEdge(d.id, { labelAt: Math.abs(t - 0.5) < 0.02 ? undefined : Math.round(t * 1000) / 1000 }, false);
+      return;
+    }
     if (d.kind === 'segment') {
       const delta = d.horizontal ? p.y - d.start.y : p.x - d.start.x;
       if (!d.moved) {
@@ -429,11 +458,15 @@ export function Canvas() {
         d.moved = true;
         s.checkpoint();
       }
-      // Slide the segment sideways: both of its bend points move together.
-      const route = d.route.map((q, i) => {
-        if (i !== d.seg && i !== d.seg + 1) return q;
-        return d.horizontal ? { x: q.x, y: e.altKey ? q.y + delta : snap(q.y + delta) } : { x: e.altKey ? q.x + delta : snap(q.x + delta), y: q.y };
-      });
+      // Slide the segment sideways: both of its bend points move together. Close to the level of
+      // the bend before or after, it clicks into line with it — that is how a detour is undone.
+      const base = d.horizontal ? d.route[d.seg].y : d.route[d.seg].x;
+      let v = e.altKey ? base + delta : snap(base + delta);
+      for (const near of [d.route[d.seg - 1], d.route[d.seg + 2]]) {
+        const c = near && (d.horizontal ? near.y : near.x);
+        if (c != null && Math.abs(base + delta - c) < 7 / s.view.k) v = c;
+      }
+      const route = d.route.map((q, i) => (i !== d.seg && i !== d.seg + 1 ? q : d.horizontal ? { x: q.x, y: v } : { x: v, y: q.y }));
       s.updateEdge(d.id, { route }, false);
       return;
     }
@@ -490,6 +523,16 @@ export function Canvas() {
     setGhost(null);
     setGuides({});
     setBusy(false);
+    if (d?.kind === 'segment') {
+      // Bends that ended up on a straight run are dropped; a route with none left is automatic again.
+      const s = st();
+      const pts = d.moved ? routeEdges(s.doc).get(d.id) : undefined;
+      if (pts) {
+        const route = simplify(pts).slice(1, -1);
+        s.updateEdge(d.id, { route: route.length >= 2 ? route : undefined }, false);
+      }
+      return;
+    }
     if (d?.kind === 'reconnect') {
       const s = st();
       const p = world(e);
@@ -602,11 +645,13 @@ export function Canvas() {
               );
             }
             const d = pathD(pts, 8);
+            const labelBox = editing === e.id ? null : edgeLabelBox(doc, e, SCREEN);
             return (
               <g key={e.id} onPointerDown={(ev) => onEdgeDown(ev, e.id)} style={{ cursor: 'pointer' }}>
                 {sel.has(e.id) && <path d={d} fill="none" stroke={ACCENT} strokeOpacity={0.28} strokeWidth={9} strokeLinecap="round" />}
                 <EdgeView doc={doc} e={e} theme={SCREEN} hideLabel={editing === e.id} />
                 <path d={d} fill="none" stroke="transparent" strokeWidth={14 / view.k} />
+                {labelBox && <rect x={labelBox.x} y={labelBox.y} width={labelBox.w} height={labelBox.h} fill="transparent" style={{ cursor: 'grab' }} onPointerDown={(ev) => onLabelDown(ev, e.id)} />}
               </g>
             );
           })}
@@ -698,7 +743,7 @@ export function Canvas() {
 }
 
 /**
- * Handles on a selected cable: a grip on every segment that can slide sideways,
+ * Handles on a selected cable: a grip on every segment, to slide it sideways,
  * and a knob on each end to plug it into a different port.
  */
 function EdgeHandles({ pts, k, manual, onSegment, onEnd }: {
@@ -711,25 +756,41 @@ function EdgeHandles({ pts, k, manual, onSegment, onEnd }: {
   if (pts.length < 2) return null;
   const a = pts[0];
   const b = pts[pts.length - 1];
-  const grips: { at: Pt; seg: number; horizontal: boolean; route: Pt[] }[] = [];
+  const grips: { key: number; at: Pt; seg: number; horizontal: boolean; route: Pt[] }[] = [];
   const inner = pts.slice(1, -1);
-  if (inner.length >= 2) {
-    for (let i = 0; i + 1 < inner.length; i++) {
-      const p = inner[i];
-      const q = inner[i + 1];
-      const horizontal = Math.abs(p.y - q.y) < 0.5;
-      if (Math.hypot(q.x - p.x, q.y - p.y) < (manual ? 1 : 16)) continue;
-      grips.push({ at: { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }, seg: i, horizontal, route: inner });
+  const STUB = 18;
+  const toward = (p: Pt, q: Pt, d: number): Pt => {
+    const l = Math.hypot(q.x - p.x, q.y - p.y) || 1;
+    return { x: p.x + ((q.x - p.x) / l) * d, y: p.y + ((q.y - p.y) / l) * d };
+  };
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const p = pts[i];
+    const q = pts[i + 1];
+    const horizontal = Math.abs(p.y - q.y) < 0.5;
+    if (!horizontal && Math.abs(p.x - q.x) >= 0.5) continue;
+    const first = i === 0;
+    const last = i === pts.length - 2;
+    const length = Math.hypot(q.x - p.x, q.y - p.y);
+    // A segment that hangs off a port needs room for the short stub that keeps it plugged in.
+    if (length < (first || last ? 60 : manual ? 1 : 16)) continue;
+    let route = inner;
+    let seg = i - 1;
+    if (first && last) {
+      // Straight cable: a pair of bends near each end, to pull the middle out into a detour.
+      const s = toward(p, q, STUB);
+      const t = toward(q, p, STUB);
+      route = [s, { ...s }, { ...t }, t];
+      seg = 1;
+    } else if (first) {
+      const s = toward(p, q, STUB);
+      route = [s, { ...s }, ...inner];
+      seg = 1;
+    } else if (last) {
+      const t = toward(q, p, STUB);
+      route = [...inner, { ...t }, t];
+      seg = inner.length - 1;
     }
-  } else if (inner.length === 0 && Math.hypot(b.x - a.x, b.y - a.y) > 60) {
-    // A straight cable has nothing to slide yet: give it a pair of bends near each end to pull out into a detour.
-    const horizontal = Math.abs(a.y - b.y) < 0.5;
-    if (horizontal || Math.abs(a.x - b.x) < 0.5) {
-      const s = horizontal ? Math.sign(b.x - a.x) * 18 : Math.sign(b.y - a.y) * 18;
-      const p = horizontal ? { x: a.x + s, y: a.y } : { x: a.x, y: a.y + s };
-      const q = horizontal ? { x: b.x - s, y: b.y } : { x: b.x, y: b.y - s };
-      grips.push({ at: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, seg: 1, horizontal, route: [p, { ...p }, { ...q }, q] });
-    }
+    grips.push({ key: i, at: { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 }, seg, horizontal, route });
   }
   const long = 16 / k;
   const short = 6 / k;
@@ -737,7 +798,7 @@ function EdgeHandles({ pts, k, manual, onSegment, onEnd }: {
     <g>
       {grips.map((g) => (
         <rect
-          key={g.seg}
+          key={g.key}
           x={g.at.x - (g.horizontal ? long : short) / 2}
           y={g.at.y - (g.horizontal ? short : long) / 2}
           width={g.horizontal ? long : short}
@@ -845,7 +906,7 @@ function TextEditor({ id }: { id: string }) {
   const outline = { boxShadow: `0 0 0 1.5px ${ACCENT}`, borderRadius: 4 };
   let style: CSSProperties;
   if (!node) {
-    const at = labelPoint(routeEdges(doc).get(id) ?? [{ x: 0, y: 0 }]);
+    const at = labelPoint(routeEdges(doc).get(id) ?? [{ x: 0, y: 0 }], edge?.labelAt);
     style = { left: view.x + at.x * k, top: view.y + at.y * k, transform: 'translate(-50%, -50%)', minWidth: 48 * k, fontSize: 12 * k, background: '#fff', padding: `${2 * k}px ${6 * k}px`, ...outline };
   } else if (node.type === 'device') {
     style = { left: view.x + node.x * k, top: view.y + node.y * k, width: node.w * k, height: DEV.head * k, fontSize: 13 * k, fontWeight: 700, background: '#e8edf3', borderRadius: 6 * k };

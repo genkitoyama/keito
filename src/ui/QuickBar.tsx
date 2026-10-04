@@ -50,7 +50,7 @@ export function QuickBar() {
   if (box) anchor = { x: box.x + box.w / 2, top: box.y, bottom: box.y + box.h };
   else if (edge) {
     const tag = isTagged(doc, edge) ? edgeTags(doc, edge, SCREEN)[0] : undefined;
-    const p = tag ? { x: tag.x + tag.w / 2, y: tag.y + tag.h / 2 } : labelPoint(routeEdges(doc).get(edge.id) ?? [{ x: 0, y: 0 }]);
+    const p = tag ? { x: tag.x + tag.w / 2, y: tag.y + tag.h / 2 } : labelPoint(routeEdges(doc).get(edge.id) ?? [{ x: 0, y: 0 }], edge.labelAt);
     anchor = { x: p.x, top: p.y - 14, bottom: p.y + 14 };
   }
   // Keep the bar on screen: above the selection, else below it, and always inside
@@ -177,9 +177,9 @@ export function QuickBar() {
         </>
       )}
       {edge && edge.signal !== 'flow' && (
-        <Btn className="labeled" tip={tagged ? '線で結んで表示する' : '線を引かず、両端のタグで示す'} on={tagged} onClick={() => st().updateEdge(edge.id, { tag: !tagged, route: undefined })}>
-          {ICON.tag}
-          <span>タグ表示</span>
+        <Btn className="labeled" tip={tagged ? '線を引いて表示する' : '線を引かず、両端に接続先だけ表示する'} on={tagged} onClick={() => st().updateEdge(edge.id, { tag: !tagged, route: undefined })}>
+          {ICON.omit}
+          <span>線を省略</span>
         </Btn>
       )}
       {edge?.route && !tagged && (

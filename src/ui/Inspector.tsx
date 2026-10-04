@@ -64,7 +64,7 @@ function MetaPanel() {
       <Field label="会社" value={meta.company} onChange={set('company')} />
       <label className="check">
         <input type="checkbox" checked={powerTags} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, powerTags: e.target.checked }))} />
-        電源ケーブルは線を引かずタグで表示
+        電源ケーブルは線を省略（両端に接続先だけ表示）
       </label>
       <p className="hint">
         これらは CAD 風エクスポートの表題欄に入ります。
@@ -275,7 +275,7 @@ function EdgePanel({ e }: { e: Edge }) {
       {e.signal !== 'flow' && (
         <label className="check">
           <input type="checkbox" checked={tagged} onChange={(ev) => patch({ tag: ev.target.checked, route: undefined }, true)} />
-          線を引かず、両端のタグで表示
+          線を省略（両端に接続先だけ表示）
         </label>
       )}
       {e.route && <button onClick={() => patch({ route: undefined }, true)}>経路を自動に戻す</button>}

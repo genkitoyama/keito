@@ -34,7 +34,8 @@ cables:
     type: hdmi             # hdmi sdi dp lan usb audio power fiber dmx serial wireless other
     length: 10             # m、任意
     label: メイン映像      # 任意
-    # 電源(type: power)は線を引かず両端のタグで表示される。tag: true/false でケーブルごとに切替、
+    labelAt: 0.3           # 任意。ラベルの位置（線の始点 0 〜 終点 1、既定は中央）
+    # 電源(type: power)は線を省略し、両端に接続先だけ表示する。tag: true/false でケーブルごとに切替、
     # 全体は先頭の powerTags: false で線表示に。to をポートなしの機材IDにすると空きポートを自動で使う
 shapes:                    # フローチャート・付箋
   - id: s1
@@ -116,6 +117,7 @@ export function toYaml(doc: Doc): string {
       if (e.arrow !== 'none') o.arrow = e.arrow;
       if (e.dash) o.dash = true;
       if (e.tag != null) o.tag = e.tag;
+      if (e.labelAt != null) o.labelAt = e.labelAt;
       if (e.route?.length) o.route = e.route.map((p) => [r(p.x), r(p.y)]);
       return o;
     });
@@ -144,6 +146,7 @@ export function toYaml(doc: Doc): string {
       put(o, 'label', e.label);
       if (e.arrow !== 'end') o.arrow = e.arrow;
       if (e.dash) o.dash = true;
+      if (e.labelAt != null) o.labelAt = e.labelAt;
       return o;
     });
   }
@@ -320,6 +323,7 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     if (v.arrow === 'end' || v.arrow === 'both') e.arrow = v.arrow;
     if (v.dash === true) e.dash = true;
     if (typeof v.tag === 'boolean') e.tag = v.tag;
+    if (typeof v.labelAt === 'number') e.labelAt = Math.min(0.96, Math.max(0.04, v.labelAt));
     // Hand-placed bends only make sense while the layout they were drawn for is kept.
     const bends = relayout ? [] : arr(v.route).map((p) => nums(p, 2)).filter((p): p is number[] => !!p);
     if (bends.length >= 2) e.route = bends.map(([x, y]) => ({ x, y }));
@@ -332,6 +336,7 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     e.label = str(v.label);
     if (v.arrow === 'none' || v.arrow === 'both') e.arrow = v.arrow;
     if (v.dash === true) e.dash = true;
+    if (typeof v.labelAt === 'number') e.labelAt = Math.min(0.96, Math.max(0.04, v.labelAt));
     edges.push(e);
   });
 

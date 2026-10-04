@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { boot } from './model/store';
 import './styles.css';
+import './ui/tips';
 
 void boot();
 

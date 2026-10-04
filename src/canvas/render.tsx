@@ -354,6 +354,17 @@ export function edgeLabel(doc: Doc, e: Edge): string {
   return [id, e.label, e.length != null ? `${e.length}m` : ''].filter(Boolean).join(' · ');
 }
 
+/** Box the label of a line occupies on the board — what you grab to slide it along the line. */
+export function edgeLabelBox(doc: Doc, e: Edge, theme: Theme): Rect | null {
+  const pts = routeEdges(doc).get(e.id);
+  const label = edgeLabel(doc, e);
+  if (!pts || pts.length < 2 || !label || isTagged(doc, e)) return null;
+  const size = e.signal === 'flow' ? 12 : 10.5;
+  const w = measure(label, `${size}px ${theme.font}`) + 10;
+  const at = labelPoint(pts, e.labelAt);
+  return { x: at.x - w / 2, y: at.y - size * 0.8, w, h: size * 1.6 };
+}
+
 /** Nearest point along the route that differs from pts[i] — hand-placed bends can coincide. */
 function distinct(pts: Pt[], i: number, step: 1 | -1): Pt {
   for (let j = i + step; j >= 0 && j < pts.length; j += step) {
@@ -447,7 +458,7 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
   // On drawings the dash pattern already encodes the cable type, so only flows take the user's dash.
   const dash = e.dash && (!theme.mono || flow) ? '7 6' : signal.dash;
   const label = hideLabel ? '' : edgeLabel(doc, e);
-  const at = labelPoint(pts);
+  const at = labelPoint(pts, e.labelAt);
   const size = flow ? 12 : 10.5;
   const lwText = label ? measure(label, `${size}px ${theme.font}`) + 10 : 0;
   const n = pts.length;
