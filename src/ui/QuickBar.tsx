@@ -4,15 +4,23 @@ import { SCREEN, edgeTags } from '../canvas/render';
 import { docBounds, isTagged, labelPoint, routeEdges } from '../model/geometry';
 import { COLOR_KEYS, PALETTE, STICKY, STRONG } from '../model/signals';
 import { copySelection, pasteClipboard, useStore } from '../model/store';
+import { wrapText } from '../model/text';
 import { type ColorKey, type Node, hasText } from '../model/types';
 import { COLOR_NAME, FILLS, FillPreview, ICON, SHAPES, shapeIcon } from './icons';
 
 const st = useStore.getState;
+const TEXT_SIZES = [
+  { px: 14, label: '標準' },
+  { px: 20, label: '中見出し' },
+  { px: 28, label: '大見出し' },
+  { px: 40, label: 'タイトル' },
+];
 const CHECKER = 'repeating-conic-gradient(#c3ccd8 0% 25%, #fff 0% 50%) 50% / 8px 8px';
 
 /** Swatch as the colour will actually appear with the node's current fill style. */
 function swatch(n: Node, c: ColorKey): CSSProperties {
   if (n.type === 'sticky') return { background: STICKY[c].fill, borderColor: STICKY[c].stroke };
+  if (n.type === 'device' && c === 'gray') return { background: '#e8edf3', borderColor: '#334155' };
   const style = n.type === 'shape' ? (n.fill ?? 'tint') : 'tint';
   if (style === 'tint') return { background: PALETTE[c].fill, borderColor: PALETTE[c].stroke };
   if (style === 'solid') return { background: STRONG[c].fill, borderColor: STRONG[c].fill };
@@ -33,7 +41,7 @@ export function QuickBar() {
   const doc = useStore((s) => s.doc);
   const selection = useStore((s) => s.selection);
   const view = useStore((s) => s.view);
-  const [menu, setMenu] = useState<'shape' | 'color' | null>(null);
+  const [menu, setMenu] = useState<'shape' | 'color' | 'size' | null>(null);
   const ids = new Set(selection);
   const nodes = doc.nodes.filter((n) => ids.has(n.id));
   const edge = nodes.length ? undefined : doc.edges.find((e) => ids.has(e.id));
@@ -79,7 +87,16 @@ export function QuickBar() {
   };
   const editId = one ? (hasText(one) ? one.id : undefined) : edge?.id;
   const tagged = edge ? isTagged(doc, edge) : false;
-  const toggle = (m: 'shape' | 'color') => () => setMenu(menu === m ? null : m);
+  const toggle = (m: 'shape' | 'color' | 'size') => () => setMenu(menu === m ? null : m);
+  // Shapes, stickies and devices can be colour-coded; a device without a colour shows as gray.
+  const tinted = one?.type === 'shape' || one?.type === 'sticky' || one?.type === 'device' ? one : undefined;
+  const color: ColorKey = tinted ? (tinted.color ?? 'gray') : 'gray';
+  const resize = (fontSize: number) => {
+    if (one?.type !== 'text') return;
+    // The box follows the new size so the text never spills out of it.
+    const lines = wrapText(one.text, one.w, `${fontSize >= 20 ? 700 : 400} ${fontSize}px ${SCREEN.font}`).length;
+    patch({ fontSize, h: Math.ceil((lines * fontSize * 1.4 + 16) / 10) * 10 });
+  };
   return (
     <div ref={ref} className="quickbar" onPointerDown={(e) => e.stopPropagation()}>
       {one?.type === 'shape' && (
@@ -100,17 +117,34 @@ export function QuickBar() {
           )}
         </div>
       )}
-      {(one?.type === 'shape' || one?.type === 'sticky') && (
+      {tinted && (
         <div className={`qb-drop${menu === 'color' ? ' open' : ''}`}>
-          <Btn className="drop" tip={`色：${COLOR_NAME[one.color]}`} on={menu === 'color'} onClick={toggle('color')}>
-            <span className="dot" style={swatch(one, one.color)} />
+          <Btn className="drop" tip={`色：${COLOR_NAME[color]}`} on={menu === 'color'} onClick={toggle('color')}>
+            <span className="dot" style={swatch(tinted, color)} />
             {ICON.caret}
           </Btn>
           {menu === 'color' && (
             <div className="qb-menu grid">
               {COLOR_KEYS.map((c) => (
-                <button key={c} className={one.color === c ? 'on' : ''} data-tip={COLOR_NAME[c]} aria-label={COLOR_NAME[c]} onClick={() => patch({ color: c })}>
-                  <span className="dot" style={swatch(one, c)} />
+                <button key={c} className={color === c ? 'on' : ''} data-tip={COLOR_NAME[c]} aria-label={COLOR_NAME[c]} onClick={() => patch({ color: c })}>
+                  <span className="dot" style={swatch(tinted, c)} />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      {one?.type === 'text' && (
+        <div className={`qb-drop${menu === 'size' ? ' open' : ''}`}>
+          <Btn className="drop labeled" tip="文字の大きさ" on={menu === 'size'} onClick={toggle('size')}>
+            <span>{TEXT_SIZES.find((t) => t.px === (one.fontSize ?? 14))?.label ?? `${one.fontSize}px`}</span>
+            {ICON.caret}
+          </Btn>
+          {menu === 'size' && (
+            <div className="qb-menu">
+              {TEXT_SIZES.map((t) => (
+                <button key={t.px} className={(one.fontSize ?? 14) === t.px ? 'on' : ''} onClick={() => resize(t.px)}>
+                  <span style={{ fontSize: `${0.8 + t.px / 50}em`, fontWeight: t.px >= 20 ? 700 : 400 }}>{t.label}</span>
                 </button>
               ))}
             </div>
@@ -130,7 +164,7 @@ export function QuickBar() {
           </Btn>
         </>
       )}
-      {(one?.type === 'shape' || one?.type === 'sticky') && <i />}
+      {(tinted || one?.type === 'text') && <i />}
 
       {edge && !tagged && (
         <>

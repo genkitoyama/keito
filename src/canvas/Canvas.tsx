@@ -24,7 +24,7 @@ import { copySelection, pasteClipboard, storeImage, useStore } from '../model/st
 import { wrapText } from '../model/text';
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
-import { EdgeView, INK, NodeView, SCREEN, TEXT, edgeTags, textSize, textWidth } from './render';
+import { EdgeView, INK, NodeView, SCREEN, TEXT, edgeTags, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
@@ -155,7 +155,7 @@ export function spawnFrom(id: string, side: Dir): void {
 function neededHeight(n: Node, text: string): number | null {
   if (!canConnect(n)) return null;
   const size = textSize(n);
-  const lines = wrapText(text, textWidth(n), `400 ${size}px ${SCREEN.font}`).length;
+  const lines = wrapText(text, textWidth(n), `${textWeight(n)} ${size}px ${SCREEN.font}`).length;
   const shape = n.type === 'shape' ? n.shape : '';
   const need = (lines * size * TEXT.lineHeight + 22) * (shape === 'diamond' ? 1.7 : shape === 'cloud' ? 1.5 : shape === 'ellipse' ? 1.3 : 1);
   return need > n.h ? Math.ceil(need / 10) * 10 : null;
@@ -854,7 +854,7 @@ function TextEditor({ id }: { id: string }) {
   } else {
     // Same width, size and line height as the SVG text, so nothing jumps on commit.
     const tw = textWidth(node);
-    style = { left: view.x + (node.x + (node.w - tw) / 2) * k, top: view.y + node.y * k, width: tw * k, height: node.h * k, fontSize: textSize(node) * k };
+    style = { left: view.x + (node.x + (node.w - tw) / 2) * k, top: view.y + node.y * k, width: tw * k, height: node.h * k, fontSize: textSize(node) * k, fontWeight: textWeight(node) };
     if (node.type === 'shape' && node.fill === 'solid') style.color = STRONG[node.color].text;
   }
   return (

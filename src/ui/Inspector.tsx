@@ -107,6 +107,10 @@ function DevicePanel({ n }: { n: DeviceNode }) {
       <Field label="型番" value={n.model} onChange={(v) => patch({ model: v })} />
       <Field label="カテゴリ" value={n.category} onChange={(v) => patch({ category: v })} />
       <Field label="備考" value={n.note} onChange={(v) => patch({ note: v })} />
+      <label className="field">
+        <span>色分け（手配元・系統など）</span>
+        <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />
+      </label>
       <div className="grid2">
         <Field label="消費電力 (W)" type="number" value={n.watts == null ? '' : String(n.watts)} onChange={(v) => patch({ watts: num(v) })} />
         <Field label="給電容量 (W)" type="number" placeholder="UPS・タップ" value={n.capacity == null ? '' : String(n.capacity)} onChange={(v) => patch({ capacity: num(v) })} />

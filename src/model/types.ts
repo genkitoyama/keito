@@ -40,6 +40,8 @@ export interface StickyNode extends Base {
 }
 export interface TextNode extends Base {
   type: 'text';
+  /** Font size in px (default 14); 20 and up is set bold, for headings. */
+  fontSize?: number;
 }
 /** Area / location group. Devices whose centre is inside it report it as their location. */
 export interface FrameNode extends Base {
@@ -57,6 +59,8 @@ export interface DeviceNode extends Base {
   watts?: number;
   /** Power this device can supply (UPS, power strip) in watts. */
   capacity?: number;
+  /** Tint for colour-coding devices (who supplies it, which system it belongs to …). */
+  color?: ColorKey;
 }
 /** `text` is the sequence source. Size is derived from the parsed diagram. */
 export interface SequenceNode extends Base {

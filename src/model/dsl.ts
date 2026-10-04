@@ -23,6 +23,7 @@ devices:
     note: 備考             # 任意
     watts: 120             # 任意。消費電力(W)
     capacity: 900          # 任意。UPS・電源タップが給電できる容量(W)
+    color: blue            # 任意。機材の色分け（手配元・系統など）
     preset: pc             # 任意。in/out を省略したときの既定ポート
     in:  [LAN:lan, AC:power]          # 左側ポート "名前:種別"
     out: ["HDMI 1:hdmi", DP:dp]       # 右側ポート
@@ -40,6 +41,7 @@ shapes:                    # フローチャート・付箋
     shape: rect            # rect round diamond ellipse cloud(コメント用の雲) sticky text
     text: 開始
     color: blue            # white gray blue green yellow orange red purple
+    fontSize: 28           # 任意。shape: text の文字サイズ(px)。20 以上は太字の見出しになる
     fill: solid            # 任意。tint(既定・淡色) solid(ベタ塗り。red で真っ赤) outline(白地) none(透過)
     dash: true             # 任意。枠を点線に（cables / flows でも dash: true で点線）
 flows:                     # 矢印コネクタ（shapes / devices どちらも可）
@@ -95,6 +97,7 @@ export function toYaml(doc: Doc): string {
       put(o, 'note', d.note);
       put(o, 'watts', d.watts);
       put(o, 'capacity', d.capacity);
+      if (d.color && d.color !== 'gray') o.color = d.color;
       o.in = d.ports.filter((p) => p.side === 'left').map((p) => `${p.name}:${p.signal}`);
       o.out = d.ports.filter((p) => p.side === 'right').map((p) => `${p.name}:${p.signal}`);
       o.pos = [r(d.x), r(d.y)];
@@ -123,6 +126,7 @@ export function toYaml(doc: Doc): string {
     out.shapes = shapes.map((s) => {
       const o: Obj = { id: s.id, shape: s.type === 'shape' ? s.shape : s.type, text: s.text };
       if (s.type !== 'text') put(o, 'color', s.color);
+      if (s.type === 'text' && s.fontSize) o.fontSize = s.fontSize;
       if (s.type === 'shape') {
         if (s.fill && s.fill !== 'tint') o.fill = s.fill;
         if (s.dash) o.dash = true;
@@ -231,6 +235,7 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
       ports,
       watts: typeof v.watts === 'number' ? v.watts : undefined,
       capacity: typeof v.capacity === 'number' ? v.capacity : undefined,
+      color: str(v.color) in PALETTE ? (str(v.color) as ColorKey) : undefined,
     });
     if (v.area) areaHint.set(id, str(v.area));
   });
@@ -244,7 +249,7 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     const base = { id, ...place(id, v.pos), w: size[0], h: size[1], text: str(v.text) };
     const color = (str(v.color) in PALETTE ? str(v.color) : undefined) as ColorKey | undefined;
     if (kind === 'sticky') nodes.push({ ...base, type: 'sticky', color: color ?? 'yellow' });
-    else if (kind === 'text') nodes.push({ ...base, type: 'text' });
+    else if (kind === 'text') nodes.push({ ...base, type: 'text', fontSize: typeof v.fontSize === 'number' ? v.fontSize : undefined });
     else {
       const fill = ['solid', 'outline', 'none'].includes(str(v.fill)) ? (str(v.fill) as FillStyle) : undefined;
       nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined });

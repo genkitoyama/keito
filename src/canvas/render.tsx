@@ -40,7 +40,9 @@ export function textWidth(n: Node): number {
   if (n.type === 'sticky') return n.w - 24;
   return n.w;
 }
-export const textSize = (n: Node): number => (n.type === 'sticky' ? TEXT.sticky : n.type === 'text' ? TEXT.text : TEXT.shape);
+export const textSize = (n: Node): number => (n.type === 'sticky' ? TEXT.sticky : n.type === 'text' ? (n.fontSize ?? TEXT.text) : TEXT.shape);
+/** Large free text is a heading, so it is set bold. */
+export const textWeight = (n: Node): number => (n.type === 'text' && (n.fontSize ?? 0) >= 20 ? 700 : 400);
 
 interface TextProps {
   x: number;
@@ -85,14 +87,16 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
   const { w, h } = nodeSize(n);
   const { x, y } = n;
   const r = theme.mono ? 0 : 7;
-  const line = theme.mono ? '#000' : '#334155';
+  // Colour-coded devices take the tint on their header and outline; gray is the plain look.
+  const tint = !theme.mono && n.color && n.color !== 'gray' ? PALETTE[n.color] : null;
+  const line = theme.mono ? '#000' : (tint?.stroke ?? '#334155');
   const sw = theme.mono ? lw(theme, 0.35) : 1.5;
   const sub = [n.maker, n.model].filter(Boolean).join(' ');
   const head = `M${x},${y + DEV.head} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + DEV.head} Z`;
   return (
     <g>
       <rect x={x} y={y} width={w} height={h} rx={r} fill="#fff" stroke={line} strokeWidth={sw} />
-      <path d={head} fill={theme.mono ? '#fff' : '#e8edf3'} stroke={line} strokeWidth={sw} />
+      <path d={head} fill={theme.mono ? '#fff' : (tint?.fill ?? '#e8edf3')} stroke={line} strokeWidth={sw} />
       <TextBlock x={x + w / 2} y={y + (sub ? 16 : DEV.head / 2)} w={w - 12} text={n.text.split('\n')[0]} size={13} weight={700} theme={theme} />
       {sub && <TextBlock x={x + w / 2} y={y + 33} w={w - 12} text={sub} size={9.5} fill="#64748b" theme={theme} />}
       {doc && <LoadBadge doc={doc} n={n} theme={theme} />}
@@ -281,7 +285,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
         <g>
           {/* Invisible body so bare text can still be grabbed and dragged. */}
           <rect x={x} y={y} width={w} height={h} fill="none" pointerEvents="all" />
-          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={TEXT.text} theme={theme} />
+          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={textSize(n)} weight={textWeight(n)} theme={theme} />
         </g>
       );
     case 'sticky': {
@@ -452,11 +456,18 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
   // Drawings mark signal direction with an arrowhead at the receiving end.
   const cadArrow = theme.mono && signalOf(e.signal).cable;
   const head = theme.mono ? 7 : flow ? 11 : 9;
+  // At a device port the arrowhead stops at the port marker instead of hiding underneath it.
+  const tip = (i: number, step: 1 | -1, atPort: boolean): Pt => {
+    const back = atPort ? (theme.mono ? 3.4 : 6) : 0;
+    const q = distinct(pts, i, step);
+    const len = Math.hypot(q.x - pts[i].x, q.y - pts[i].y);
+    return back && len > back + head ? { x: pts[i].x + ((q.x - pts[i].x) / len) * back, y: pts[i].y + ((q.y - pts[i].y) / len) * back } : pts[i];
+  };
   return (
     <g>
       <path d={d} fill="none" stroke={stroke} strokeWidth={width} strokeDasharray={dash} strokeLinejoin="round" strokeLinecap={flow ? 'round' : undefined} />
-      {(e.arrow !== 'none' || cadArrow) && <polygon points={arrowHead(pts[n - 1], distinct(pts, n - 1, -1), head, cadArrow ? 0.3 : 0.42)} fill={stroke} />}
-      {e.arrow === 'both' && <polygon points={arrowHead(pts[0], distinct(pts, 0, 1), head)} fill={stroke} />}
+      {(e.arrow !== 'none' || cadArrow) && <polygon points={arrowHead(tip(n - 1, -1, !!e.to.port), distinct(pts, n - 1, -1), head, cadArrow ? 0.3 : 0.42)} fill={stroke} />}
+      {e.arrow === 'both' && <polygon points={arrowHead(tip(0, 1, !!e.from.port), distinct(pts, 0, 1), head)} fill={stroke} />}
       {label && (
         <g>
           <rect
