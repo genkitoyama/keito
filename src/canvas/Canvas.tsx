@@ -402,10 +402,29 @@ export function Canvas() {
           }
         }
       }
-      return best ?? { delta: free ? 0 : snap(pos) - pos };
+      return best ?? { delta: (free ? Math.round(pos) : snap(pos)) - pos };
     };
+    // A cable to a node that stays put: bring the two ports level, so the cable runs dead straight.
+    // Ports sit at odd offsets inside a device, so neither the grid nor edge alignment gets them there.
+    let level: { delta: number; guide: number } | null = null;
+    const byId = new Map(s.doc.nodes.map((n) => [n.id, n]));
+    const levelOf = (n: Node, end: EdgeEnd, at: Pt): number => {
+      const port = n.type === 'device' && end.port ? portPos({ ...n, ...at }, end.port) : null;
+      return port ? port.y : at.y + nodeRect(n).h / 2;
+    };
+    for (const edge of s.doc.edges) {
+      const fromMoves = d.orig.has(edge.from.node);
+      if (fromMoves === d.orig.has(edge.to.node) || (!edge.from.port && !edge.to.port)) continue;
+      const [mine, theirs] = fromMoves ? [edge.from, edge.to] : [edge.to, edge.from];
+      const moving = byId.get(mine.node);
+      const fixed = byId.get(theirs.node);
+      if (!moving || !fixed) continue;
+      const target = levelOf(fixed, theirs, fixed);
+      const diff = target - (levelOf(moving, mine, d.orig.get(moving.id)!) + dy);
+      if (Math.abs(diff) < tol && (!level || Math.abs(diff) < Math.abs(level.delta))) level = { delta: diff, guide: target };
+    }
     const ax = axis(o.x + dx, w, (r) => [r.x, r.x + r.w / 2, r.x + r.w]);
-    const ay = axis(o.y + dy, h, (r) => [r.y, r.y + r.h / 2, r.y + r.h]);
+    const ay = level ?? axis(o.y + dy, h, (r) => [r.y, r.y + r.h / 2, r.y + r.h]);
     setGuides({ x: ax.guide, y: ay.guide });
     return { sx: dx + ax.delta, sy: dy + ay.delta };
   };
@@ -462,10 +481,16 @@ export function Canvas() {
       // the bend before or after, it clicks into line with it — that is how a detour is undone.
       const base = d.horizontal ? d.route[d.seg].y : d.route[d.seg].x;
       let v = e.altKey ? base + delta : snap(base + delta);
+      let snapped = false;
       for (const near of [d.route[d.seg - 1], d.route[d.seg + 2]]) {
         const c = near && (d.horizontal ? near.y : near.x);
-        if (c != null && Math.abs(base + delta - c) < 7 / s.view.k) v = c;
+        if (c != null && Math.abs(base + delta - c) < 9 / s.view.k) {
+          v = c;
+          snapped = true;
+        }
       }
+      // The guide shows the moment the segment is back in line.
+      setGuides(snapped ? (d.horizontal ? { y: v } : { x: v }) : {});
       const route = d.route.map((q, i) => (i !== d.seg && i !== d.seg + 1 ? q : d.horizontal ? { x: q.x, y: v } : { x: v, y: q.y }));
       s.updateEdge(d.id, { route }, false);
       return;
@@ -490,7 +515,8 @@ export function Canvas() {
           ...doc,
           nodes: doc.nodes.map((n) => {
             const o = d.orig.get(n.id);
-            return o ? { ...n, x: Math.round(o.x + sx), y: Math.round(o.y + sy) } : n;
+            // Two decimals: exact enough to keep a snapped cable straight, without float noise in the file.
+            return o ? { ...n, x: Math.round((o.x + sx) * 100) / 100, y: Math.round((o.y + sy) * 100) / 100 } : n;
           }),
           edges: d.routes.size ? doc.edges.map((edge) => (d.routes.has(edge.id) ? { ...edge, route: d.routes.get(edge.id)!.map((q) => ({ x: q.x + sx, y: q.y + sy })) } : edge)) : doc.edges,
         }),

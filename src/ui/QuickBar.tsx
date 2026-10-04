@@ -1,9 +1,10 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { SCREEN, edgeTags } from '../canvas/render';
-import { docBounds, isTagged, labelPoint, routeEdges } from '../model/geometry';
+import { docBounds, isTagged, labelPoint, routeEdges, simplify } from '../model/geometry';
 import { COLOR_KEYS, PALETTE, STICKY, STRONG } from '../model/signals';
 import { copySelection, pasteClipboard, useStore } from '../model/store';
+import { straighten } from '../model/straighten';
 import { wrapText } from '../model/text';
 import { type ColorKey, type Node, hasText } from '../model/types';
 import { COLOR_NAME, FILLS, FillPreview, ICON, SHAPES, shapeIcon } from './icons';
@@ -87,6 +88,9 @@ export function QuickBar() {
   };
   const editId = one ? (hasText(one) ? one.id : undefined) : edge?.id;
   const tagged = edge ? isTagged(doc, edge) : false;
+  // Offer "straighten" whenever the selected line has a bend that could be taken out.
+  const bent = !!edge && !tagged && simplify(routeEdges(doc).get(edge.id) ?? []).length > 2;
+  const fix = edge && bent ? straighten(doc, edge.id) : null;
   const toggle = (m: 'shape' | 'color' | 'size') => () => setMenu(menu === m ? null : m);
   // Shapes, stickies and devices can be colour-coded; a device without a colour shows as gray.
   const tinted = one?.type === 'shape' || one?.type === 'sticky' || one?.type === 'device' ? one : undefined;
@@ -182,10 +186,16 @@ export function QuickBar() {
           <span>線を省略</span>
         </Btn>
       )}
+      {edge && fix && (
+        <Btn className="labeled" tip="曲がりをなくして直線にする（少しずれているだけなら、つながりの少ない側を動かしてそろえる）" onClick={() => st().setDoc(fix)}>
+          {ICON.straight}
+          <span>真っ直ぐに</span>
+        </Btn>
+      )}
       {edge?.route && !tagged && (
-        <Btn className="labeled" tip="手で動かした経路を自動に戻す" onClick={() => st().updateEdge(edge.id, { route: undefined })}>
+        <Btn className="labeled" tip="手で動かした曲がりを消して、自動の経路に戻す" onClick={() => st().updateEdge(edge.id, { route: undefined })}>
           {ICON.reset}
-          <span>経路を戻す</span>
+          <span>自動経路に</span>
         </Btn>
       )}
       {edge && <i />}
