@@ -4,7 +4,8 @@ import { freshId } from '../model/presets';
 import { COLOR_KEYS, PALETTE, SIGNALS, STICKY } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
-import type { Arrow, DeviceNode, DocMeta, Edge, FillStyle, Node, Port, ShapeKind } from '../model/types';
+import type { Arrow, DeviceNode, DocMeta, Edge, Node, Port, ShapeKind } from '../model/types';
+import { FILLS, FillPreview, SHAPES } from './icons';
 
 /** Text input that records one undo step per editing burst instead of per keystroke. */
 function Field({ label, value, onChange, multiline, type = 'text', placeholder }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean; type?: string; placeholder?: string }) {
@@ -151,7 +152,6 @@ function PortName({ value, onChange }: { value: string; onChange: (v: string) =>
   );
 }
 
-const SHAPE_LABEL: Record<ShapeKind, string> = { rect: '四角', round: '端子（角丸）', diamond: '判断（ひし形）', ellipse: '楕円', cloud: '雲（コメント）' };
 
 function NodePanel({ n }: { n: Node }) {
   const patch = (p: Partial<Node>, record = false) => useStore.getState().updateNode(n.id, p, record);
@@ -212,23 +212,25 @@ function NodePanel({ n }: { n: Node }) {
         <label className="field">
           <span>形</span>
           <select value={n.shape} onChange={(e) => patch({ shape: e.target.value as ShapeKind }, true)}>
-            {Object.entries(SHAPE_LABEL).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
+            {SHAPES.map((x) => (
+              <option key={x.id} value={x.id}>{x.label}</option>
             ))}
           </select>
         </label>
       )}
       {n.type === 'shape' && (
         <>
-          <label className="field">
+          <div className="field">
             <span>塗り</span>
-            <select value={n.fill ?? 'tint'} onChange={(e) => patch({ fill: e.target.value as FillStyle }, true)}>
-              <option value="tint">淡い塗り</option>
-              <option value="solid">ベタ塗り</option>
-              <option value="outline">白地に枠線</option>
-              <option value="none">塗りなし（透過）</option>
-            </select>
-          </label>
+            <div className="fills">
+              {FILLS.map((f) => (
+                <button key={f.id} className={(n.fill ?? 'tint') === f.id ? 'on' : ''} data-tip={f.label} onClick={() => patch({ fill: f.id }, true)}>
+                  <FillPreview fill={f.id} color={n.color} dash={n.dash} />
+                  <small>{f.short}</small>
+                </button>
+              ))}
+            </div>
+          </div>
           <label className="check">
             <input type="checkbox" checked={!!n.dash} onChange={(e) => patch({ dash: e.target.checked }, true)} />
             枠を点線にする

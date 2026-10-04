@@ -5,7 +5,6 @@ import {
   type Dir,
   center,
   contains,
-  docBounds,
   intersects,
   isTagged,
   labelPoint,
@@ -20,12 +19,13 @@ import {
 } from '../model/geometry';
 import { type CreateKind, allIds, claimPort, makeEdge, makeImage, makeNode } from '../model/presets';
 import { SEQUENCE_SAMPLE } from '../model/sequence';
-import { COLOR_KEYS, PALETTE, STICKY, STRONG } from '../model/signals';
+import { STRONG } from '../model/signals';
 import { copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
 import { wrapText } from '../model/text';
-import { type Doc, type EdgeEnd, type FillStyle, type Node, type Pt, type Rect, type ShapeKind, hasText } from '../model/types';
+import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
 import { EdgeView, INK, NodeView, SCREEN, TEXT, edgeTags, textSize, textWidth } from './render';
+import { QuickBar } from '../ui/QuickBar';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
 type Drag =
@@ -685,7 +685,8 @@ export function Canvas() {
         </g>
       </svg>
       {editing && <TextEditor key={editing} id={editing} />}
-      {idle && selection.length > 0 && <QuickBar />}
+      {/* Keyed by the selection so an open menu never carries over to another object. */}
+      {idle && selection.length > 0 && <QuickBar key={selection.join(',')} />}
       <div className="zoom">
         <button onClick={() => zoomBy(1 / 1.25)} title="縮小">−</button>
         <button onClick={() => st().setView({ ...view, k: 1 })} title="100%">{Math.round(view.k * 100)}%</button>
@@ -778,125 +779,6 @@ function arrowGlyph(p: Pt, side: Dir, s: number): string {
   const tip = { x: p.x + ux * s, y: p.y + uy * s };
   const wing = (k: number): string => `${p.x + ux * s * 0.1 - uy * s * 0.8 * k},${p.y + uy * s * 0.1 + ux * s * 0.8 * k}`;
   return `M${p.x - ux * s},${p.y - uy * s} L${tip.x},${tip.y} M${wing(1)} L${tip.x},${tip.y} L${wing(-1)}`;
-}
-
-const FILLS: [FillStyle, string, string][] = [
-  ['tint', '◧', '淡い塗り'],
-  ['solid', '■', 'ベタ塗り'],
-  ['outline', '□', '白地に枠線'],
-  ['none', '⬚', '塗りなし（透過）'],
-];
-
-/** Swatch as the colour will actually appear with the node's current fill style. */
-function swatch(n: Node, c: (typeof COLOR_KEYS)[number]): CSSProperties {
-  if (n.type === 'sticky') return { background: STICKY[c].fill, borderColor: STICKY[c].stroke };
-  const style = n.type === 'shape' ? (n.fill ?? 'tint') : 'tint';
-  if (style === 'tint') return { background: PALETTE[c].fill, borderColor: PALETTE[c].stroke };
-  if (style === 'solid') return { background: STRONG[c].fill, borderColor: STRONG[c].fill };
-  return { background: style === 'none' ? 'transparent' : '#fff', borderColor: STRONG[c].fill };
-}
-
-const SHAPE_ICON: Record<ShapeKind, string> = { rect: '▭', round: '⬭', diamond: '◇', ellipse: '◯', cloud: '☁' };
-
-/** Floating toolbar above the selection: the edits you reach for right after placing something. */
-function QuickBar() {
-  const doc = useStore((s) => s.doc);
-  const selection = useStore((s) => s.selection);
-  const view = useStore((s) => s.view);
-  const ids = new Set(selection);
-  const nodes = doc.nodes.filter((n) => ids.has(n.id));
-  const edge = nodes.length ? undefined : doc.edges.find((e) => ids.has(e.id));
-  const box = nodes.length ? docBounds(doc, new Set(nodes.map((n) => n.id))) : null;
-  let anchor: { x: number; top: number; bottom: number } | null = null;
-  if (box) anchor = { x: box.x + box.w / 2, top: box.y, bottom: box.y + box.h };
-  else if (edge) {
-    const tag = isTagged(doc, edge) ? edgeTags(doc, edge, SCREEN)[0] : undefined;
-    const p = tag ? { x: tag.x + tag.w / 2, y: tag.y + tag.h / 2 } : labelPoint(routeEdges(doc).get(edge.id) ?? [{ x: 0, y: 0 }]);
-    anchor = { x: p.x, top: p.y - 14, bottom: p.y + 14 };
-  }
-  // Keep the bar on screen: above the selection, else below it, and always inside
-  // the canvas — when zoomed in, the selection's edges can be far outside the view.
-  const ref = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    const host = el?.parentElement;
-    if (!el || !host || !anchor) return;
-    const clamp = (v: number, lo: number, hi: number): number => Math.max(lo, Math.min(Math.max(lo, hi), v));
-    const w = el.offsetWidth;
-    const h = el.offsetHeight;
-    let top = view.y + anchor.top * view.k - h - 14;
-    if (top < 6) top = view.y + anchor.bottom * view.k + 14;
-    el.style.left = `${clamp(view.x + anchor.x * view.k, w / 2 + 6, host.clientWidth - w / 2 - 6)}px`;
-    el.style.top = `${clamp(top, 6, host.clientHeight - h - 6)}px`;
-  });
-  if (!anchor) return null;
-  const one = nodes.length === 1 ? nodes[0] : undefined;
-  const patch = (p: Partial<Node>) => one && st().updateNode(one.id, p);
-  const editId = one ? (hasText(one) ? one.id : undefined) : edge?.id;
-  return (
-    <div ref={ref} className="quickbar" onPointerDown={(e) => e.stopPropagation()}>
-      {one?.type === 'shape' &&
-        (Object.keys(SHAPE_ICON) as ShapeKind[]).map((k) => (
-          <button key={k} className={one.shape === k ? 'on' : ''} onClick={() => patch({ shape: k })} title="形を変える">
-            {SHAPE_ICON[k]}
-          </button>
-        ))}
-      {one?.type === 'shape' && <i />}
-      {(one?.type === 'shape' || one?.type === 'sticky') &&
-        COLOR_KEYS.map((c) => (
-          <button key={c} className={`dot ${one.color === c ? 'on' : ''}`} onClick={() => patch({ color: c })} title="色">
-            <span style={swatch(one, c)} />
-          </button>
-        ))}
-      {(one?.type === 'shape' || one?.type === 'sticky') && <i />}
-      {one?.type === 'shape' &&
-        FILLS.map(([f, icon, title]) => (
-          <button key={f} className={(one.fill ?? 'tint') === f ? 'on' : ''} onClick={() => patch({ fill: f })} title={title}>
-            {icon}
-          </button>
-        ))}
-      {one?.type === 'shape' && (
-        <button className={one.dash ? 'on' : ''} onClick={() => patch({ dash: !one.dash })} title="枠を点線に">
-          ┄
-        </button>
-      )}
-      {one?.type === 'shape' && <i />}
-      {edge?.route && (
-        <button onClick={() => st().updateEdge(edge.id, { route: undefined })} title="経路を自動に戻す">
-          ↺
-        </button>
-      )}
-      {edge && edge.signal !== 'flow' && (
-        <button className={isTagged(doc, edge) ? 'on' : ''} onClick={() => st().updateEdge(edge.id, { tag: !isTagged(doc, edge), route: undefined })} title="線を引かず、両端のタグで表示">
-          ⚑
-        </button>
-      )}
-      {edge && (
-        <button className={edge.dash ? 'on' : ''} onClick={() => st().updateEdge(edge.id, { dash: !edge.dash })} title="点線にする">
-          ┄
-        </button>
-      )}
-      {editId && (
-        <button onClick={() => st().setEditing(editId)} title="文字を編集 (Enter)">
-          Ｔ
-        </button>
-      )}
-      {nodes.length > 0 && (
-        <button
-          onClick={() => {
-            copySelection();
-            pasteClipboard();
-          }}
-          title="複製 (⌘D)"
-        >
-          ⧉
-        </button>
-      )}
-      <button onClick={() => st().removeIds(selection)} title="削除 (Delete)">
-        ✕
-      </button>
-    </div>
-  );
 }
 
 function TextEditor({ id }: { id: string }) {

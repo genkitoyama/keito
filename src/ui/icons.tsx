@@ -1,0 +1,93 @@
+import type { ReactNode } from 'react';
+import { PALETTE, STRONG } from '../model/signals';
+import type { ColorKey, FillStyle, ShapeKind } from '../model/types';
+
+/** 20×20 line icon drawn in the current text colour. */
+export const ico = (d: ReactNode) => (
+  <svg className="ico" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+    {d}
+  </svg>
+);
+
+export const SHAPES: { id: ShapeKind; label: string; icon: ReactNode }[] = [
+  { id: 'rect', label: '四角（処理）', icon: ico(<rect x="3" y="5" width="14" height="10" rx="1.5" />) },
+  { id: 'round', label: '端子（開始・終了）', icon: ico(<rect x="3" y="6" width="14" height="8" rx="4" />) },
+  { id: 'diamond', label: '判断（分岐）', icon: ico(<path d="M10 3l7 7-7 7-7-7z" />) },
+  { id: 'ellipse', label: '楕円', icon: ico(<ellipse cx="10" cy="10" rx="7" ry="5" />) },
+  { id: 'cloud', label: '雲（コメント）', icon: ico(<path d="M6 15a3.5 3.5 0 0 1-.6-6.95A4.5 4.5 0 0 1 14 7.2 3.9 3.9 0 0 1 14.2 15z" />) },
+];
+export const shapeIcon = (id: ShapeKind): ReactNode => SHAPES.find((s) => s.id === id)?.icon;
+
+export const ICON = {
+  hand: ico(
+    <g transform="scale(0.8333)" strokeWidth="1.9">
+      <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8" />
+      <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
+    </g>,
+  ),
+  text: ico(<path d="M4.5 5.5V4h11v1.5M10 4v12M8 16h4" />),
+  duplicate: ico(
+    <>
+      <rect x="7.5" y="7.5" width="9" height="9" rx="1.5" />
+      <path d="M12.5 7.5V5A1.5 1.5 0 0 0 11 3.5H5A1.5 1.5 0 0 0 3.5 5v6A1.5 1.5 0 0 0 5 12.5h2.5" />
+    </>,
+  ),
+  trash: ico(<path d="M3.5 6h13M8 6V4h4v2M5.5 6l.8 10.5h7.4L14.5 6M8.5 9v5M11.5 9v5" />),
+  dashedBox: ico(<rect x="3.5" y="4.5" width="13" height="11" rx="1.5" strokeDasharray="3 2.4" />),
+  lineSolid: ico(<path d="M3 10h14" strokeWidth="2" />),
+  lineDashed: ico(<path d="M3 10h14" strokeWidth="2" strokeDasharray="3 2.6" />),
+  tag: ico(
+    <>
+      <path d="M3.5 3.5h6l7 7-6 6-7-7z" />
+      <circle cx="6.8" cy="6.8" r="1.1" />
+    </>,
+  ),
+  reset: ico(<path d="M2.5 10a7.5 7.5 0 1 0 7.5-7.5 8.1 8.1 0 0 0-5.6 2.3L2.5 6.7M2.5 2.5v4.2h4.2" />),
+  caret: (
+    <svg className="caret" width="8" height="5" viewBox="0 0 8 5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M1 1l3 3 3-3" />
+    </svg>
+  ),
+};
+
+export const COLOR_NAME: Record<ColorKey, string> = {
+  white: '白',
+  gray: 'グレー',
+  blue: '青',
+  green: '緑',
+  yellow: '黄',
+  orange: 'オレンジ',
+  red: '赤',
+  purple: '紫',
+};
+
+export const FILLS: { id: FillStyle; label: string; short: string }[] = [
+  { id: 'tint', label: '淡い塗り', short: '淡い' },
+  { id: 'solid', label: 'ベタ塗り', short: 'ベタ' },
+  { id: 'outline', label: '白地に枠線', short: '白地' },
+  { id: 'none', label: '塗りなし（透過）', short: '透過' },
+];
+
+/**
+ * A miniature of the shape as it will look with this fill, in its own colour:
+ * the checkerboard is the see-through one, and the letter shows what happens
+ * to the text. Reads at a glance where an abstract glyph does not.
+ */
+export function FillPreview({ fill, color, dash }: { fill: FillStyle; color: ColorKey; dash?: boolean }) {
+  const strong = STRONG[color];
+  const c = fill === 'tint' ? PALETTE[color] : fill === 'solid' ? { fill: strong.fill, stroke: strong.fill } : { fill: '#ffffff', stroke: strong.fill };
+  const cells: ReactNode[] = [];
+  if (fill === 'none') {
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) if ((i + j) % 2 === 0) cells.push(<rect key={`${i}${j}`} x={2 + i * 5} y={2 + j * 4.67} width={5} height={4.67} fill="#c3ccd8" />);
+  }
+  return (
+    <svg className="fill-preview" width="24" height="18" viewBox="0 0 24 18">
+      <rect x="1.5" y="1.5" width="21" height="15" rx="3" fill={c.fill} />
+      {cells}
+      <rect x="1.5" y="1.5" width="21" height="15" rx="3" fill="none" stroke={c.stroke} strokeWidth="1.8" strokeDasharray={dash ? '3.2 2.4' : undefined} />
+      <text x="12" y="12.5" textAnchor="middle" fontSize="9.5" fontWeight="700" fontFamily="-apple-system, sans-serif" fill={fill === 'solid' ? strong.text : '#27323f'}>
+        A
+      </text>
+    </svg>
+  );
+}

@@ -49,7 +49,7 @@ export function TopBar() {
           <option key={b.id} value={b.id}>{b.id === doc.id ? doc.meta.title : b.title}</option>
         ))}
       </select>
-      <button onClick={() => st().newBoard()} title="新しいボード">＋新規</button>
+      <button onClick={() => st().newBoard()} data-tip="新しいボード">＋新規</button>
       <button onClick={async () => st().newBoard({ ...(await inlineImages(doc)), id: randomId(), meta: { ...doc.meta, title: `${doc.meta.title} のコピー` } })}>複製</button>
       <button
         onClick={() => {
@@ -59,11 +59,11 @@ export function TopBar() {
         削除
       </button>
       <span className="sep" />
-      <button disabled={!canUndo} onClick={() => st().undo()} title="元に戻す (⌘Z)">↶</button>
-      <button disabled={!canRedo} onClick={() => st().redo()} title="やり直す (⇧⌘Z)">↷</button>
+      <button disabled={!canUndo} onClick={() => st().undo()} data-tip="元に戻す（⌘Z）" aria-label="元に戻す">↶</button>
+      <button disabled={!canRedo} onClick={() => st().redo()} data-tip="やり直す（⇧⌘Z）" aria-label="やり直す">↷</button>
       <span className="sep" />
-      <button onClick={openFile} title="ファイルを開く (.keito.json / .yaml)">開く</button>
-      <button onClick={() => void saveFile()} title="1 つのファイルに書き出す (⌘S)">書き出し</button>
+      <button onClick={openFile} data-tip="ファイルを開く（.keito.json / .yaml）">開く</button>
+      <button onClick={() => void saveFile()} data-tip="画像込みの 1 ファイルに書き出す（⌘S）">書き出し</button>
       <span className={`save-state ${saving}`} title={mode === 'server' ? 'boards フォルダに自動保存' : 'このブラウザ内に自動保存'}>
         {saving === 'error' ? '保存できていません' : saving === 'saving' ? '保存中…' : mode === 'server' ? 'フォルダに保存済み' : 'ブラウザに保存済み'}
       </span>
