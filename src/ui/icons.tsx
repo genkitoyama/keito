@@ -38,13 +38,6 @@ export const ICON = {
   lineDashed: ico(<path d="M3 10h14" strokeWidth="2" strokeDasharray="3 2.6" />),
   /** A line cut in two: "don't draw this cable, just name what is at each end". */
   omit: ico(<path d="M2.5 10h4.5M7 7v6M13 7v6M13 10h4.5" />),
-  straight: ico(
-    <>
-      <path d="M5.6 10h8.8" />
-      <circle cx="4" cy="10" r="1.6" />
-      <circle cx="16" cy="10" r="1.6" />
-    </>,
-  ),
   reset: ico(<path d="M2.5 10a7.5 7.5 0 1 0 7.5-7.5 8.1 8.1 0 0 0-5.6 2.3L2.5 6.7M2.5 2.5v4.2h4.2" />),
   caret: (
     <svg className="caret" width="8" height="5" viewBox="0 0 8 5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
