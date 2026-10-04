@@ -92,6 +92,8 @@ export interface Edge {
   note: string;
   /** Dashed line on the board (e.g. optional / future connections). */
   dash?: boolean;
+  /** Colour of this line alone (hex); unset = the colour of its signal type. */
+  color?: string;
   /** Where the label sits along the line, 0–1 from the start (default: the middle). */
   labelAt?: number;
   /** Hand-placed bend points between the two ends; absent = routed automatically. */
@@ -115,6 +117,8 @@ export interface Doc {
   meta: DocMeta;
   nodes: Node[];
   edges: Edge[];
+  /** Colours chosen on this board for signal types, by signal id (hex). */
+  signalColors?: Record<string, string>;
   /** Show power cables as tags at both ends rather than lines (default on). */
   powerTags?: boolean;
 }

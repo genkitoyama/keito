@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { CAD_FONT, DocView, type Theme, mid } from '../canvas/render';
 import { docBounds } from '../model/geometry';
 import { type Table, cableTable, equipmentTable } from '../model/lists';
+import { signalColor } from '../model/lineColor';
 import { signalOf } from '../model/signals';
 import { measure } from '../model/text';
 import type { Doc } from '../model/types';
@@ -181,7 +182,7 @@ function Legend({ doc, paper, color }: { doc: Doc; paper: Paper; color: boolean 
         const s = signalOf(id);
         const lx = x + Math.floor(i / perCol) * colW + 2;
         const ly = y + 9 + (i % perCol) * 5.2;
-        const stroke = color ? s.color : '#000';
+        const stroke = color ? signalColor(doc, id) : '#000';
         const dash = s.dash ? s.dash.split(' ').map((v) => Number(v) * PX).join(' ') : undefined;
         return (
           <g key={id}>

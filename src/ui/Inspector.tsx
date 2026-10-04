@@ -1,5 +1,6 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { isTagged } from '../model/geometry';
+import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
 import { freshId } from '../model/presets';
 import { COLOR_KEYS, PALETTE, SIGNALS, STICKY } from '../model/signals';
 import { readImageFile } from '../platform/storage';
@@ -248,6 +249,11 @@ function NodePanel({ n }: { n: Node }) {
 
 function EdgePanel({ e }: { e: Edge }) {
   const tagged = useStore((s) => isTagged(s.doc, e));
+  const color = useStore((s) => lineColor(s.doc, e));
+  const custom = useStore((s) => !!s.doc.signalColors?.[e.signal]);
+  // Cables are colour-coded by type; arrows one by one.
+  const [all, setAll] = useState(e.signal !== 'flow');
+  const paint = (c: string | null) => useStore.getState().mutate((d) => paintLine(d, e.id, c, all));
   const patch = (p: Partial<Edge>, record = false) => useStore.getState().updateEdge(e.id, p, record);
   return (
     <>
@@ -256,6 +262,24 @@ function EdgePanel({ e }: { e: Edge }) {
         <span>種別</span>
         <SignalSelect flow value={e.signal} onChange={(signal) => patch({ signal, arrow: signal === 'flow' ? 'end' : e.arrow }, true)} />
       </label>
+      <div className="field">
+        <span>線の色</span>
+        <div className="line-colors">
+          {LINE_COLORS.map((c) => (
+            <button key={c} className={color.toLowerCase() === c ? 'on' : ''} style={{ background: c }} aria-label={c} onClick={() => paint(c)} />
+          ))}
+          <input type="color" value={color} onChange={(ev) => paint(ev.target.value)} title="ほかの色を選ぶ" />
+        </div>
+        <label className="check">
+          <input type="checkbox" checked={all} onChange={(ev) => setAll(ev.target.checked)} />
+          同じ種別（{SIGNALS.find((s) => s.id === e.signal)?.label}）の線すべてに適用
+        </label>
+        {(e.color || custom) && (
+          <button className="mini" onClick={() => paint(null)}>
+            既定の色に戻す
+          </button>
+        )}
+      </div>
       <Field label="ラベル" value={e.label} onChange={(v) => patch({ label: v })} />
       {e.signal !== 'flow' && (
         <Field label="長さ (m)" type="number" value={e.length == null ? '' : String(e.length)} onChange={(v) => patch({ length: v === '' || isNaN(Number(v)) ? null : Number(v) })} />

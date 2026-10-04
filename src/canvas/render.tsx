@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { DEV, crossings, isTagged, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { lineColor, signalColor } from '../model/lineColor';
 import { cableIds, powerLoads } from '../model/lists';
 import { SEQ, parseSequence } from '../model/sequence';
 import { PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
@@ -74,13 +75,13 @@ export function TextBlock({ x, y, w, text, size, theme, weight = 400, fill = INK
 
 const lw = (theme: Theme, mm: number): number => mm * theme.unit;
 
-function signalStroke(signal: string, theme: Theme): { stroke: string; dash?: string } {
+function signalStroke(signal: string, theme: Theme, color: string): { stroke: string; dash?: string } {
   const s = signalOf(signal);
-  if (!theme.mono) return { stroke: s.color };
+  if (!theme.mono) return { stroke: color };
   // Dash patterns are authored for 1:1; keep them the same size on paper at any fit scale.
   const k = (theme.unit * 25.4) / 96;
   const dash = s.dash ? s.dash.split(' ').map((v) => Number(v) * k).join(' ') : undefined;
-  return { stroke: theme.color ? s.color : '#000', dash };
+  return { stroke: theme.color ? color : '#000', dash };
 }
 
 function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
@@ -103,7 +104,7 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
       {n.ports.map((p) => {
         const pos = portPos(n, p.id)!;
         const left = p.side === 'left';
-        const { stroke } = signalStroke(p.signal, theme);
+        const { stroke } = signalStroke(p.signal, theme, signalColor(doc, p.signal));
         return (
           <g key={p.id}>
             {theme.mono ? (
@@ -430,7 +431,7 @@ export function edgeTags(doc: Doc, e: Edge, theme: Theme): EdgeTag[] {
 }
 
 function TaggedEdge({ doc, e, theme }: { doc: Doc; e: Edge; theme: Theme }) {
-  const { stroke } = signalStroke(e.signal, theme);
+  const { stroke } = signalStroke(e.signal, theme, lineColor(doc, e));
   const ink = theme.mono && !theme.color ? '#000' : stroke;
   const width = theme.mono ? lw(theme, 0.25) : 1.5;
   return (
@@ -453,7 +454,7 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
   if (!pts || pts.length < 2) return null;
   if (isTagged(doc, e)) return <TaggedEdge doc={doc} e={e} theme={theme} />;
   const flow = e.signal === 'flow';
-  const signal = signalStroke(e.signal, theme);
+  const signal = signalStroke(e.signal, theme, lineColor(doc, e));
   const stroke = signal.stroke;
   // On drawings the dash pattern already encodes the cable type, so only flows take the user's dash.
   const dash = e.dash && (!theme.mono || flow) ? '7 6' : signal.dash;

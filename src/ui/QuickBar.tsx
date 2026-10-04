@@ -2,7 +2,8 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { SCREEN, edgeTags } from '../canvas/render';
 import { docBounds, isTagged, labelPoint, routeEdges } from '../model/geometry';
-import { COLOR_KEYS, PALETTE, STICKY, STRONG } from '../model/signals';
+import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
+import { COLOR_KEYS, PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { copySelection, pasteClipboard, useStore } from '../model/store';
 import { wrapText } from '../model/text';
 import { type ColorKey, type Node, hasText } from '../model/types';
@@ -41,7 +42,9 @@ export function QuickBar() {
   const doc = useStore((s) => s.doc);
   const selection = useStore((s) => s.selection);
   const view = useStore((s) => s.view);
-  const [menu, setMenu] = useState<'shape' | 'color' | 'size' | null>(null);
+  const [menu, setMenu] = useState<'shape' | 'color' | 'size' | 'line' | null>(null);
+  // Whether a colour picked for a line goes to its whole signal type; set once the selected line is known.
+  const [wide, setWide] = useState<boolean | null>(null);
   const ids = new Set(selection);
   const nodes = doc.nodes.filter((n) => ids.has(n.id));
   const edge = nodes.length ? undefined : doc.edges.find((e) => ids.has(e.id));
@@ -87,7 +90,13 @@ export function QuickBar() {
   };
   const editId = one ? (hasText(one) ? one.id : undefined) : edge?.id;
   const tagged = edge ? isTagged(doc, edge) : false;
-  const toggle = (m: 'shape' | 'color' | 'size') => () => setMenu(menu === m ? null : m);
+  const toggle = (m: 'shape' | 'color' | 'size' | 'line') => () => setMenu(menu === m ? null : m);
+  // Cables are colour-coded by type, so a new colour goes to the whole type unless told otherwise; arrows are coloured one by one.
+  const all = wide ?? (!!edge && edge.signal !== 'flow');
+  const paint = (c: string | null, close = true) => {
+    if (edge) st().setDoc(paintLine(doc, edge.id, c, all));
+    if (close) setMenu(null);
+  };
   // Shapes, stickies and devices can be colour-coded; a device without a colour shows as gray.
   const tinted = one?.type === 'shape' || one?.type === 'sticky' || one?.type === 'device' ? one : undefined;
   const color: ColorKey = tinted ? (tinted.color ?? 'gray') : 'gray';
@@ -166,6 +175,37 @@ export function QuickBar() {
       )}
       {(tinted || one?.type === 'text') && <i />}
 
+      {edge && (
+        <div className={`qb-drop${menu === 'line' ? ' open' : ''}`}>
+          <Btn className="drop" tip="線の色" on={menu === 'line'} onClick={toggle('line')}>
+            <span className="dot" style={{ background: lineColor(doc, edge), borderColor: lineColor(doc, edge) }} />
+            {ICON.caret}
+          </Btn>
+          {menu === 'line' && (
+            <div className="qb-menu">
+              <div className="qb-swatches">
+                {LINE_COLORS.map((c) => (
+                  <button key={c} className={lineColor(doc, edge).toLowerCase() === c ? 'on' : ''} aria-label={c} onClick={() => paint(c)}>
+                    <span className="dot" style={{ background: c, borderColor: c }} />
+                  </button>
+                ))}
+                <label className="qb-custom" data-tip="ほかの色を選ぶ">
+                  <input type="color" value={lineColor(doc, edge)} onChange={(e) => paint(e.target.value, false)} />
+                </label>
+              </div>
+              <div className="qb-scope">
+                <button className={all ? 'on' : ''} onClick={() => setWide(true)}>
+                  {signalOf(edge.signal).label} すべて
+                </button>
+                <button className={all ? '' : 'on'} onClick={() => setWide(false)}>
+                  この線だけ
+                </button>
+              </div>
+              <button onClick={() => paint(null)}>既定の色に戻す</button>
+            </div>
+          )}
+        </div>
+      )}
       {edge && !tagged && (
         <>
           <Btn tip="実線" on={!edge.dash} onClick={() => st().updateEdge(edge.id, { dash: false })}>

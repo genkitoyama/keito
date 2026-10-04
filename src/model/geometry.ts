@@ -1,3 +1,4 @@
+import { collides, routeAround } from './router';
 import { parseSequence } from './sequence';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node, Port, PortSide, Pt, Rect } from './types';
 
@@ -155,8 +156,11 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
     if (list) list.push(e);
     else bySource.set(e.from.node, [e]);
   }
+  // What a line must not run through: every node except area frames (lines belong inside those)
+  // and free text (captions are meant to sit next to lines).
+  const obstacles = doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'text').map(nodeRect);
   const out = new Map<string, Pt[]>();
-  for (const e of doc.edges) {
+  for (const [index, e] of doc.edges.entries()) {
     const a = nodes.get(e.from.node);
     const b = nodes.get(e.to.node);
     if (!a || !b) continue;
@@ -183,7 +187,16 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
       }
     }
     // Re-aim port-less ends at the real attachment point of the other end.
-    out.set(e.id, route(e.from.port ? pa : anchorOf(a, e.from, pb), e.to.port ? pb : anchorOf(b, e.to, pa), lane));
+    const ea = e.from.port ? pa : anchorOf(a, e.from, pb);
+    const eb = e.to.port ? pb : anchorOf(b, e.to, pa);
+    let pts = route(ea, eb, lane);
+    // The plain elbow would cut through a node: find a way around. Lines drawn as tags have no run to fix.
+    if (a !== b && !isTagged(doc, e) && collides(pts, obstacles)) {
+      // Neighbouring lines keep slightly different clearances so they don't sit on top of each other.
+      const around = routeAround(ea, eb, obstacles, 8 + (index % 3) * 4);
+      if (around) pts = simplify(around);
+    }
+    out.set(e.id, pts);
   }
   routeCache.set(doc, out);
   return out;

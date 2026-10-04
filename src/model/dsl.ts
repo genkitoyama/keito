@@ -35,6 +35,7 @@ cables:
     length: 10             # m、任意
     label: メイン映像      # 任意
     labelAt: 0.3           # 任意。ラベルの位置（線の始点 0 〜 終点 1、既定は中央）
+    color: "#dc2626"       # 任意。この線だけの色。種別ごとの色は先頭に colors: { hdmi: "#eab308" } と書く
     # 電源(type: power)は線を省略し、両端に接続先だけ表示する。tag: true/false でケーブルごとに切替、
     # 全体は先頭の powerTags: false で線表示に。to をポートなしの機材IDにすると空きポートを自動で使う
 shapes:                    # フローチャート・付箋
@@ -83,6 +84,7 @@ export function toYaml(doc: Doc): string {
   for (const k of ['project', 'drawingNo', 'author', 'rev', 'company'] as const) put(out, k, doc.meta[k]);
 
   if (doc.powerTags === false) out.powerTags = false;
+  if (doc.signalColors) out.colors = doc.signalColors;
 
   const frames = doc.nodes.filter((n) => n.type === 'frame');
   if (frames.length) out.areas = frames.map((f) => ({ name: f.text, rect: [r(f.x), r(f.y), r(f.w), r(f.h)] }));
@@ -116,6 +118,7 @@ export function toYaml(doc: Doc): string {
       put(o, 'note', e.note);
       if (e.arrow !== 'none') o.arrow = e.arrow;
       if (e.dash) o.dash = true;
+      if (e.color) o.color = e.color;
       if (e.tag != null) o.tag = e.tag;
       if (e.labelAt != null) o.labelAt = e.labelAt;
       if (e.route?.length) o.route = e.route.map((p) => [r(p.x), r(p.y)]);
@@ -145,6 +148,7 @@ export function toYaml(doc: Doc): string {
       const o: Obj = { from: refOf(doc, e.from), to: refOf(doc, e.to) };
       put(o, 'label', e.label);
       if (e.arrow !== 'end') o.arrow = e.arrow;
+      if (e.color) o.color = e.color;
       if (e.dash) o.dash = true;
       if (e.labelAt != null) o.labelAt = e.labelAt;
       return o;
@@ -169,6 +173,7 @@ export function toYaml(doc: Doc): string {
   return y.toString({ lineWidth: 0 });
 }
 
+const HEX = /^#[0-9a-f]{3,8}$/i;
 const SHAPES: ShapeKind[] = ['rect', 'round', 'diamond', 'ellipse', 'cloud'];
 const DEFAULT_SIZE: Record<string, [number, number]> = {
   rect: [140, 60],
@@ -322,6 +327,7 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     e.note = str(v.note);
     if (v.arrow === 'end' || v.arrow === 'both') e.arrow = v.arrow;
     if (v.dash === true) e.dash = true;
+    if (HEX.test(str(v.color))) e.color = str(v.color);
     if (typeof v.tag === 'boolean') e.tag = v.tag;
     if (typeof v.labelAt === 'number') e.labelAt = Math.min(0.96, Math.max(0.04, v.labelAt));
     // Hand-placed bends only make sense while the layout they were drawn for is kept.
@@ -335,6 +341,7 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     const e = makeEdge(taken, resolve(v.from, where, 'right', 'other'), resolve(v.to, where, 'left', 'other'), 'flow');
     e.label = str(v.label);
     if (v.arrow === 'none' || v.arrow === 'both') e.arrow = v.arrow;
+    if (HEX.test(str(v.color))) e.color = str(v.color);
     if (v.dash === true) e.dash = true;
     if (typeof v.labelAt === 'number') e.labelAt = Math.min(0.96, Math.max(0.04, v.labelAt));
     edges.push(e);
@@ -386,5 +393,9 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     if (root[k] != null) meta[k] = str(root[k]);
   }
   const powerTags = typeof root.powerTags === 'boolean' ? root.powerTags : prev.powerTags;
-  return { version: 1, id: prev.id, meta, nodes: [...frames, ...nodes], edges, powerTags };
+  // Per-board colours for signal types: `colors: { hdmi: "#eab308" }`.
+  // Leaving `colors` out keeps the board's current choices; `colors: {}` clears them.
+  const picked = isObj(root.colors) ? Object.entries(root.colors).filter(([k, v]) => isSignal(k) && HEX.test(str(v))) : null;
+  const signalColors = !picked ? prev.signalColors : picked.length ? Object.fromEntries(picked.map(([k, v]) => [k, str(v)])) : undefined;
+  return { version: 1, id: prev.id, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors };
 }
