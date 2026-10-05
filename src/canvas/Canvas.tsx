@@ -23,10 +23,9 @@ import { type CreateKind, allIds, claimPort, makeEdge, makeImage, makeNode } fro
 import { SEQUENCE_SAMPLE } from '../model/sequence';
 import { STRONG } from '../model/signals';
 import { copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
-import { wrapText } from '../model/text';
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
-import { EdgeView, INK, NodeView, SCREEN, TEXT, edgeLabelBox, edgeTags, textSize, textWeight, textWidth } from './render';
+import { EdgeView, INK, NodeView, SCREEN, TEXT, edgeLabelBox, edgeTags, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
@@ -157,11 +156,8 @@ export function spawnFrom(id: string, side: Dir): void {
 /** Height a node needs for its text, or null when the text fits. */
 function neededHeight(n: Node, text: string): number | null {
   if (!canConnect(n)) return null;
-  const size = textSize(n);
-  const lines = wrapText(text, textWidth(n), `${textWeight(n)} ${size}px ${SCREEN.font}`).length;
-  const shape = n.type === 'shape' ? n.shape : '';
-  const need = (lines * size * TEXT.lineHeight + 22) * (shape === 'diamond' ? 1.7 : shape === 'cloud' ? 1.5 : shape === 'ellipse' ? 1.3 : 1);
-  return need > n.h ? Math.ceil(need / 10) * 10 : null;
+  const need = textHeightFor(n, text);
+  return need > n.h ? need : null;
 }
 
 export function Canvas() {

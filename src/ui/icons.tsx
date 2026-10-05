@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { PALETTE, STRONG } from '../model/signals';
-import type { ColorKey, FillStyle, ShapeKind } from '../model/types';
+import type { ColorKey, FillStyle, Node, ShapeKind } from '../model/types';
 
 /** 20×20 line icon drawn in the current text colour. */
 export const ico = (d: ReactNode) => (
@@ -26,6 +26,8 @@ export const ICON = {
     </g>,
   ),
   text: ico(<path d="M4.5 5.5V4h11v1.5M10 4v12M8 16h4" />),
+  /** A small and a large letter: text size. */
+  size: ico(<path d="M2.5 15l2.4-6 2.4 6M3.4 12.8h3M9 15l3.6-10 3.6 10M10.3 11.5h4.6" />),
   duplicate: ico(
     <>
       <rect x="7.5" y="7.5" width="9" height="9" rx="1.5" />
@@ -56,6 +58,27 @@ export const COLOR_NAME: Record<ColorKey, string> = {
   red: '赤',
   purple: '紫',
 };
+
+/** Font sizes on offer. `px: undefined` is the node's built-in size. */
+export interface SizeOption {
+  px: number | undefined;
+  label: string;
+}
+/** Free text doubles as headings; text inside shapes and stickies just gets smaller or larger. */
+export const sizesFor = (type: Node['type']): SizeOption[] =>
+  type === 'text'
+    ? [
+        { px: undefined, label: '標準' },
+        { px: 20, label: '中見出し' },
+        { px: 28, label: '大見出し' },
+        { px: 40, label: 'タイトル' },
+      ]
+    : [
+        { px: 11, label: '小' },
+        { px: undefined, label: '標準' },
+        { px: 18, label: '大' },
+        { px: 24, label: '特大' },
+      ];
 
 export const FILLS: { id: FillStyle; label: string; short: string }[] = [
   { id: 'tint', label: '淡い塗り', short: '淡い' },

@@ -41,7 +41,21 @@ export function textWidth(n: Node): number {
   if (n.type === 'sticky') return n.w - 24;
   return n.w;
 }
-export const textSize = (n: Node): number => (n.type === 'sticky' ? TEXT.sticky : n.type === 'text' ? (n.fontSize ?? TEXT.text) : TEXT.shape);
+/**
+ * Height a shape, sticky or text box needs to hold `text` at its font size,
+ * rounded up to the grid. Pointed and rounded shapes need more room than their
+ * text block, since the text sits in the middle of them.
+ */
+export function textHeightFor(n: Node, text: string): number {
+  const size = textSize(n);
+  const lines = wrapText(text, textWidth(n), `${textWeight(n)} ${size}px ${SCREEN.font}`).length;
+  const shape = n.type === 'shape' ? n.shape : '';
+  const need = (lines * size * TEXT.lineHeight + 22) * (shape === 'diamond' ? 1.7 : shape === 'cloud' ? 1.5 : shape === 'ellipse' ? 1.3 : 1);
+  return Math.ceil(need / 10) * 10;
+}
+
+export const textSize = (n: Node): number =>
+  n.type === 'sticky' ? (n.fontSize ?? TEXT.sticky) : n.type === 'text' ? (n.fontSize ?? TEXT.text) : n.type === 'shape' ? (n.fontSize ?? TEXT.shape) : TEXT.shape;
 /** Large free text is a heading, so it is set bold. */
 export const textWeight = (n: Node): number => (n.type === 'text' && (n.fontSize ?? 0) >= 20 ? 700 : 400);
 
@@ -313,7 +327,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
               <path d={`M${x + w - f},${y + h} L${x + w},${y + h - f}`} stroke="rgba(0,0,0,0.12)" strokeWidth={0.8} />
             </>
           )}
-          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={TEXT.sticky} theme={theme} />
+          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={textSize(n)} theme={theme} />
         </g>
       );
     }
@@ -346,7 +360,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
       return (
         <g>
           {body}
-          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={TEXT.shape} fill={ink} theme={theme} />
+          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={textSize(n)} fill={ink} theme={theme} />
         </g>
       );
     }

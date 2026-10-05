@@ -30,6 +30,8 @@ export interface ShapeNode extends Base {
   type: 'shape';
   shape: ShapeKind;
   color: ColorKey;
+  /** Font size in px (default 14). */
+  fontSize?: number;
   fill?: FillStyle;
   /** Dashed border. */
   dash?: boolean;
@@ -37,6 +39,8 @@ export interface ShapeNode extends Base {
 export interface StickyNode extends Base {
   type: 'sticky';
   color: ColorKey;
+  /** Font size in px (default 13.5). */
+  fontSize?: number;
 }
 export interface TextNode extends Base {
   type: 'text';

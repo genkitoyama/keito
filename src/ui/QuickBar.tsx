@@ -1,21 +1,14 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { SCREEN, edgeTags } from '../canvas/render';
+import { SCREEN, edgeTags, textHeightFor } from '../canvas/render';
 import { docBounds, isTagged, labelPoint, routeEdges } from '../model/geometry';
 import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
 import { COLOR_KEYS, PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { copySelection, pasteClipboard, useStore } from '../model/store';
-import { wrapText } from '../model/text';
 import { type ColorKey, type Node, hasText } from '../model/types';
-import { COLOR_NAME, FILLS, FillPreview, ICON, SHAPES, shapeIcon } from './icons';
+import { COLOR_NAME, FILLS, FillPreview, ICON, SHAPES, shapeIcon, sizesFor } from './icons';
 
 const st = useStore.getState;
-const TEXT_SIZES = [
-  { px: 14, label: '標準' },
-  { px: 20, label: '中見出し' },
-  { px: 28, label: '大見出し' },
-  { px: 40, label: 'タイトル' },
-];
 const CHECKER = 'repeating-conic-gradient(#c3ccd8 0% 25%, #fff 0% 50%) 50% / 8px 8px';
 
 /** Swatch as the colour will actually appear with the node's current fill style. */
@@ -101,11 +94,16 @@ export function QuickBar() {
   // Shapes, stickies, devices and area frames can be colour-coded; one without a colour shows as gray.
   const tinted = one?.type === 'shape' || one?.type === 'sticky' || one?.type === 'device' || one?.type === 'frame' ? one : undefined;
   const color: ColorKey = tinted ? (tinted.color ?? 'gray') : 'gray';
-  const resize = (fontSize: number) => {
-    if (one?.type !== 'text') return;
-    // The box follows the new size so the text never spills out of it.
-    const lines = wrapText(one.text, one.w, `${fontSize >= 20 ? 700 : 400} ${fontSize}px ${SCREEN.font}`).length;
-    patch({ fontSize, h: Math.ceil((lines * fontSize * 1.4 + 16) / 10) * 10 });
+  const sized = one?.type === 'text' || one?.type === 'shape' || one?.type === 'sticky' ? one : undefined;
+  const sizes = sized ? sizesFor(sized.type) : [];
+  // The built-in size of this kind of node; an unset fontSize means exactly this.
+  const baseSize = sized?.type === 'sticky' ? 13.5 : 14;
+  const fontSize = sized?.fontSize ?? baseSize;
+  const resize = (fontSize: number | undefined) => {
+    if (!sized) return;
+    const need = textHeightFor({ ...sized, fontSize }, sized.text);
+    // Free text hugs its words; a shape or sticky only ever grows, since its size was chosen by hand.
+    patch({ fontSize, h: sized.type === 'text' ? need : Math.max(sized.h, need) });
   };
   return (
     <div ref={ref} className="quickbar" onPointerDown={(e) => e.stopPropagation()}>
@@ -144,17 +142,18 @@ export function QuickBar() {
           )}
         </div>
       )}
-      {one?.type === 'text' && (
+      {sized && (
         <div className={`qb-drop${menu === 'size' ? ' open' : ''}`}>
           <Btn className="drop labeled" tip="文字の大きさ" on={menu === 'size'} onClick={toggle('size')}>
-            <span>{TEXT_SIZES.find((t) => t.px === (one.fontSize ?? 14))?.label ?? `${one.fontSize}px`}</span>
+            {ICON.size}
+            <span>{sizes.find((t) => (t.px ?? baseSize) === fontSize)?.label ?? `${fontSize}px`}</span>
             {ICON.caret}
           </Btn>
           {menu === 'size' && (
             <div className="qb-menu">
-              {TEXT_SIZES.map((t) => (
-                <button key={t.px} className={(one.fontSize ?? 14) === t.px ? 'on' : ''} onClick={() => resize(t.px)}>
-                  <span style={{ fontSize: `${0.8 + t.px / 50}em`, fontWeight: t.px >= 20 ? 700 : 400 }}>{t.label}</span>
+              {sizes.map((t) => (
+                <button key={t.label} className={(t.px ?? baseSize) === fontSize ? 'on' : ''} onClick={() => resize(t.px)}>
+                  <span style={{ fontSize: `${0.75 + (t.px ?? 14) / 48}em`, fontWeight: sized.type === 'text' && (t.px ?? 14) >= 20 ? 700 : 400 }}>{t.label}</span>
                 </button>
               ))}
             </div>
@@ -174,7 +173,7 @@ export function QuickBar() {
           </Btn>
         </>
       )}
-      {(tinted || one?.type === 'text') && <i />}
+      {(tinted || sized) && <i />}
 
       {edge && (
         <div className={`qb-drop${menu === 'line' ? ' open' : ''}`}>
