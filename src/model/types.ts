@@ -46,6 +46,8 @@ export interface TextNode extends Base {
 /** Area / location group. Devices whose centre is inside it report it as their location. */
 export interface FrameNode extends Base {
   type: 'frame';
+  /** Tint of the frame's outline, wash and title; unset or gray is the neutral look. */
+  color?: ColorKey;
 }
 /** `text` is the device name. Height is derived from the port count. */
 export interface DeviceNode extends Base {

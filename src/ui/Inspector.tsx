@@ -242,6 +242,7 @@ function NodePanel({ n }: { n: Node }) {
           </label>
         </>
       )}
+      {n.type === 'frame' && <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />}
       {(n.type === 'shape' || n.type === 'sticky') && <Colors sticky={n.type === 'sticky'} value={n.color} onPick={(color) => patch({ color }, true)} />}
     </>
   );

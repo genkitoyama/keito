@@ -13,6 +13,7 @@ project: 案件名            # 任意。drawingNo / author / rev / company も�
 areas:                     # 設置場所の枠（任意）
   - name: 制御室
     rect: [x, y, w, h]     # 省略すると所属機材から自動計算
+    color: green           # 任意。枠の色
 devices:
   - id: pc1                # 英数字の短いID（"." は不可）。cables から参照する
     name: メインPC
@@ -87,7 +88,9 @@ export function toYaml(doc: Doc): string {
   if (doc.signalColors) out.colors = doc.signalColors;
 
   const frames = doc.nodes.filter((n) => n.type === 'frame');
-  if (frames.length) out.areas = frames.map((f) => ({ name: f.text, rect: [r(f.x), r(f.y), r(f.w), r(f.h)] }));
+  if (frames.length) {
+    out.areas = frames.map((f) => ({ name: f.text, rect: [r(f.x), r(f.y), r(f.w), r(f.h)], ...(f.type === 'frame' && f.color && f.color !== 'gray' ? { color: f.color } : {}) }));
+  }
 
   const devices = doc.nodes.filter((n): n is DeviceNode => n.type === 'device');
   if (devices.length) {
@@ -354,12 +357,17 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     const old = prevFrames.find((f) => f.text === name && !taken.has(f.id));
     const id = old ? old.id : freshId(taken, 'area');
     taken.add(id);
-    frames.push({ id, type: 'frame', text: name, ...rect });
+    // An area listed in the YAML takes its colour from there; one that only exists through
+    // a device's `area:` keeps the colour it already had.
+    const color = areaColor.has(name) ? areaColor.get(name) : old?.color;
+    frames.push({ id, type: 'frame', text: name, ...rect, color });
   };
+  const areaColor = new Map<string, ColorKey | undefined>();
   const pendingAreas = new Set<string>();
   arr(root.areas).forEach((v) => {
     const name = isObj(v) ? str(v.name) : str(v);
     if (!name) return;
+    areaColor.set(name, isObj(v) && str(v.color) in PALETTE ? (str(v.color) as ColorKey) : undefined);
     const rect = relayout || !isObj(v) ? null : nums(v.rect, 4);
     const old = relayout ? undefined : prevFrames.find((f) => f.text === name);
     if (rect) addFrame(name, { x: rect[0], y: rect[1], w: rect[2], h: rect[3] });

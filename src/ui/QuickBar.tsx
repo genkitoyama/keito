@@ -22,6 +22,7 @@ const CHECKER = 'repeating-conic-gradient(#c3ccd8 0% 25%, #fff 0% 50%) 50% / 8px
 function swatch(n: Node, c: ColorKey): CSSProperties {
   if (n.type === 'sticky') return { background: STICKY[c].fill, borderColor: STICKY[c].stroke };
   if (n.type === 'device' && c === 'gray') return { background: '#e8edf3', borderColor: '#334155' };
+  if (n.type === 'frame') return c === 'gray' ? { background: '#eef1f5', borderColor: '#94a3b8' } : { background: PALETTE[c].fill, borderColor: c === 'white' ? PALETTE.white.stroke : STRONG[c].fill };
   const style = n.type === 'shape' ? (n.fill ?? 'tint') : 'tint';
   if (style === 'tint') return { background: PALETTE[c].fill, borderColor: PALETTE[c].stroke };
   if (style === 'solid') return { background: STRONG[c].fill, borderColor: STRONG[c].fill };
@@ -97,8 +98,8 @@ export function QuickBar() {
     if (edge) st().setDoc(paintLine(doc, edge.id, c, all));
     if (close) setMenu(null);
   };
-  // Shapes, stickies and devices can be colour-coded; a device without a colour shows as gray.
-  const tinted = one?.type === 'shape' || one?.type === 'sticky' || one?.type === 'device' ? one : undefined;
+  // Shapes, stickies, devices and area frames can be colour-coded; one without a colour shows as gray.
+  const tinted = one?.type === 'shape' || one?.type === 'sticky' || one?.type === 'device' || one?.type === 'frame' ? one : undefined;
   const color: ColorKey = tinted ? (tinted.color ?? 'gray') : 'gray';
   const resize = (fontSize: number) => {
     if (one?.type !== 'text') return;

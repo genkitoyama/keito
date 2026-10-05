@@ -262,6 +262,8 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
     case 'frame': {
       // Area boundary: long-dash-dot thin line, as on installation drawings.
       const k = (theme.unit * 25.4) / 96;
+      // A coloured area takes the tint as a light wash, with the outline and title in the full colour.
+      const tint = !theme.mono && n.color && n.color !== 'gray' ? { wash: PALETTE[n.color].fill, line: n.color === 'white' ? PALETTE.white.stroke : STRONG[n.color].fill } : null;
       return (
         <g>
           <rect
@@ -270,12 +272,13 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
             width={w}
             height={h}
             rx={theme.mono ? 0 : 10}
-            fill={theme.mono ? 'none' : 'rgba(100,116,139,0.06)'}
-            stroke={theme.mono ? '#000' : '#94a3b8'}
-            strokeWidth={theme.mono ? lw(theme, 0.18) : 1.2}
+            fill={theme.mono ? 'none' : (tint?.wash ?? 'rgba(100,116,139,0.06)')}
+            fillOpacity={tint ? 0.45 : undefined}
+            stroke={theme.mono ? '#000' : (tint?.line ?? '#94a3b8')}
+            strokeWidth={theme.mono ? lw(theme, 0.18) : tint ? 1.5 : 1.2}
             strokeDasharray={theme.mono ? [14, 3, 2, 3].map((v) => v * k).join(' ') : '6 5'}
           />
-          <TextBlock x={x + 12} y={y + 18} w={w - 24} text={n.text} size={13} weight={700} fill="#475569" anchor="start" theme={theme} />
+          <TextBlock x={x + 12} y={y + 18} w={w - 24} text={n.text} size={13} weight={700} fill={tint && n.color !== 'white' ? tint.line : '#475569'} anchor="start" theme={theme} />
         </g>
       );
     }
