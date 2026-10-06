@@ -6,6 +6,7 @@ import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
 import { COLOR_KEYS, PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { copySelection, pasteClipboard, useStore } from '../model/store';
 import { type ColorKey, type Node, hasText } from '../model/types';
+import { safeUrl } from '../model/url';
 import { COLOR_NAME, FILLS, FillPreview, ICON, SHAPES, shapeIcon, sizesFor } from './icons';
 
 const st = useStore.getState;
@@ -83,6 +84,7 @@ export function QuickBar() {
     setMenu(null);
   };
   const editId = one ? (hasText(one) ? one.id : undefined) : edge?.id;
+  const deviceLink = one?.type === 'device' ? safeUrl(one.url) : undefined;
   const tagged = edge ? isTagged(doc, edge) : false;
   const toggle = (m: 'shape' | 'color' | 'size' | 'line') => () => setMenu(menu === m ? null : m);
   // Cables are colour-coded by type, so a new colour goes to the whole type unless told otherwise; arrows are coloured one by one.
@@ -230,6 +232,12 @@ export function QuickBar() {
       )}
       {edge && <i />}
 
+      {deviceLink && (
+        <Btn className="labeled" tip={deviceLink} onClick={() => window.open(deviceLink, '_blank', 'noopener')}>
+          {ICON.link}
+          <span>型番のページ</span>
+        </Btn>
+      )}
       {editId && (
         <Btn tip={edge ? 'ラベルを編集 (Enter)' : '文字を編集 (Enter)'} onClick={() => st().setEditing(editId)}>
           {ICON.text}

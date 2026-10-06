@@ -38,7 +38,17 @@ export function ListsPanel() {
           <tbody>
             {t.rows.map((row, i) => (
               <tr key={i} className={t.refs[i].some((id) => sel.has(id)) ? 'on' : ''} onClick={() => useStore.getState().select(t.refs[i])}>
-                {row.map((c, j) => <td key={j}>{c}</td>)}
+                {row.map((c, j) => (
+                  <td key={j}>
+                    {/^https?:\/\//.test(c) ? (
+                      <a href={c} target="_blank" rel="noopener noreferrer" title={c} onClick={(e) => e.stopPropagation()}>
+                        {c.replace(/^https?:\/\/(www\.)?/, '')}
+                      </a>
+                    ) : (
+                      c
+                    )}
+                  </td>
+                ))}
               </tr>
             ))}
             {!t.rows.length && (

@@ -1,5 +1,6 @@
 import { frameOf } from './geometry';
 import { signalOf } from './signals';
+import { safeUrl } from './url';
 import type { DeviceNode, Doc, Edge, EdgeEnd } from './types';
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
@@ -36,7 +37,7 @@ export interface Table {
 const devices = (doc: Doc): DeviceNode[] => doc.nodes.filter((n): n is DeviceNode => n.type === 'device');
 
 /** One row per distinct (maker, model, name) with a quantity. */
-export function equipmentTable(doc: Doc): Table {
+export function equipmentTable(doc: Doc, withUrl = true): Table {
   const groups = new Map<string, { d: DeviceNode; ids: string[]; places: Set<string> }>();
   for (const d of devices(doc)) {
     const key = d.model ? `${d.maker}|${d.model}|${d.category}` : `|${d.text}|${d.category}`;
@@ -50,10 +51,19 @@ export function equipmentTable(doc: Doc): Table {
     }
   }
   const list = [...groups.values()].sort((a, b) => a.d.category.localeCompare(b.d.category, 'ja'));
+  // The link of a model is whichever of its devices carries one.
+  const urlOf = (ids: string[]): string => {
+    for (const id of ids) {
+      const n = doc.nodes.find((x) => x.id === id);
+      const u = n?.type === 'device' ? safeUrl(n.url) : undefined;
+      if (u) return u;
+    }
+    return '';
+  };
   return {
     title: '機材リスト',
-    head: ['No', 'カテゴリ', '名称', 'メーカー', '型番', '数量', '設置場所', '備考'],
-    widths: [5, 12, 22, 14, 20, 6, 16, 22],
+    head: ['No', 'カテゴリ', '名称', 'メーカー', '型番', '数量', '設置場所', '備考', ...(withUrl ? ['URL'] : [])],
+    widths: [5, 12, 22, 14, 20, 6, 16, 22, ...(withUrl ? [24] : [])],
     rows: list.map((g, i) => [
       String(i + 1),
       g.d.category,
@@ -63,6 +73,7 @@ export function equipmentTable(doc: Doc): Table {
       String(g.ids.length),
       [...g.places].join(' / '),
       g.d.note,
+      ...(withUrl ? [urlOf(g.ids)] : []),
     ]),
     refs: list.map((g) => g.ids),
   };

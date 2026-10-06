@@ -19,6 +19,7 @@ devices:
     name: メインPC
     maker: Apple           # 任意
     model: Mac Studio      # 任意
+    url: https://…         # 任意。型番のリンク先（製品ページなど）
     category: PC           # 任意
     area: 制御室           # 任意。自動レイアウト時にこの枠へまとめる
     note: 備考             # 任意
@@ -98,6 +99,7 @@ export function toYaml(doc: Doc): string {
       const o: Obj = { id: d.id, name: d.text };
       put(o, 'maker', d.maker);
       put(o, 'model', d.model);
+      put(o, 'url', d.url);
       put(o, 'category', d.category);
       put(o, 'area', frameOf(doc, d)?.text);
       put(o, 'note', d.note);
@@ -241,6 +243,7 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
       text: str(v.name, preset?.name ?? id),
       maker: str(v.maker),
       model: str(v.model),
+      url: str(v.url) || undefined,
       category: str(v.category, preset?.category ?? ''),
       note: str(v.note),
       ports,

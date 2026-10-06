@@ -65,6 +65,8 @@ export interface DeviceNode extends Base {
   watts?: number;
   /** Power this device can supply (UPS, power strip) in watts. */
   capacity?: number;
+  /** Web page for this model (product page, manual …), as typed. */
+  url?: string;
   /** Tint for colour-coding devices (who supplies it, which system it belongs to …). */
   color?: ColorKey;
 }

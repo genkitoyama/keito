@@ -8,7 +8,7 @@ ${DSL_GUIDE}
 - 出力は YAML 全体を \`\`\`yaml コードブロック1つだけで返す。説明文は書かない。
 - 既存の YAML が与えられたら、指示された箇所だけを変更し、それ以外（id・pos・rect を含む）はそのまま残す。
 - 新しく追加する要素には pos を書かない（自動レイアウトされる）。
-- 信号は出力ポート(out) → 入力ポート(in) の向きで cables に書く。実在する機材は maker / model を分かる範囲で埋め、不確かなら空にする。
+- 信号は出力ポート(out) → 入力ポート(in) の向きで cables に書く。実在する機材は maker / model を分かる範囲で埋め、不確かなら空にする。url は与えられたものだけを書き、推測で作らない。
 - 電源・LAN など、指示に無くても系統として必要な結線は補ってよいが、過剰に増やさない。`;
 
 /** Full prompt for pasting into any chat when no API key is configured. */

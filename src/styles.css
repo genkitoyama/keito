@@ -819,3 +819,21 @@ textarea.code {
   width: 22px;
   height: 22px;
 }
+
+.open-link {
+  display: block;
+  margin: -2px 0 10px;
+  font-size: 12px;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+td a {
+  color: var(--accent);
+  display: inline-block;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}

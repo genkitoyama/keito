@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { isTagged } from '../model/geometry';
+import { safeUrl } from '../model/url';
 import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
 import { freshId } from '../model/presets';
 import { COLOR_KEYS, PALETTE, SIGNALS, STICKY } from '../model/signals';
@@ -9,11 +10,15 @@ import type { Arrow, DeviceNode, DocMeta, Edge, Node, Port, ShapeKind } from '..
 import { FILLS, FillPreview, SHAPES } from './icons';
 
 /** Text input that records one undo step per editing burst instead of per keystroke. */
-function Field({ label, value, onChange, multiline, type = 'text', placeholder }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean; type?: string; placeholder?: string }) {
+function Field({ label, value, onChange, multiline, type = 'text', placeholder, onPasteText }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean; type?: string; placeholder?: string; onPasteText?: (text: string) => boolean }) {
   const dirty = useRef(false);
   const props = {
     value,
     placeholder,
+    // Lets a field hand pasted text to another one (a URL pasted into the model field, say).
+    onPaste: (e: { clipboardData: DataTransfer; preventDefault: () => void }) => {
+      if (onPasteText?.(e.clipboardData.getData('text/plain'))) e.preventDefault();
+    },
     onFocus: () => (dirty.current = false),
     onChange: (e: { target: { value: string } }) => {
       if (!dirty.current) {
@@ -84,6 +89,7 @@ const num = (v: string): number | undefined => (v === '' || isNaN(Number(v)) ? u
 function DevicePanel({ n }: { n: DeviceNode }) {
   const st = useStore.getState;
   const patch = (p: Partial<DeviceNode>, record = false) => st().updateNode(n.id, p, record);
+  const link = safeUrl(n.url);
   const setPort = (id: string, p: Partial<Port>, record: boolean) => patch({ ports: n.ports.map((x) => (x.id === id ? { ...x, ...p } : x)) }, record);
   const addPort = (side: Port['side']) =>
     patch({ ports: [...n.ports, { id: freshId(new Set(n.ports.map((p) => p.id)), 'p'), name: side === 'left' ? 'IN' : 'OUT', side, signal: 'hdmi' }] }, true);
@@ -105,7 +111,26 @@ function DevicePanel({ n }: { n: DeviceNode }) {
       <h3>機材 <code>{n.id}</code></h3>
       <Field label="名称" value={n.text} onChange={(v) => patch({ text: v })} />
       <Field label="メーカー" value={n.maker} onChange={(v) => patch({ maker: v })} />
-      <Field label="型番" value={n.model} onChange={(v) => patch({ model: v })} />
+      <Field
+        label="型番"
+        value={n.model}
+        onChange={(v) => patch({ model: v })}
+        // A web address pasted here is the model's link, not its name.
+        onPasteText={(text) => {
+          if (!/^https?:\/\//i.test(text.trim()) || !safeUrl(text)) return false;
+          patch({ url: text.trim() }, true);
+          return true;
+        }}
+      />
+      <Field label="型番のリンク（製品ページなど）" placeholder="https://…" value={n.url ?? ''} onChange={(v) => patch({ url: v || undefined })} />
+      {n.url &&
+        (link ? (
+          <a className="open-link" href={link} target="_blank" rel="noopener noreferrer">
+            {link.replace(/^https?:\/\/(www\.)?/, '')} を開く ↗
+          </a>
+        ) : (
+          <p className="error">Web のアドレス（https://…）として読めません。</p>
+        ))}
       <Field label="カテゴリ" value={n.category} onChange={(v) => patch({ category: v })} />
       <Field label="備考" value={n.note} onChange={(v) => patch({ note: v })} />
       <label className="field">
