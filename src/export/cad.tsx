@@ -138,8 +138,14 @@ function Frame({ doc, paper, name, kind, page, pages }: { doc: Doc; paper: Paper
       {revCols.slice(1, -1).map((cx) => <line key={cx} x1={cx} y1={y} x2={cx} y2={bottom} stroke="#000" strokeWidth={LINE.fine} />)}
       {['記号', '年月日', '改訂内容'].map((s, i) => <T key={s} x={(revCols[i] + revCols[i + 1]) / 2} y={y + 3} size={LETTER.small} anchor="middle">{s}</T>)}
       {Array.from({ length: revRows }, (_, i) => <line key={i} x1={rx} y1={y + 6 * (i + 1)} x2={x} y2={y + 6 * (i + 1)} stroke="#000" strokeWidth={LINE.fine} />)}
-      <T x={(revCols[0] + revCols[1]) / 2} y={y + 9} size={LETTER.small} anchor="middle">{fit(m.rev, 10, LETTER.small)}</T>
-      <T x={(revCols[1] + revCols[2]) / 2} y={y + 9} size={LETTER.small} anchor="middle">{date}</T>
+      {/* The latest recorded revisions, oldest first; with no history, just the current mark. */}
+      {(doc.revisions?.length ? doc.revisions.slice(-revRows) : [{ id: '', rev: m.rev, date, note: '', author: '' }]).map((r, i) => (
+        <g key={r.id || i}>
+          <T x={(revCols[0] + revCols[1]) / 2} y={y + 9 + 6 * i} size={LETTER.small} anchor="middle">{fit(r.rev, 10, LETTER.small)}</T>
+          <T x={(revCols[1] + revCols[2]) / 2} y={y + 9 + 6 * i} size={LETTER.small} anchor="middle">{r.date}</T>
+          <T x={revCols[2] + 1.5} y={y + 9 + 6 * i} size={LETTER.small}>{fit(r.note, revCols[3] - revCols[2] - 3, LETTER.small)}</T>
+        </g>
+      ))}
 
       {/* Title block */}
       <rect x={x} y={y} width={title} height={STRIP} fill="#fff" stroke="#000" strokeWidth={LINE.thick} />

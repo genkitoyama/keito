@@ -129,12 +129,25 @@ export interface DocMeta {
   company: string;
 }
 
+/** One recorded revision of a board. The drawing as it stood is kept beside the board, under `id`. */
+export interface Revision {
+  id: string;
+  /** Revision mark shown on the drawing (A, B, …). */
+  rev: string;
+  /** YYYY-MM-DD. */
+  date: string;
+  note: string;
+  author: string;
+}
+
 export interface Doc {
   version: 1;
   id: string;
   meta: DocMeta;
   nodes: Node[];
   edges: Edge[];
+  /** Recorded revisions, oldest first. */
+  revisions?: Revision[];
   /** Colours chosen on this board for signal types, by signal id (hex). */
   signalColors?: Record<string, string>;
   /** Show power cables as tags at both ends rather than lines (default on). */

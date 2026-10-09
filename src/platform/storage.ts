@@ -21,6 +21,10 @@ export interface Backend {
   remove(id: string): Promise<void>;
   /** Store a picture for a board; resolves to the `src` to keep on the node. */
   putAsset(boardId: string, dataUrl: string): Promise<string>;
+  /** Keep / fetch / drop the board as it stood at a recorded revision. */
+  saveRevision(boardId: string, id: string, doc: Doc): Promise<void>;
+  loadRevision(boardId: string, id: string): Promise<Doc | null>;
+  removeRevision(boardId: string, id: string): Promise<void>;
 }
 
 const INDEX = 'keito:boards';
@@ -70,6 +74,15 @@ const local: Backend = {
     localStorage.setItem(INDEX, JSON.stringify(localList().filter((b) => b.id !== id)));
   },
   putAsset: async (_boardId, dataUrl) => dataUrl,
+  saveRevision: async (boardId, id, doc) => localStorage.setItem(`keito:rev:${boardId}:${id}`, JSON.stringify(doc)),
+  loadRevision: async (boardId, id) => {
+    try {
+      return clean(JSON.parse(localStorage.getItem(`keito:rev:${boardId}:${id}`) ?? 'null'));
+    } catch {
+      return null;
+    }
+  },
+  removeRevision: async (boardId, id) => localStorage.removeItem(`keito:rev:${boardId}:${id}`),
 };
 
 const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
@@ -101,6 +114,16 @@ const server: Backend = {
     const name = `${[...new Uint8Array(digest)].slice(0, 12).map((b) => b.toString(16).padStart(2, '0')).join('')}.${ext}`;
     await ok(await fetch(`${API}/${boardId}/assets/${name}`, { method: 'PUT', body: blob }));
     return `asset:${name}`;
+  },
+  saveRevision: async (boardId, id, doc) => {
+    await ok(await fetch(`${API}/${boardId}/revisions/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(doc) }));
+  },
+  loadRevision: async (boardId, id) => {
+    const res = await fetch(`${API}/${boardId}/revisions/${id}`);
+    return res.status === 404 ? null : clean(await (await ok(res)).json());
+  },
+  removeRevision: async (boardId, id) => {
+    await ok(await fetch(`${API}/${boardId}/revisions/${id}`, { method: 'DELETE' }));
   },
 };
 

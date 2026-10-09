@@ -7,6 +7,7 @@ import type { Connect, Plugin } from 'vite';
  *
  *   boards/<title>__<id>/board.json
  *   boards/<title>__<id>/assets/<hash>.<ext>
+ *   boards/<title>__<id>/revisions/<revision id>.json
  *
  * The folder is named after the board's title so it reads well in Finder and
  * in git; the id after the double underscore is what URLs and the API use, so
@@ -86,6 +87,26 @@ export function keitoBoards(root = process.env.KEITO_BOARDS ?? path.resolve('boa
           if (!dir) return send(404, { error: 'save the board first' });
           fs.mkdirSync(path.join(dir, 'assets'), { recursive: true });
           fs.writeFileSync(path.join(dir, 'assets', name), await readBody(req));
+          return send(204);
+        }
+        return send(405);
+      }
+      if (sub === 'revisions') {
+        // Snapshots of the board as it stood at each recorded revision.
+        if (!name || !ID.test(name)) return send(400, { error: 'bad revision id' });
+        const file = dir && path.join(dir, 'revisions', `${name}.json`);
+        if (req.method === 'GET') {
+          if (!file || !fs.existsSync(file)) return send(404);
+          return send(200, fs.readFileSync(file), 'application/json');
+        }
+        if (req.method === 'PUT') {
+          if (!dir || !file) return send(404, { error: 'save the board first' });
+          fs.mkdirSync(path.dirname(file), { recursive: true });
+          fs.writeFileSync(file, JSON.stringify(JSON.parse((await readBody(req)).toString('utf8')), null, 2));
+          return send(204);
+        }
+        if (req.method === 'DELETE') {
+          if (file && fs.existsSync(file)) fs.rmSync(file);
           return send(204);
         }
         return send(405);

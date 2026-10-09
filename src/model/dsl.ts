@@ -416,5 +416,6 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
   // Leaving `colors` out keeps the board's current choices; `colors: {}` clears them.
   const picked = isObj(root.colors) ? Object.entries(root.colors).filter(([k, v]) => isSignal(k) && HEX.test(str(v))) : null;
   const signalColors = !picked ? prev.signalColors : picked.length ? Object.fromEntries(picked.map(([k, v]) => [k, str(v)])) : undefined;
-  return { version: 1, id: prev.id, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors };
+  // Revision history is not part of the text form; it stays with the board.
+  return { version: 1, id: prev.id, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, revisions: prev.revisions };
 }

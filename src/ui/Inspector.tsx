@@ -8,6 +8,7 @@ import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
 import type { Arrow, DeviceNode, DocMeta, Edge, Node, Port, ShapeKind } from '../model/types';
 import { FILLS, FillPreview, SHAPES } from './icons';
+import { Revisions } from './Revisions';
 
 /** Text input that records one undo step per editing burst instead of per keystroke. */
 function Field({ label, value, onChange, multiline, type = 'text', placeholder, onPasteText }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean; type?: string; placeholder?: string; onPasteText?: (text: string) => boolean }) {
@@ -68,6 +69,7 @@ function MetaPanel() {
       <Field label="作成者" value={meta.author} onChange={set('author')} />
       <Field label="REV" value={meta.rev} onChange={set('rev')} />
       <Field label="会社" value={meta.company} onChange={set('company')} />
+      <Revisions />
       <label className="check">
         <input type="checkbox" checked={powerTags} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, powerTags: e.target.checked }))} />
         電源ケーブルは線を省略（両端に接続先だけ表示）

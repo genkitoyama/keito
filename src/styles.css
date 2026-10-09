@@ -841,3 +841,55 @@ td a {
   text-overflow: ellipsis;
   vertical-align: bottom;
 }
+
+/* Revision history */
+.rev-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.rev-form input {
+  flex: 1;
+}
+.rev-form .rev-id {
+  flex: 0 0 44px;
+  text-align: center;
+  font-weight: 700;
+}
+.rev {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 4px;
+  border-top: 1px solid var(--line);
+}
+.rev.on {
+  background: var(--accent-soft);
+}
+.rev b {
+  flex: 0 0 26px;
+  text-align: center;
+}
+.rev-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rev-text small {
+  display: block;
+  color: var(--sub);
+  font-size: 10.5px;
+}
+.rev-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  background: #fef3c7;
+  border-bottom: 1px solid #eab308;
+  font-size: 12.5px;
+}

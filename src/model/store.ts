@@ -4,7 +4,7 @@ import { fromYaml } from './dsl';
 import { docBounds, nodeRect } from './geometry';
 import { allIds, freshId, randomId } from './presets';
 import { SAMPLE_YAML } from './sample';
-import { type Doc, type Edge, type Node, emptyMeta } from './types';
+import { type Doc, type Edge, type Node, type Revision, emptyMeta } from './types';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
 export type Panel = null | 'lists' | 'text' | 'export' | 'library';
@@ -15,6 +15,19 @@ export interface View {
 }
 
 const HISTORY = 100;
+/** How many recorded revisions a board keeps; the oldest drop off beyond this. */
+export const MAX_REVISIONS = 100;
+
+/** The mark after this one: A → B, Z → AA, 3 → 4. */
+export function nextRev(rev: string): string {
+  if (/^\d+$/.test(rev)) return String(Number(rev) + 1);
+  if (!/^[A-Z]+$/.test(rev)) return rev;
+  let n = 0;
+  for (const ch of rev) n = n * 26 + ch.charCodeAt(0) - 64;
+  let out = '';
+  for (n += 1; n > 0; n = Math.floor((n - 1) / 26)) out = String.fromCharCode(65 + ((n - 1) % 26)) + out;
+  return out;
+}
 const CURRENT = 'keito:current';
 
 export const emptyDoc = (title?: string): Doc => ({ version: 1, id: randomId(), meta: emptyMeta(title), nodes: [], edges: [] });
@@ -49,6 +62,8 @@ interface State {
   /** Where boards are kept: a folder on disk (server) or this browser (local). */
   mode: 'server' | 'local';
   saving: 'saved' | 'saving' | 'error';
+  /** Set while an old revision is on screen in place of the live board (which is not touched). */
+  viewing: { entry: Revision; all: Revision[] } | null;
 
   /** Push the current doc onto the undo stack (call before a drag or a burst of edits). */
   checkpoint(): void;
@@ -69,12 +84,21 @@ interface State {
   openBoard(id: string): void;
   newBoard(doc?: Doc): void;
   deleteBoard(id: string): void;
+  /** Record the board as it stands as revision `rev`. */
+  recordRevision(rev: string, note: string): void;
+  viewRevision(id: string): void;
+  exitRevision(): void;
+  /** Make the revision on screen the live board again. */
+  restoreRevision(): void;
+  deleteRevision(id: string): void;
 }
 
 let backend: Backend | null = null;
 /** The doc as last read from or written to storage; equal to the current doc means nothing to save. */
 let stored: Doc | null = null;
 let timer: number | undefined;
+/** The live board, set aside while an old revision is on screen. */
+let live: Doc | null = null;
 
 export const useStore = create<State>((set, get) => ({
   doc: emptyDoc(),
@@ -90,6 +114,7 @@ export const useStore = create<State>((set, get) => ({
   ready: false,
   mode: 'local',
   saving: 'saved',
+  viewing: null,
 
   checkpoint: () => set((s) => ({ past: [...s.past.slice(-HISTORY), s.doc], future: [] })),
   setDoc: (doc, record = true) => {
@@ -143,9 +168,54 @@ export const useStore = create<State>((set, get) => ({
   newBoard: (doc = emptyDoc()) => void run(async (b) => {
     await flush();
     // A file opened from elsewhere may carry its pictures inline; give them a home in the board's folder.
-    const next = await externalize(doc, b);
+    // History belongs to the board it was recorded on; a copy or an opened file starts without one.
+    const next = await externalize({ ...doc, revisions: undefined }, b);
     show(next);
     await persist(next);
+  }),
+  recordRevision: (rev, note) => void run(async (b) => {
+    if (get().viewing) return;
+    await flush();
+    const doc = get().doc;
+    const entry: Revision = { id: randomId(), rev, date: new Date().toLocaleDateString('sv-SE'), note, author: doc.meta.author };
+    const meta = { ...doc.meta, rev };
+    // The snapshot is the drawing itself; the list of revisions lives only on the live board.
+    await b.saveRevision(doc.id, entry.id, { ...doc, meta, revisions: undefined });
+    const all = [...(doc.revisions ?? []), entry];
+    for (const old of all.slice(0, Math.max(0, all.length - MAX_REVISIONS))) await b.removeRevision(doc.id, old.id);
+    get().setDoc({ ...get().doc, meta, revisions: all.slice(-MAX_REVISIONS) }, false);
+  }),
+  viewRevision: (id) => void run(async (b) => {
+    if (!get().viewing) await flush();
+    const base = live ?? get().doc;
+    const all = base.revisions ?? [];
+    const i = all.findIndex((r) => r.id === id);
+    const snap = i < 0 ? null : await b.loadRevision(base.id, id);
+    if (!snap) throw new Error('revision not found');
+    live = base;
+    // On screen the old drawing carries the history up to its own entry, as its sheet would have.
+    set({ doc: { ...snap, id: base.id, revisions: all.slice(0, i + 1) }, viewing: { entry: all[i], all }, past: [], future: [], selection: [], editing: null });
+    requestAnimationFrame(get().fit);
+  }),
+  exitRevision: () => {
+    if (!live) return;
+    const doc = live;
+    live = null;
+    set({ doc, viewing: null, past: [], future: [], selection: [], editing: null });
+    requestAnimationFrame(get().fit);
+  },
+  restoreRevision: () => {
+    const { viewing, doc } = get();
+    if (!viewing || !live) return;
+    const before = live;
+    live = null;
+    // The old drawing becomes the live board (and is saved); undo brings back what it replaced.
+    set({ doc: { ...doc, revisions: viewing.all }, viewing: null, past: [before], future: [], selection: [], editing: null });
+  },
+  deleteRevision: (id) => void run(async (b) => {
+    if (get().viewing) return;
+    await b.removeRevision(get().doc.id, id);
+    get().setDoc({ ...get().doc, revisions: (get().doc.revisions ?? []).filter((r) => r.id !== id) }, false);
   }),
   deleteBoard: (id) => void run(async (b) => {
     if (id === get().doc.id) clearTimeout(timer);
@@ -176,7 +246,8 @@ async function run(fn: (b: Backend) => Promise<void>): Promise<void> {
 /** Put a freshly loaded (or created) board on screen. */
 function show(doc: Doc): void {
   stored = doc;
-  useStore.setState({ doc, past: [], future: [], selection: [], editing: null });
+  live = null;
+  useStore.setState({ doc, viewing: null, past: [], future: [], selection: [], editing: null });
   showInUrl(doc.id);
   requestAnimationFrame(useStore.getState().fit);
 }
@@ -198,13 +269,14 @@ async function persist(doc: Doc): Promise<void> {
 /** Write any pending change now (before switching boards or leaving the page). */
 async function flush(): Promise<void> {
   clearTimeout(timer);
-  const { doc, ready } = useStore.getState();
-  if (ready && doc !== stored) await persist(doc);
+  const { doc, ready, viewing } = useStore.getState();
+  // An old revision on screen is never written over the live board.
+  if (ready && !viewing && doc !== stored) await persist(doc);
 }
 
 // Autosave shortly after every change.
 useStore.subscribe((s, prev) => {
-  if (!s.ready || s.doc === prev.doc || s.doc === stored) return;
+  if (!s.ready || s.viewing || s.doc === prev.doc || s.doc === stored) return;
   clearTimeout(timer);
   useStore.setState({ saving: 'saving' });
   timer = window.setTimeout(() => void persist(useStore.getState().doc), 500);
@@ -263,7 +335,7 @@ window.addEventListener('hashchange', () => {
 // Coming back to the tab: pick up what another tab (or an edit to the file) saved meanwhile.
 window.addEventListener('focus', () => void run(async (b) => {
   const s = useStore.getState();
-  if (!s.ready || s.editing || s.doc !== stored) return;
+  if (!s.ready || s.viewing || s.editing || s.doc !== stored) return;
   const fresh = await b.load(s.doc.id);
   if (fresh && useStore.getState().doc === s.doc && JSON.stringify(fresh) !== JSON.stringify(s.doc)) {
     stored = fresh;
@@ -274,7 +346,7 @@ window.addEventListener('focus', () => void run(async (b) => {
 window.addEventListener('pagehide', () => {
   const { doc, ready } = useStore.getState();
   // Last-moment save: keepalive lets the request outlive the page.
-  if (ready && doc !== stored && backend?.mode === 'server') {
+  if (ready && !useStore.getState().viewing && doc !== stored && backend?.mode === 'server') {
     void fetch(`/api/boards/${doc.id}`, { method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(doc) });
   }
 });

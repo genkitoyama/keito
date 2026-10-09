@@ -6,6 +6,7 @@ import { copySelection, pasteClipboard, useStore } from './model/store';
 import { ExportPanel } from './ui/ExportPanel';
 import { Inspector } from './ui/Inspector';
 import { ListsPanel } from './ui/ListsPanel';
+import { RevisionBanner } from './ui/Revisions';
 import { TextPanel } from './ui/TextPanel';
 import { TOOL_KEYS, Toolbar } from './ui/Toolbar';
 import { TopBar, saveFile } from './ui/TopBar';
@@ -105,6 +106,7 @@ export function App() {
       <div className="main">
         <Toolbar />
         <div className="stage">
+          <RevisionBanner />
           <Canvas />
           {panel === 'lists' && <ListsPanel />}
         </div>
