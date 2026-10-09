@@ -522,19 +522,45 @@ export function Canvas() {
     }
     const o = d.orig;
     let { x, y, w, h } = o;
-    if (d.corner.includes('e')) w = Math.max(MIN.w, grid(o.x + o.w + dx) - o.x);
+    // The edge being dragged snaps like a moved node does: to the edges and centres of the other
+    // nodes, and to the position that gives this node the same width or height as one of them.
+    const tol = 6 / s.view.k;
+    const free = e.metaKey || e.ctrlKey;
+    const rects = free ? [] : s.doc.nodes.filter((n) => n.id !== d.id).map(nodeRect);
+    const guide: { x?: number; y?: number } = {};
+    const snapEdge = (raw: number, horizontal: boolean, anchor: number): number => {
+      let best: number | null = null;
+      let line: number | undefined;
+      for (const r of rects) {
+        const lines = horizontal ? [r.x, r.x + r.w / 2, r.x + r.w] : [r.y, r.y + r.h / 2, r.y + r.h];
+        const same = anchor + Math.sign(raw - anchor) * (horizontal ? r.w : r.h);
+        for (const [v, shown] of [...lines.map((v) => [v, v] as const), [same, undefined] as const]) {
+          if (Math.abs(v - raw) < tol && (best === null || Math.abs(v - raw) < Math.abs(best - raw))) {
+            best = v;
+            line = shown;
+          }
+        }
+      }
+      if (best === null) return grid(raw);
+      if (line !== undefined) guide[horizontal ? 'x' : 'y'] = line;
+      return best;
+    };
+    if (d.corner.includes('e')) w = Math.max(MIN.w, snapEdge(o.x + o.w + dx, true, o.x) - o.x);
     if (d.corner.includes('w')) {
-      x = Math.min(grid(o.x + dx), o.x + o.w - MIN.w);
+      x = Math.min(snapEdge(o.x + dx, true, o.x + o.w), o.x + o.w - MIN.w);
       w = o.x + o.w - x;
     }
-    if (d.corner === 'se' || d.corner === 'sw') h = Math.max(MIN.h, grid(o.y + o.h + dy) - o.y);
+    if (d.corner === 'se' || d.corner === 'sw') h = Math.max(MIN.h, snapEdge(o.y + o.h + dy, false, o.y) - o.y);
     if (d.corner === 'ne' || d.corner === 'nw') {
-      y = Math.min(grid(o.y + dy), o.y + o.h - MIN.h);
+      y = Math.min(snapEdge(o.y + dy, false, o.y + o.h), o.y + o.h - MIN.h);
       h = o.y + o.h - y;
     }
+    setGuides(guide);
     if (d.lock && !e.shiftKey) {
       h = Math.max(MIN.h, Math.round(w / d.lock));
       if (d.corner === 'ne' || d.corner === 'nw') y = o.y + o.h - h;
+      // The height follows the width here, so only the horizontal guide means anything.
+      setGuides({ x: guide.x });
     }
     s.updateNode(d.id, { x, y, w, h }, false);
   };
