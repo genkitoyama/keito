@@ -29,6 +29,7 @@ export const ICON = {
   /** A small and a large letter: text size. */
   size: ico(<path d="M2.5 15l2.4-6 2.4 6M3.4 12.8h3M9 15l3.6-10 3.6 10M10.3 11.5h4.6" />),
   link: ico(<path d="M8.5 11.5a3 3 0 0 0 4.2 0l2.6-2.6a3 3 0 0 0-4.2-4.2l-.9.9M11.5 8.5a3 3 0 0 0-4.2 0l-2.6 2.6a3 3 0 0 0 4.2 4.2l.9-.9" />),
+  bold: ico(<path d="M6 4h5a3 3 0 0 1 0 6H6zM6 10h6a3 3 0 0 1 0 6H6z" strokeWidth="2.2" />),
   duplicate: ico(
     <>
       <rect x="7.5" y="7.5" width="9" height="9" rx="1.5" />
@@ -74,7 +75,14 @@ export const sizesFor = (type: Node['type']): SizeOption[] =>
         { px: 28, label: '大見出し' },
         { px: 40, label: 'タイトル' },
       ]
-    : [
+    : type === 'frame'
+      ? [
+          { px: undefined, label: '標準' },
+          { px: 18, label: '大' },
+          { px: 24, label: '特大' },
+          { px: 32, label: 'タイトル' },
+        ]
+      : [
         { px: 11, label: '小' },
         { px: undefined, label: '標準' },
         { px: 18, label: '大' },

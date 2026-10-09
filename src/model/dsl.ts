@@ -13,7 +13,7 @@ project: 案件名            # 任意。drawingNo / author / rev / company も�
 areas:                     # 設置場所の枠（任意）
   - name: 制御室
     rect: [x, y, w, h]     # 省略すると所属機材から自動計算
-    color: green           # 任意。枠の色
+    color: green           # 任意。枠の色。fontSize / bold でタイトルの大きさ・太字も指定可
 devices:
   - id: pc1                # 英数字の短いID（"." は不可）。cables から参照する
     name: メインPC
@@ -46,6 +46,7 @@ shapes:                    # フローチャート・付箋
     text: 開始
     color: blue            # white gray blue green yellow orange red purple
     fontSize: 18           # 任意。文字サイズ(px)。shape: text は 20 以上で太字の見出しになる
+    bold: true             # 任意。太字
     fill: solid            # 任意。tint(既定・淡色) solid(ベタ塗り。red で真っ赤) outline(白地) none(透過)
     dash: true             # 任意。枠を点線に（cables / flows でも dash: true で点線）
 flows:                     # 矢印コネクタ（shapes / devices どちらも可）
@@ -90,7 +91,7 @@ export function toYaml(doc: Doc): string {
 
   const frames = doc.nodes.filter((n) => n.type === 'frame');
   if (frames.length) {
-    out.areas = frames.map((f) => ({ name: f.text, rect: [r(f.x), r(f.y), r(f.w), r(f.h)], ...(f.type === 'frame' && f.color && f.color !== 'gray' ? { color: f.color } : {}) }));
+    out.areas = frames.map((f) => ({ name: f.text, rect: [r(f.x), r(f.y), r(f.w), r(f.h)], ...(f.type === 'frame' ? { ...(f.color && f.color !== 'gray' ? { color: f.color } : {}), ...(f.fontSize ? { fontSize: f.fontSize } : {}), ...(f.bold != null ? { bold: f.bold } : {}) } : {}) }));
   }
 
   const devices = doc.nodes.filter((n): n is DeviceNode => n.type === 'device');
@@ -137,6 +138,7 @@ export function toYaml(doc: Doc): string {
       const o: Obj = { id: s.id, shape: s.type === 'shape' ? s.shape : s.type, text: s.text };
       if (s.type !== 'text') put(o, 'color', s.color);
       if (s.fontSize) o.fontSize = s.fontSize;
+      if (s.bold != null) o.bold = s.bold;
       if (s.type === 'shape') {
         if (s.fill && s.fill !== 'tint') o.fill = s.fill;
         if (s.dash) o.dash = true;
@@ -263,11 +265,12 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     const base = { id, ...place(id, v.pos), w: size[0], h: size[1], text: str(v.text) };
     const color = (str(v.color) in PALETTE ? str(v.color) : undefined) as ColorKey | undefined;
     const fontSize = typeof v.fontSize === 'number' && v.fontSize >= 6 && v.fontSize <= 200 ? v.fontSize : undefined;
-    if (kind === 'sticky') nodes.push({ ...base, type: 'sticky', color: color ?? 'yellow', fontSize });
-    else if (kind === 'text') nodes.push({ ...base, type: 'text', fontSize });
+    const bold = typeof v.bold === 'boolean' ? v.bold : undefined;
+    if (kind === 'sticky') nodes.push({ ...base, type: 'sticky', color: color ?? 'yellow', fontSize, bold });
+    else if (kind === 'text') nodes.push({ ...base, type: 'text', fontSize, bold });
     else {
       const fill = ['solid', 'outline', 'none'].includes(str(v.fill)) ? (str(v.fill) as FillStyle) : undefined;
-      nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined, fontSize });
+      nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined, fontSize, bold });
     }
     if (v.area) areaHint.set(id, str(v.area));
   });
@@ -361,17 +364,21 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     const old = prevFrames.find((f) => f.text === name && !taken.has(f.id));
     const id = old ? old.id : freshId(taken, 'area');
     taken.add(id);
-    // An area listed in the YAML takes its colour from there; one that only exists through
-    // a device's `area:` keeps the colour it already had.
-    const color = areaColor.has(name) ? areaColor.get(name) : old?.color;
-    frames.push({ id, type: 'frame', text: name, ...rect, color });
+    // An area listed in the YAML takes its look from there; one that only exists through
+    // a device's `area:` keeps the look it already had.
+    const look = areaLook.get(name) ?? { color: old?.color, fontSize: old?.fontSize, bold: old?.bold };
+    frames.push({ id, type: 'frame', text: name, ...rect, ...look });
   };
-  const areaColor = new Map<string, ColorKey | undefined>();
+  const areaLook = new Map<string, { color?: ColorKey; fontSize?: number; bold?: boolean }>();
   const pendingAreas = new Set<string>();
   arr(root.areas).forEach((v) => {
     const name = isObj(v) ? str(v.name) : str(v);
     if (!name) return;
-    areaColor.set(name, isObj(v) && str(v.color) in PALETTE ? (str(v.color) as ColorKey) : undefined);
+    areaLook.set(name, {
+      color: isObj(v) && str(v.color) in PALETTE ? (str(v.color) as ColorKey) : undefined,
+      fontSize: isObj(v) && typeof v.fontSize === 'number' ? v.fontSize : undefined,
+      bold: isObj(v) && typeof v.bold === 'boolean' ? v.bold : undefined,
+    });
     const rect = relayout || !isObj(v) ? null : nums(v.rect, 4);
     const old = relayout ? undefined : prevFrames.find((f) => f.text === name);
     if (rect) addFrame(name, { x: rect[0], y: rect[1], w: rect[2], h: rect[3] });

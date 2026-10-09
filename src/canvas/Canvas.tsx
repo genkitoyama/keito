@@ -25,7 +25,7 @@ import { STRONG } from '../model/signals';
 import { copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
-import { EdgeView, INK, NodeView, SCREEN, TEXT, edgeLabelBox, edgeTags, textHeightFor, textSize, textWeight, textWidth } from './render';
+import { EdgeView, INK, NodeView, SCREEN, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
@@ -277,7 +277,7 @@ export function Canvas() {
     if (doubleClick(n.id) && hasText(n)) {
       // Double-clicking the body of an area frame adds a box there; its title strip renames it.
       const p = world(e);
-      if (n.type === 'frame' && p.y > n.y + 32) return insertNode('rect', p);
+      if (n.type === 'frame' && p.y > n.y + frameTitleHeight(n)) return insertNode('rect', p);
       s.select([n.id]);
       s.setEditing(n.id);
       return;
@@ -336,7 +336,7 @@ export function Canvas() {
       const pts = routeEdges(s.doc).get(x.id) ?? [];
       return pts.some((a, i) => i > 0 && distToSegment(p, pts[i - 1], a) < tol);
     });
-    const id = n && hasText(n) && n.type !== 'frame' ? n.id : (edge?.id ?? (n?.type === 'frame' && p.y < n.y + 32 ? n.id : null));
+    const id = n && hasText(n) && n.type !== 'frame' ? n.id : (edge?.id ?? (n?.type === 'frame' && p.y < n.y + frameTitleHeight(n) ? n.id : null));
     if (!id) return;
     s.select([id]);
     s.setEditing(id);
@@ -959,7 +959,8 @@ function TextEditor({ id }: { id: string }) {
   } else if (node.type === 'device') {
     style = { left: view.x + node.x * k, top: view.y + node.y * k, width: node.w * k, height: DEV.head * k, fontSize: 13 * k, fontWeight: 700, background: '#e8edf3', borderRadius: 6 * k };
   } else if (node.type === 'frame') {
-    style = { left: view.x + (node.x + 8) * k, top: view.y + (node.y + 5) * k, minWidth: 80 * k, height: 26 * k, fontSize: 13 * k, fontWeight: 700, textAlign: 'left', background: '#fff', padding: `0 ${4 * k}px`, ...outline };
+    const size = textSize(node);
+    style = { left: view.x + (node.x + 8) * k, top: view.y + (node.y + 5) * k, minWidth: 80 * k, height: (size + 13) * k, fontSize: size * k, fontWeight: textWeight(node), textAlign: 'left', background: '#fff', padding: `0 ${4 * k}px`, ...outline };
   } else {
     // Same width, size and line height as the SVG text, so nothing jumps on commit.
     const tw = textWidth(node);

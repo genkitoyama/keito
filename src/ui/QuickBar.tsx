@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { SCREEN, edgeTags, textHeightFor } from '../canvas/render';
+import { SCREEN, edgeTags, textHeightFor, textWeight } from '../canvas/render';
 import { docBounds, isTagged, labelPoint, routeEdges } from '../model/geometry';
 import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
 import { COLOR_KEYS, PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
@@ -96,16 +96,19 @@ export function QuickBar() {
   // Shapes, stickies, devices and area frames can be colour-coded; one without a colour shows as gray.
   const tinted = one?.type === 'shape' || one?.type === 'sticky' || one?.type === 'device' || one?.type === 'frame' ? one : undefined;
   const color: ColorKey = tinted ? (tinted.color ?? 'gray') : 'gray';
-  const sized = one?.type === 'text' || one?.type === 'shape' || one?.type === 'sticky' ? one : undefined;
+  const sized = one?.type === 'text' || one?.type === 'shape' || one?.type === 'sticky' || one?.type === 'frame' ? one : undefined;
   const sizes = sized ? sizesFor(sized.type) : [];
   // The built-in size of this kind of node; an unset fontSize means exactly this.
-  const baseSize = sized?.type === 'sticky' ? 13.5 : 14;
+  const baseSize = sized?.type === 'sticky' ? 13.5 : sized?.type === 'frame' ? 13 : 14;
+  const isBold = !!sized && textWeight(sized) === 700;
   const fontSize = sized?.fontSize ?? baseSize;
-  const resize = (fontSize: number | undefined) => {
+  // Apply a text style, letting the box follow so the text never spills out of it.
+  const restyle = (change: { fontSize?: number; bold?: boolean }) => {
     if (!sized) return;
-    const need = textHeightFor({ ...sized, fontSize }, sized.text);
+    if (sized.type === 'frame') return patch(change);
+    const need = textHeightFor({ ...sized, ...change }, sized.text);
     // Free text hugs its words; a shape or sticky only ever grows, since its size was chosen by hand.
-    patch({ fontSize, h: sized.type === 'text' ? need : Math.max(sized.h, need) });
+    patch({ ...change, h: sized.type === 'text' ? need : Math.max(sized.h, need) });
   };
   return (
     <div ref={ref} className="quickbar" onPointerDown={(e) => e.stopPropagation()}>
@@ -154,13 +157,18 @@ export function QuickBar() {
           {menu === 'size' && (
             <div className="qb-menu">
               {sizes.map((t) => (
-                <button key={t.label} className={(t.px ?? baseSize) === fontSize ? 'on' : ''} onClick={() => resize(t.px)}>
-                  <span style={{ fontSize: `${0.75 + (t.px ?? 14) / 48}em`, fontWeight: sized.type === 'text' && (t.px ?? 14) >= 20 ? 700 : 400 }}>{t.label}</span>
+                <button key={t.label} className={(t.px ?? baseSize) === fontSize ? 'on' : ''} onClick={() => restyle({ fontSize: t.px })}>
+                  <span style={{ fontSize: `${0.75 + (t.px ?? 14) / 48}em` }}>{t.label}</span>
                 </button>
               ))}
             </div>
           )}
         </div>
+      )}
+      {sized && (
+        <Btn tip={isBold ? '太字をやめる' : '太字にする'} on={isBold} onClick={() => restyle({ bold: !isBold })}>
+          {ICON.bold}
+        </Btn>
       )}
       {one?.type === 'shape' && (
         <>

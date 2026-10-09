@@ -56,9 +56,16 @@ export function textHeightFor(n: Node, text: string): number {
 }
 
 export const textSize = (n: Node): number =>
-  n.type === 'sticky' ? (n.fontSize ?? TEXT.sticky) : n.type === 'text' ? (n.fontSize ?? TEXT.text) : n.type === 'shape' ? (n.fontSize ?? TEXT.shape) : TEXT.shape;
+  n.type === 'sticky' ? (n.fontSize ?? TEXT.sticky) : n.type === 'text' ? (n.fontSize ?? TEXT.text) : n.type === 'shape' ? (n.fontSize ?? TEXT.shape) : n.type === 'frame' ? (n.fontSize ?? 13) : TEXT.shape;
 /** Large free text is a heading, so it is set bold. */
-export const textWeight = (n: Node): number => (n.type === 'text' && (n.fontSize ?? 0) >= 20 ? 700 : 400);
+export function textWeight(n: Node): number {
+  if (n.type !== 'text' && n.type !== 'shape' && n.type !== 'sticky' && n.type !== 'frame') return 400;
+  // Unless chosen by hand: area titles and large free text (headings) are bold, everything else regular.
+  const usual = n.type === 'frame' || (n.type === 'text' && (n.fontSize ?? 0) >= 20);
+  return (n.bold ?? usual) ? 700 : 400;
+}
+/** Height of the strip along the top of an area frame that holds its title. */
+export const frameTitleHeight = (n: Node): number => textSize(n) + 19;
 
 interface TextProps {
   x: number;
@@ -303,7 +310,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
             strokeWidth={theme.mono ? lw(theme, 0.18) : tint ? 1.5 : 1.2}
             strokeDasharray={theme.mono ? [14, 3, 2, 3].map((v) => v * k).join(' ') : '6 5'}
           />
-          <TextBlock x={x + 12} y={y + 18} w={w - 24} text={n.text} size={13} weight={700} fill={tint && n.color !== 'white' ? tint.line : '#475569'} anchor="start" theme={theme} />
+          <TextBlock x={x + 12} y={y + 11.5 + textSize(n) / 2} w={w - 24} text={n.text} size={textSize(n)} weight={textWeight(n)} fill={tint && n.color !== 'white' ? tint.line : '#475569'} anchor="start" theme={theme} />
         </g>
       );
     }
@@ -338,7 +345,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
               <path d={`M${x + w - f},${y + h} L${x + w},${y + h - f}`} stroke="rgba(0,0,0,0.12)" strokeWidth={0.8} />
             </>
           )}
-          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={textSize(n)} theme={theme} />
+          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={textSize(n)} weight={textWeight(n)} theme={theme} />
         </g>
       );
     }
@@ -371,7 +378,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
       return (
         <g>
           {body}
-          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={textSize(n)} fill={ink} theme={theme} />
+          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={textSize(n)} weight={textWeight(n)} fill={ink} theme={theme} />
         </g>
       );
     }

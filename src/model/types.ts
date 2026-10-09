@@ -32,6 +32,8 @@ export interface ShapeNode extends Base {
   color: ColorKey;
   /** Font size in px (default 14). */
   fontSize?: number;
+  /** Bold text; unset = this kind of node's usual weight. */
+  bold?: boolean;
   fill?: FillStyle;
   /** Dashed border. */
   dash?: boolean;
@@ -41,17 +43,25 @@ export interface StickyNode extends Base {
   color: ColorKey;
   /** Font size in px (default 13.5). */
   fontSize?: number;
+  /** Bold text; unset = this kind of node's usual weight. */
+  bold?: boolean;
 }
 export interface TextNode extends Base {
   type: 'text';
-  /** Font size in px (default 14); 20 and up is set bold, for headings. */
+  /** Font size in px (default 14); 20 and up is bold unless `bold` says otherwise. */
   fontSize?: number;
+  /** Bold text; unset = this kind of node's usual weight. */
+  bold?: boolean;
 }
 /** Area / location group. Devices whose centre is inside it report it as their location. */
 export interface FrameNode extends Base {
   type: 'frame';
   /** Tint of the frame's outline, wash and title; unset or gray is the neutral look. */
   color?: ColorKey;
+  /** Title font size in px (default 13). */
+  fontSize?: number;
+  /** Title weight; unset = bold. */
+  bold?: boolean;
 }
 /** `text` is the device name. Height is derived from the port count. */
 export interface DeviceNode extends Base {
