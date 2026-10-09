@@ -89,47 +89,54 @@ function endLabel(doc: Doc, end: EdgeEnd): string {
 
 const cables = (doc: Doc): Edge[] => doc.edges.filter((e) => signalOf(e.signal).cable);
 
-export function cableTable(doc: Doc): Table {
+export function cableTable(doc: Doc, withUrl = true): Table {
   const ids = cableIds(doc);
   const list = cables(doc);
   return {
     title: 'ケーブルリスト',
-    head: ['ケーブルID', '種別', 'From', 'To', '長さ(m)', 'ラベル', '備考'],
-    widths: [10, 10, 26, 26, 8, 14, 18],
+    head: ['ケーブルID', '種別', '品名・規格', 'From', 'To', '長さ(m)', 'ラベル', 'メーカー', '型番', '備考', ...(withUrl ? ['URL'] : [])],
+    widths: [9, 9, 16, 22, 22, 7, 11, 10, 12, 14, ...(withUrl ? [20] : [])],
     rows: list.map((e) => [
       ids.get(e.id) ?? '',
       signalOf(e.signal).label,
+      e.spec ?? '',
       endLabel(doc, e.from),
       endLabel(doc, e.to),
       e.length == null ? '' : String(e.length),
       e.label,
+      e.maker ?? '',
+      e.model ?? '',
       e.note,
+      ...(withUrl ? [safeUrl(e.url) ?? ''] : []),
     ]),
     refs: list.map((e) => [e.id]),
   };
 }
 
-/** Shopping-list view: how many cables of each type and length. */
+/** Shopping-list view: how many cables of each type, kind and length. */
 export function cableSummaryTable(doc: Doc): Table {
-  const groups = new Map<string, { signal: string; length: number | null; ids: string[] }>();
+  const groups = new Map<string, { e: Edge; ids: string[] }>();
   for (const e of cables(doc)) {
-    const key = `${e.signal}|${e.length ?? ''}`;
+    const key = `${e.signal}|${e.spec ?? ''}|${e.maker ?? ''}|${e.model ?? ''}|${e.length ?? ''}`;
     const g = groups.get(key);
     if (g) g.ids.push(e.id);
-    else groups.set(key, { signal: e.signal, length: e.length, ids: [e.id] });
+    else groups.set(key, { e, ids: [e.id] });
   }
   const list = [...groups.values()].sort(
-    (a, b) => a.signal.localeCompare(b.signal) || (a.length ?? Infinity) - (b.length ?? Infinity),
+    (a, b) => a.e.signal.localeCompare(b.e.signal) || (a.e.spec ?? '').localeCompare(b.e.spec ?? '', 'ja') || (a.e.length ?? Infinity) - (b.e.length ?? Infinity),
   );
   return {
     title: 'ケーブル集計',
-    head: ['種別', '長さ(m)', '本数', '合計長(m)'],
-    widths: [30, 20, 20, 30],
-    rows: list.map((g) => [
-      signalOf(g.signal).label,
-      g.length == null ? '未設定' : String(g.length),
-      String(g.ids.length),
-      g.length == null ? '' : String(g.length * g.ids.length),
+    head: ['種別', '品名・規格', 'メーカー', '型番', '長さ(m)', '本数', '合計長(m)'],
+    widths: [14, 22, 14, 16, 10, 8, 12],
+    rows: list.map(({ e, ids }) => [
+      signalOf(e.signal).label,
+      e.spec ?? '',
+      e.maker ?? '',
+      e.model ?? '',
+      e.length == null ? '未設定' : String(e.length),
+      String(ids.length),
+      e.length == null ? '' : String(e.length * ids.length),
     ]),
     refs: list.map((g) => g.ids),
   };

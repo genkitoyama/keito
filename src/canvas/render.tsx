@@ -387,7 +387,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
 
 export function edgeLabel(doc: Doc, e: Edge): string {
   const id = cableIds(doc).get(e.id);
-  return [id, e.label, e.length != null ? `${e.length}m` : ''].filter(Boolean).join(' · ');
+  return [id, e.spec, e.label, e.length != null ? `${e.length}m` : ''].filter(Boolean).join(' · ');
 }
 
 /** Box the label of a line occupies on the board — what you grab to slide it along the line. */

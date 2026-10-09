@@ -1,7 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { flushSync } from 'react-dom';
 import { Canvas, insertImages, spawnFrom, zoomBy } from './canvas/Canvas';
 import { hasText } from './model/types';
+import { getSetting, setSetting } from './platform/storage';
 import { copySelection, pasteClipboard, useStore } from './model/store';
 import { ExportPanel } from './ui/ExportPanel';
 import { Inspector } from './ui/Inspector';
@@ -95,21 +97,63 @@ function useHotkeys() {
   }, []);
 }
 
+/** Draggable boundary between two panes. `onDrag` gets how far the pointer has moved since the last call. */
+function Splitter({ axis, onDrag }: { axis: 'x' | 'y'; onDrag: (delta: number) => void }) {
+  const last = useRef<number | null>(null);
+  return (
+    <div
+      className={`splitter ${axis}`}
+      onPointerDown={(e) => {
+        last.current = axis === 'x' ? e.clientX : e.clientY;
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          // Pointer already gone: the drag just ends when it leaves the grip.
+        }
+      }}
+      onPointerMove={(e) => {
+        if (last.current === null) return;
+        const now = axis === 'x' ? e.clientX : e.clientY;
+        onDrag(now - last.current);
+        last.current = now;
+      }}
+      onPointerUp={() => (last.current = null)}
+      onPointerCancel={() => (last.current = null)}
+    />
+  );
+}
+
+/** A pane size the user can drag, remembered in this browser. */
+function usePaneSize(name: string, initial: number, min: number, max: () => number): [number, (delta: number) => void] {
+  const [size, setSize] = useState(() => Number(getSetting(name)) || initial);
+  const grow = (delta: number) =>
+    setSize((v) => {
+      const next = Math.round(Math.min(max(), Math.max(min, v + delta)));
+      setSetting(name, String(next));
+      return next;
+    });
+  return [size, grow];
+}
+
 export function App() {
   const panel = useStore((s) => s.panel);
   const ready = useStore((s) => s.ready);
+  const [side, growSide] = usePaneSize('inspectorWidth', 270, 220, () => Math.max(220, window.innerWidth - 420));
+  const [lists, growLists] = usePaneSize('listsHeight', 260, 110, () => Math.max(110, window.innerHeight - 220));
   useHotkeys();
   if (!ready) return <div className="loading">ボードを読み込み中…</div>;
   return (
-    <div className="app">
+    <div className="app" style={{ '--side': `${side}px`, '--lists': `${lists}px` } as CSSProperties}>
       <TopBar />
       <div className="main">
         <Toolbar />
         <div className="stage">
           <RevisionBanner />
           <Canvas />
+          {panel === 'lists' && <Splitter axis="y" onDrag={(d) => growLists(-d)} />}
           {panel === 'lists' && <ListsPanel />}
         </div>
+        <Splitter axis="x" onDrag={(d) => growSide(-d)} />
         <Inspector />
       </div>
       {panel === 'text' && <TextPanel />}

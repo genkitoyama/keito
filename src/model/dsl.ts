@@ -2,14 +2,16 @@ import { Document, isScalar, parse, visit } from 'yaml';
 import { docBounds, frameOf } from './geometry';
 import { autoLayout } from './layout';
 import { freshId, makeEdge, parsePort, presetOf, presetPorts } from './presets';
-import { isSignal } from './signals';
-import type { ColorKey, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FrameNode, Node, ShapeKind } from './types';
+import { isBuiltInSignal, isSignal, registerSignals } from './signals';
+import type { ColorKey, CustomSignal, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FrameNode, Node, ShapeKind } from './types';
 import { PALETTE } from './signals';
 
 /** Schema reference shown in the editor and given to the AI. */
 export const DSL_GUIDE = `# keito YAML 書式
 title: 図のタイトル
 project: 案件名            # 任意。drawingNo / author / rev / company も同様
+signals:                   # 任意。このボードだけの信号種別
+  - { id: hdbt, label: HDBaseT, prefix: HDB, color: "#0d9488" }
 areas:                     # 設置場所の枠（任意）
   - name: 制御室
     rect: [x, y, w, h]     # 省略すると所属機材から自動計算
@@ -33,7 +35,8 @@ devices:
 cables:
   - from: pc1.HDMI 1       # 機材ID.ポート名（無いポートは自動追加）
     to: pj1.HDMI
-    type: hdmi             # hdmi sdi dp lan usb audio power fiber dmx serial wireless other
+    type: hdmi             # hdmi sdi dp lan usb audio power fiber dmx serial wireless other、または signals で足した種別
+    spec: 光 HDMI AOC      # 任意。品名・規格（線のラベルに出る）。maker / model / url も書ける
     length: 10             # m、任意
     label: メイン映像      # 任意
     labelAt: 0.3           # 任意。ラベルの位置（線の始点 0 〜 終点 1、既定は中央）
@@ -87,6 +90,7 @@ export function toYaml(doc: Doc): string {
   for (const k of ['project', 'drawingNo', 'author', 'rev', 'company'] as const) put(out, k, doc.meta[k]);
 
   if (doc.powerTags === false) out.powerTags = false;
+  if (doc.signals?.length) out.signals = doc.signals.map((s) => ({ ...s }));
   if (doc.signalColors) out.colors = doc.signalColors;
 
   const frames = doc.nodes.filter((n) => n.type === 'frame');
@@ -120,6 +124,10 @@ export function toYaml(doc: Doc): string {
     out.cables = cables.map((e) => {
       const o: Obj = { from: refOf(doc, e.from), to: refOf(doc, e.to), type: e.signal };
       put(o, 'length', e.length);
+      put(o, 'spec', e.spec);
+      put(o, 'maker', e.maker);
+      put(o, 'model', e.model);
+      put(o, 'url', e.url);
       put(o, 'label', e.label);
       put(o, 'note', e.note);
       if (e.arrow !== 'none') o.arrow = e.arrow;
@@ -199,6 +207,16 @@ const DEFAULT_SIZE: Record<string, [number, number]> = {
 export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
   const root = parse(src);
   if (!isObj(root)) throw new Error('YAML のトップレベルはマップ（title: … など）にしてください');
+
+  // The board's own signal types come first: cables and ports below may use them.
+  const signals: CustomSignal[] | undefined = !Array.isArray(root.signals)
+    ? prev.signals
+    : root.signals.filter(isObj).flatMap((v) => {
+        const id = str(v.id).normalize('NFKC').trim().toLowerCase();
+        if (!/^[a-z0-9_-]+$/.test(id) || isBuiltInSignal(id)) return [];
+        return [{ id, label: str(v.label, id), prefix: str(v.prefix, id.toUpperCase().slice(0, 4)), color: HEX.test(str(v.color)) ? str(v.color) : '#475569' }];
+      });
+  registerSignals(signals);
 
   const taken = new Set<string>();
   const prevById = new Map(prev.nodes.map((n) => [n.id, n]));
@@ -335,6 +353,10 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     e.length = typeof v.length === 'number' ? v.length : null;
     e.label = str(v.label);
     e.note = str(v.note);
+    e.spec = str(v.spec) || undefined;
+    e.maker = str(v.maker) || undefined;
+    e.model = str(v.model) || undefined;
+    e.url = str(v.url) || undefined;
     if (v.arrow === 'end' || v.arrow === 'both') e.arrow = v.arrow;
     if (v.dash === true) e.dash = true;
     if (HEX.test(str(v.color))) e.color = str(v.color);
@@ -417,5 +439,5 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
   const picked = isObj(root.colors) ? Object.entries(root.colors).filter(([k, v]) => isSignal(k) && HEX.test(str(v))) : null;
   const signalColors = !picked ? prev.signalColors : picked.length ? Object.fromEntries(picked.map(([k, v]) => [k, str(v)])) : undefined;
   // Revision history is not part of the text form; it stays with the board.
-  return { version: 1, id: prev.id, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, revisions: prev.revisions };
+  return { version: 1, id: prev.id, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, revisions: prev.revisions };
 }

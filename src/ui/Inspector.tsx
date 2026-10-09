@@ -3,7 +3,7 @@ import { isTagged } from '../model/geometry';
 import { safeUrl } from '../model/url';
 import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
 import { freshId } from '../model/presets';
-import { COLOR_KEYS, PALETTE, SIGNALS, STICKY } from '../model/signals';
+import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
 import type { Arrow, DeviceNode, DocMeta, Edge, Node, Port, ShapeKind } from '../model/types';
@@ -11,7 +11,7 @@ import { FILLS, FillPreview, SHAPES } from './icons';
 import { Revisions } from './Revisions';
 
 /** Text input that records one undo step per editing burst instead of per keystroke. */
-function Field({ label, value, onChange, multiline, type = 'text', placeholder, onPasteText }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean; type?: string; placeholder?: string; onPasteText?: (text: string) => boolean }) {
+function Field({ label, value, onChange, multiline, wrap, type = 'text', placeholder, onPasteText }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean; wrap?: boolean; type?: string; placeholder?: string; onPasteText?: (text: string) => boolean }) {
   const dirty = useRef(false);
   const props = {
     value,
@@ -32,7 +32,8 @@ function Field({ label, value, onChange, multiline, type = 'text', placeholder, 
   return (
     <label className="field">
       <span>{label}</span>
-      {multiline ? <textarea rows={multiline ? 4 : 1} {...props} /> : <input type={type} {...props} />}
+      {/* `wrap`: a box that grows with its text, so a long note is all in view and selecting in it never scrolls the field. */}
+      {wrap ? <textarea className="wrap" rows={1} {...props} /> : multiline ? <textarea rows={4} {...props} /> : <input type={type} {...props} />}
     </label>
   );
 }
@@ -50,7 +51,7 @@ function Colors({ value, onPick, sticky }: { value: string; onPick: (c: (typeof 
 
 const SignalSelect = ({ value, onChange, flow }: { value: string; onChange: (v: string) => void; flow?: boolean }) => (
   <select value={value} onChange={(e) => onChange(e.target.value)}>
-    {SIGNALS.filter((s) => flow || s.id !== 'flow').map((s) => (
+    {allSignals().filter((s) => flow || s.id !== 'flow').map((s) => (
       <option key={s.id} value={s.id}>{s.label}</option>
     ))}
   </select>
@@ -134,7 +135,7 @@ function DevicePanel({ n }: { n: DeviceNode }) {
           <p className="error">Web のアドレス（https://…）として読めません。</p>
         ))}
       <Field label="カテゴリ" value={n.category} onChange={(v) => patch({ category: v })} />
-      <Field label="備考" value={n.note} onChange={(v) => patch({ note: v })} />
+      <Field wrap label="備考" value={n.note} onChange={(v) => patch({ note: v })} />
       <label className="field">
         <span>色分け（手配元・系統など）</span>
         <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />
@@ -275,6 +276,65 @@ function NodePanel({ n }: { n: Node }) {
   );
 }
 
+/** Add a signal type of the board's own (HDBaseT, Dante …) and hand its id back. */
+function NewSignal({ onAdd }: { onAdd: (id: string) => void }) {
+  const [form, setForm] = useState<{ label: string; prefix: string; color: string } | null>(null);
+  const doc = useStore((s) => s.doc);
+  const custom = doc.signals ?? [];
+  const st = useStore.getState;
+  const inUse = (id: string): boolean => doc.edges.some((x) => x.signal === id) || doc.nodes.some((n) => n.type === 'device' && n.ports.some((p) => p.signal === id));
+  const add = () => {
+    if (!form?.label.trim()) return;
+    const taken = new Set(allSignals().map((s) => s.id));
+    const base = form.label.normalize('NFKC').toLowerCase().replace(/[^a-z0-9]+/g, '') || 'sig';
+    let id = base;
+    for (let i = 2; taken.has(id); i++) id = `${base}${i}`;
+    const prefix = (form.prefix.trim() || base.toUpperCase().slice(0, 4)).replace(/[^A-Za-z0-9]/g, '');
+    // One undo step for the new type and the cable switching to it.
+    st().mutate((d) => ({ ...d, signals: [...(d.signals ?? []), { id, label: form.label.trim(), prefix: prefix || 'SIG', color: form.color }] }));
+    onAdd(id);
+    setForm(null);
+  };
+  if (!form) {
+    return (
+      <div className="signals">
+        {custom.map((s) => (
+            <span key={s.id} className="chip" style={{ borderColor: s.color }}>
+              <i style={{ background: s.color }} />
+              {s.label}
+              <button
+                className="mini"
+                title={inUse(s.id) ? 'この種別を使っている線やポートがあるので消せません' : 'この種別を消す'}
+                disabled={inUse(s.id)}
+                onClick={() => st().mutate((d) => ({ ...d, signals: (d.signals ?? []).filter((x) => x.id !== s.id) }))}
+              >
+                ×
+              </button>
+            </span>
+        ))}
+        <button className="mini" onClick={() => setForm({ label: '', prefix: '', color: LINE_COLORS[5] })}>
+          ＋種別を追加
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="rev-form">
+      <div className="row">
+        <input autoFocus placeholder="種別の名前（例: HDBaseT）" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} />
+        <input className="rev-id" style={{ flex: '0 0 64px' }} placeholder="ID頭" title="ケーブルIDの頭文字（例: HDB → HDB-01）" value={form.prefix} onChange={(e) => setForm({ ...form, prefix: e.target.value })} />
+        <input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} title="線の色" style={{ flex: '0 0 30px', padding: 0, height: 28 }} />
+      </div>
+      <div className="row">
+        <button className="primary" disabled={!form.label.trim()} onClick={add}>
+          追加してこの線に使う
+        </button>
+        <button onClick={() => setForm(null)}>やめる</button>
+      </div>
+    </div>
+  );
+}
+
 function EdgePanel({ e }: { e: Edge }) {
   const tagged = useStore((s) => isTagged(s.doc, e));
   const color = useStore((s) => lineColor(s.doc, e));
@@ -290,6 +350,25 @@ function EdgePanel({ e }: { e: Edge }) {
         <span>種別</span>
         <SignalSelect flow value={e.signal} onChange={(signal) => patch({ signal, arrow: signal === 'flow' ? 'end' : e.arrow }, true)} />
       </label>
+      <NewSignal onAdd={(signal) => patch({ signal, arrow: e.arrow })} />
+      {e.signal !== 'flow' && (
+        <>
+          <Field label="品名・規格（線のラベルに出ます）" placeholder="例: 光 HDMI AOC / Cat6A STP" value={e.spec ?? ''} onChange={(v) => patch({ spec: v || undefined })} />
+          <div className="grid2">
+            <Field label="メーカー" value={e.maker ?? ''} onChange={(v) => patch({ maker: v || undefined })} />
+            <Field label="型番" value={e.model ?? ''} onChange={(v) => patch({ model: v || undefined })} />
+          </div>
+          <Field label="リンク（製品ページなど）" placeholder="https://…" value={e.url ?? ''} onChange={(v) => patch({ url: v || undefined })} />
+          {e.url &&
+            (safeUrl(e.url) ? (
+              <a className="open-link" href={safeUrl(e.url)} target="_blank" rel="noopener noreferrer">
+                {safeUrl(e.url)!.replace(/^https?:\/\/(www\.)?/, '')} を開く ↗
+              </a>
+            ) : (
+              <p className="error">Web のアドレス（https://…）として読めません。</p>
+            ))}
+        </>
+      )}
       <div className="field">
         <span>線の色</span>
         <div className="line-colors">
@@ -300,7 +379,7 @@ function EdgePanel({ e }: { e: Edge }) {
         </div>
         <label className="check">
           <input type="checkbox" checked={all} onChange={(ev) => setAll(ev.target.checked)} />
-          同じ種別（{SIGNALS.find((s) => s.id === e.signal)?.label}）の線すべてに適用
+          同じ種別（{signalOf(e.signal).label}）の線すべてに適用
         </label>
         {(e.color || custom) && (
           <button className="mini" onClick={() => paint(null)}>
@@ -331,7 +410,7 @@ function EdgePanel({ e }: { e: Edge }) {
         </label>
       )}
       {e.route && <button onClick={() => patch({ route: undefined }, true)}>経路を自動に戻す</button>}
-      <Field label="備考" value={e.note} onChange={(v) => patch({ note: v })} />
+      <Field wrap label="備考" value={e.note} onChange={(v) => patch({ note: v })} />
       <button onClick={() => patch({ from: e.to, to: e.from }, true)}>向きを反転</button>
     </>
   );

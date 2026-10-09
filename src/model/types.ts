@@ -110,6 +110,12 @@ export interface Edge {
   note: string;
   /** Dashed line on the board (e.g. optional / future connections). */
   dash?: boolean;
+  /** What the cable is: product name or standard ("光 HDMI AOC", "Cat6A STP"). Shown in its label. */
+  spec?: string;
+  maker?: string;
+  model?: string;
+  /** Web page for the cable (product page …), as typed. */
+  url?: string;
   /** Colour of this line alone (hex); unset = the colour of its signal type. */
   color?: string;
   /** Where the label sits along the line, 0–1 from the start (default: the middle). */
@@ -129,6 +135,15 @@ export interface DocMeta {
   company: string;
 }
 
+/** A signal type defined on one board, beside the built-in ones (HDBaseT, Dante, 12G-SDI …). */
+export interface CustomSignal {
+  id: SignalId;
+  label: string;
+  /** Cable ID prefix, e.g. HDB-01. */
+  prefix: string;
+  color: string;
+}
+
 /** One recorded revision of a board. The drawing as it stood is kept beside the board, under `id`. */
 export interface Revision {
   id: string;
@@ -146,6 +161,8 @@ export interface Doc {
   meta: DocMeta;
   nodes: Node[];
   edges: Edge[];
+  /** Signal types added on this board. */
+  signals?: CustomSignal[];
   /** Recorded revisions, oldest first. */
   revisions?: Revision[];
   /** Colours chosen on this board for signal types, by signal id (hex). */

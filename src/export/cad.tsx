@@ -283,7 +283,7 @@ export function cadSheets(doc: Doc, opts: CadOptions): CadResult {
 
   if (opts.tables) {
     // Addresses don't belong on a drawing sheet; the model name on the diagram carries the link.
-    for (const t of [equipmentTable(doc, false), cableTable(doc)]) {
+    for (const t of [equipmentTable(doc, false), cableTable(doc, false)]) {
       if (!t.rows.length) continue;
       for (const body of tablePages(paper, t)) bodies.push({ name: doc.meta.title, kind: t.title, body });
     }

@@ -4,6 +4,7 @@ import { fromYaml } from './dsl';
 import { docBounds, nodeRect } from './geometry';
 import { allIds, freshId, randomId } from './presets';
 import { SAMPLE_YAML } from './sample';
+import { registerSignals } from './signals';
 import { type Doc, type Edge, type Node, type Revision, emptyMeta } from './types';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
@@ -273,6 +274,12 @@ async function flush(): Promise<void> {
   // An old revision on screen is never written over the live board.
   if (ready && !viewing && doc !== stored) await persist(doc);
 }
+
+// Keep the signal-type registry in step with the board on screen.
+registerSignals(useStore.getState().doc.signals);
+useStore.subscribe((s, prev) => {
+  if (s.doc.signals !== prev.doc.signals) registerSignals(s.doc.signals);
+});
 
 // Autosave shortly after every change.
 useStore.subscribe((s, prev) => {

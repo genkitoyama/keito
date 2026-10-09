@@ -1,4 +1,4 @@
-import type { ColorKey, SignalId } from './types';
+import type { ColorKey, CustomSignal, SignalId } from './types';
 
 export interface Signal {
   id: SignalId;
@@ -29,8 +29,21 @@ export const SIGNALS: Signal[] = [
 ];
 
 const byId = new Map(SIGNALS.map((s) => [s.id, s]));
-export const signalOf = (id: SignalId): Signal => byId.get(id) ?? byId.get('other')!;
-export const isSignal = (id: string): boolean => byId.has(id);
+
+// Signal types a board adds for itself. They are looked up from so many places that the board in
+// use registers them here (the store does it whenever the board changes) instead of every caller
+// passing the board along.
+let custom = new Map<SignalId, Signal>();
+/** Dash patterns handed to custom types in turn, so they stay distinguishable on monochrome sheets. */
+const DASHES = ['11 3 3 3', '7 3 1 3 1 3', '4 2', '16 3 2 3 2 3', '9 2 3 2'];
+export function registerSignals(list: CustomSignal[] | undefined): void {
+  custom = new Map((list ?? []).filter((s) => !byId.has(s.id)).map((s, i) => [s.id, { ...s, dash: DASHES[i % DASHES.length], cable: true }]));
+}
+export const signalOf = (id: SignalId): Signal => custom.get(id) ?? byId.get(id) ?? byId.get('other')!;
+export const isSignal = (id: string): boolean => custom.has(id) || byId.has(id);
+export const isBuiltInSignal = (id: string): boolean => byId.has(id);
+/** Every type on offer: the built-in ones, then the board's own. */
+export const allSignals = (): Signal[] => [...SIGNALS, ...custom.values()];
 
 export const PALETTE: Record<ColorKey, { fill: string; stroke: string }> = {
   white: { fill: '#ffffff', stroke: '#b4bfcc' },
