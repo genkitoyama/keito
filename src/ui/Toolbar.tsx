@@ -5,6 +5,7 @@ import { snap } from '../model/geometry';
 import { PRESETS, type Preset, allIds, freshId, makeDevice } from '../model/presets';
 import type { DeviceNode, UserPreset } from '../model/types';
 import { type Tool, useStore } from '../model/store';
+import { getSetting, setSetting } from '../platform/storage';
 import { ICON, ico, shapeIcon } from './icons';
 
 
@@ -50,30 +51,77 @@ function pickImages() {
   input.click();
 }
 
+const MINE = 'マイプリセット';
+
 function Library() {
   const [q, setQ] = useState('');
-  const list = PRESETS.filter((p) => !q || `${p.name}${p.category}${p.key}`.toLowerCase().includes(q.toLowerCase()));
+  // Folded categories are remembered across sessions; a search opens everything.
+  const [closed, setClosed] = useState<string[]>(() => {
+    try {
+      const v: unknown = JSON.parse(getSetting('libraryClosed') || '[]');
+      return Array.isArray(v) ? v.map(String) : [];
+    } catch {
+      return [];
+    }
+  });
+  const fold = (next: string[]) => {
+    setClosed(next);
+    setSetting('libraryClosed', JSON.stringify(next));
+  };
+  const hit = (text: string) => !q || text.toLowerCase().includes(q.toLowerCase());
+  const list = PRESETS.filter((p) => hit(`${p.name}${p.category}${p.key}`));
   const cats = [...new Set(list.map((p) => p.category || 'その他'))];
-  const mine = useStore((s) => s.presets).filter((p) => !q || `${p.name}${p.category}${p.maker}${p.model}`.toLowerCase().includes(q.toLowerCase()));
+  const mine = useStore((s) => s.presets).filter((p) => hit(`${p.name}${p.category}${p.maker}${p.model}`));
+  const all = [...(mine.length ? [MINE] : []), ...cats];
+  const allClosed = all.every((c) => closed.includes(c));
+  const section = (name: string, count: number, body: () => ReactNode) => {
+    const open = !!q || !closed.includes(name);
+    return (
+      <div key={name} className="library-cat">
+        <button
+          className="library-head"
+          aria-expanded={open}
+          disabled={!!q}
+          onClick={() => fold(open ? [...closed, name] : closed.filter((c) => c !== name))}
+        >
+          <span className={open ? 'chev open' : 'chev'}>▸</span>
+          <span className="name">{name}</span>
+          <small>{count}</small>
+        </button>
+        {open && body()}
+      </div>
+    );
+  };
   return (
     <div className="library">
-      <input autoFocus placeholder="機材を検索…" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="library-top">
+        <input autoFocus placeholder="機材を検索…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <button
+          className="mini"
+          disabled={!!q}
+          data-tip={allClosed ? 'すべてのカテゴリを開く' : 'すべてのカテゴリをしまう'}
+          onClick={() => fold(allClosed ? [] : [...new Set([...closed, ...all])])}
+        >
+          {allClosed ? '開く' : 'しまう'}
+        </button>
+      </div>
       <div className="library-list">
-        {mine.length > 0 && (
-          <div>
-            <h4>マイプリセット</h4>
-            {mine.map((p) => (
+        {mine.length > 0 &&
+          section(MINE, mine.length, () =>
+            mine.map((p) => (
               <div key={p.id} className="my-preset">
-                <button onClick={() => addDevice(p)}>
-                  <span>
-                    {p.name}
-                    {(p.maker || p.model) && <small className="sub">{[p.maker, p.model].filter(Boolean).join(' ')}</small>}
+                <button className="item" onClick={() => addDevice(p)}>
+                  <span className="label">
+                    <span>{p.name}</span>
+                    {(p.maker || p.model) && <small>{[p.maker, p.model].filter(Boolean).join(' ')}</small>}
                   </span>
-                  <small>{p.ports.filter((x) => x.side === 'left').length}in / {p.ports.filter((x) => x.side === 'right').length}out</small>
+                  <small>
+                    {p.ports.filter((x) => x.side === 'left').length}in / {p.ports.filter((x) => x.side === 'right').length}out
+                  </small>
                 </button>
                 <button
-                  className="mini"
-                  title="このプリセットを消す"
+                  className="mini remove"
+                  data-tip="このプリセットを消す"
                   onClick={() => {
                     if (confirm(`プリセット「${p.name}」を消しますか？ ボード上の機材は変わりません。`)) useStore.getState().deletePreset(p.id);
                   }}
@@ -81,22 +129,22 @@ function Library() {
                   ×
                 </button>
               </div>
-            ))}
-          </div>
-        )}
-        {cats.map((c) => (
-          <div key={c}>
-            <h4>{c}</h4>
-            {list
-              .filter((p) => (p.category || 'その他') === c)
-              .map((p) => (
-                <button key={p.key} onClick={() => addDevice(p)}>
-                  {p.name}
-                  <small>{p.in.length}in / {p.out.length}out</small>
-                </button>
-              ))}
-          </div>
-        ))}
+            )),
+          )}
+        {cats.map((c) => {
+          const items = list.filter((p) => (p.category || 'その他') === c);
+          return section(c, items.length, () =>
+            items.map((p) => (
+              <button key={p.key} className="item" onClick={() => addDevice(p)}>
+                <span className="label">{p.name}</span>
+                <small>
+                  {p.in.length}in / {p.out.length}out
+                </small>
+              </button>
+            )),
+          );
+        })}
+        {all.length === 0 && <p className="library-empty">該当する機材がありません</p>}
       </div>
     </div>
   );

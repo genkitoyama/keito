@@ -199,22 +199,76 @@ textarea:focus {
   overflow: auto;
   flex: 1;
 }
-.library h4 {
-  margin: 8px 2px 4px;
-  font-size: 11px;
-  color: var(--sub);
+.library-top {
+  display: flex;
+  gap: 4px;
+  align-items: center;
 }
-.library-list button {
+.library-top input {
+  flex: 1;
+}
+.library-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 5px 4px;
+  border-color: transparent;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sub);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.library-head:disabled {
+  opacity: 1;
+}
+.library-head .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.library-head .chev {
+  width: 10px;
+  transition: transform 0.12s;
+}
+.library-head .chev.open {
+  transform: rotate(90deg);
+}
+.library-list .item {
   width: 100%;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
   border-color: transparent;
   text-align: left;
+}
+.library-list .item .label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.library-list .item .label > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .library small {
   color: var(--sub);
   font-size: 10px;
+  flex: none;
+}
+.library-empty {
+  margin: 12px 4px;
+  color: var(--sub);
+  font-size: 12px;
 }
 
 .stage {
@@ -964,13 +1018,13 @@ td a {
   display: flex;
   align-items: center;
 }
-.my-preset > button:first-child {
+.my-preset .item {
   flex: 1;
   min-width: 0;
+  width: auto;
 }
-.my-preset .sub {
-  display: block;
-}
-.my-preset .mini {
+.my-preset .remove {
+  flex: none;
   border-color: transparent;
+  color: var(--sub);
 }
