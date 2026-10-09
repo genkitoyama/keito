@@ -941,25 +941,38 @@ function TextEditor({ id }: { id: string }) {
     if (node.type === 'shape' && node.fill === 'solid') style.color = STRONG[node.color].text;
   }
   return (
+    // The box does the centring and the editable sits inside it as a plain block: an empty
+    // editable that is itself a flex container puts its caret at the top instead of the middle.
     <div
-      ref={ref}
-      className="text-editor"
-      contentEditable
-      suppressContentEditableWarning
-      data-placeholder={edge ? 'ラベル' : 'テキストを入力'}
+      className="text-editor-box"
       style={{ color: INK, lineHeight: TEXT.lineHeight, ...style }}
-      onInput={grow}
-      onBlur={commit}
-      onPointerDown={(e) => e.stopPropagation()}
-      onKeyDown={(e) => {
+      onPointerDown={(e) => {
         e.stopPropagation();
-        // While the IME is composing, Enter / Escape belong to the conversion, not to us.
-        if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-        if (e.key === 'Escape' || (e.key === 'Enter' && (oneLine || e.metaKey || e.ctrlKey))) {
+        // A click beside the text still belongs to the editor.
+        if (e.target === e.currentTarget) {
           e.preventDefault();
-          commit();
+          ref.current?.focus();
         }
       }}
-    />
+    >
+      <div
+        ref={ref}
+        className="text-editor"
+        contentEditable
+        suppressContentEditableWarning
+        data-placeholder={edge ? 'ラベル' : 'テキストを入力'}
+        onInput={grow}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          // While the IME is composing, Enter / Escape belong to the conversion, not to us.
+          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+          if (e.key === 'Escape' || (e.key === 'Enter' && (oneLine || e.metaKey || e.ctrlKey))) {
+            e.preventDefault();
+            commit();
+          }
+        }}
+      />
+    </div>
   );
 }

@@ -256,12 +256,16 @@ textarea:focus {
   fill: rgba(37, 99, 235, 0.18);
   stroke: var(--accent);
 }
-.text-editor {
+.text-editor-box {
   position: absolute;
   display: flex;
   flex-direction: column;
   justify-content: center;
   text-align: center;
+  cursor: text;
+}
+.text-editor {
+  min-height: 1lh;
   outline: none;
   white-space: pre-wrap;
   /* Same breaking rules as the SVG text: per character for CJK, with kinsoku. */
