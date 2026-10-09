@@ -3,8 +3,6 @@ import { CLEAR } from './router';
 import type { Doc, Edge, Node, Rect } from './types';
 
 const COLUMN = 60; // nodes whose centres are this close in x share a column
-const GAP = 24; // least space kept between neighbours in a column
-const PACK = 30; // space between nodes packed under one another inside an area
 const FRAME_GAP = 60; // space between area frames stacked in a column
 const PAD = 40; // space between an area frame and what it holds
 const EDGE = 120; // frame edges in neighbouring columns this close are made to line up
@@ -76,10 +74,11 @@ function level(doc: Doc, frozen: Set<string>): { nodes: Map<string, Node>; clash
       let y = want.get(n.id);
       if (y === undefined && frozen.has(n.id)) y = n.y;
       if (y === undefined) {
-        // Nothing to line up with: inside an area, sit right under the neighbour above, or, when
-        // first in its column there, on the nearest row the columns to the left already laid out.
+        // Nothing to line up with: inside an area, keep the distance to the neighbour above (the
+        // spacing is the author's, never tightened), or, when first in its column there, sit on
+        // the nearest row the columns to the left already laid out.
         const mine = frameOf(doc, n);
-        if (mine && prev && frameOf(doc, prev.before) === mine) y = prev.after.y + nodeRect(prev.after).h + PACK;
+        if (mine && prev && frameOf(doc, prev.before) === mine) y = prev.after.y + n.y - prev.before.y;
         else if (mine) {
           const tops = (members.get(mine.id) ?? []).filter((id) => column.get(id)! < index).map((id) => nodes.get(id)!.y);
           y = tops.reduce((best, top) => (Math.abs(top - n.y) < Math.abs(best - n.y) ? top : best), tops[0] ?? n.y);
@@ -88,7 +87,8 @@ function level(doc: Doc, frozen: Set<string>): { nodes: Map<string, Node>; clash
       if (prev) {
         const { before, after } = prev;
         const space = n.y - (before.y + nodeRect(before).h);
-        const least = Math.min(space, frameOf(doc, before) === frameOf(doc, n) ? GAP : 80);
+        // Inside an area the spacing between neighbours is the author's: it may grow, never shrink.
+        const least = frameOf(doc, before) === frameOf(doc, n) ? space : Math.min(space, 80);
         const floor: number = after.y + nodeRect(after).h + least;
         if (y < floor) {
           // Neighbours in one area make room for each other. Across areas nothing gets shoved:
@@ -307,7 +307,8 @@ function arrange(doc: Doc): Map<string, Node> {
  * After levelling: frames in neighbouring columns whose tops or bottoms nearly meet are stretched
  * to line up, and frames nothing outside is wired to close up under the one above.
  */
-function square(doc: Doc, nodes: Map<string, Node>): void {
+function square(doc: Doc, nodes: Map<string, Node>, before: Doc): void {
+  const was = (f: Node) => nodeRect(before.nodes.find((n) => n.id === f.id)!);
   const members = membersOf(doc);
   const frames = plain(doc, nodes, members);
   const columns = stacks(frames, nodes);
@@ -327,8 +328,12 @@ function square(doc: Doc, nodes: Map<string, Node>): void {
     const others = columns.filter((c) => c !== col).flat();
     for (const f of col) {
       const r = at(f);
-      const tops = others.map((g) => at(g).y).filter((y) => y < r.y && r.y - y <= EDGE);
-      const bottoms = others.map((g) => at(g).y + at(g).h).filter((y) => y > r.y + r.h && y - (r.y + r.h) <= EDGE);
+      // Frames that shared an edge before keep sharing it, however far the fitting pulled them apart.
+      const tied = (g: Node, edge: (r: Rect) => number) => Math.abs(edge(was(g)) - edge(was(f))) <= 10;
+      const tops = others.filter((g) => at(g).y < r.y && (r.y - at(g).y <= EDGE || tied(g, (q) => q.y))).map((g) => at(g).y);
+      const bottoms = others
+        .filter((g) => at(g).y + at(g).h > r.y + r.h && (at(g).y + at(g).h - (r.y + r.h) <= EDGE || tied(g, (q) => q.y + q.h)))
+        .map((g) => at(g).y + at(g).h);
       const top = tops.length ? Math.min(...tops) : r.y;
       const bottom = bottoms.length ? Math.max(...bottoms) : r.y + r.h;
       if (top !== r.y) attempt(doc, nodes, () => nodes.set(f.id, { ...nodes.get(f.id)!, y: top, h: at(f).y + at(f).h - top } as Node));
@@ -402,7 +407,7 @@ function pass(doc: Doc): Doc {
   const arranged = arrange(doc);
   const balanced = { ...doc, nodes: doc.nodes.map((n) => arranged.get(n.id)!), edges: comb(doc, arranged) };
   const nodes = settle(balanced);
-  square(balanced, nodes);
+  square(balanced, nodes, doc);
   rows(balanced, nodes);
   return { ...balanced, nodes: balanced.nodes.map((n) => nodes.get(n.id)!), edges: comb(balanced, nodes) };
 }

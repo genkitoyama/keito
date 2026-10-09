@@ -1,7 +1,7 @@
 import { Document, isScalar, parse, visit } from 'yaml';
 import { docBounds, frameOf } from './geometry';
 import { autoLayout } from './layout';
-import { freshId, makeEdge, parsePort, presetOf, presetPorts } from './presets';
+import { JUNCTION, freshId, makeEdge, parsePort, presetOf, presetPorts } from './presets';
 import { isBuiltInSignal, isSignal, registerSignals } from './signals';
 import type { ColorKey, CustomSignal, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FrameNode, Node, ShapeKind } from './types';
 import { PALETTE } from './signals';
@@ -57,6 +57,8 @@ flows:                     # 矢印コネクタ（shapes / devices どちらも�
   - { from: s1, to: s2, label: はい }
 images:                    # 埋め込み画像。データ本体は id で引き継がれる（src に data URL / URL も可）
   - { id: img1, name: logo, pos: [x, y], size: [w, h] }
+junctions:                 # 分岐点（線が枝分かれする点）。cables の from / to に id だけを書いてつなぐ
+  - { id: j1, pos: [x, y] }
 sequences:
   - id: seq1
     text: |
@@ -186,6 +188,9 @@ export function toYaml(doc: Doc): string {
   const images = doc.nodes.filter((n) => n.type === 'image');
   if (images.length) out.images = images.map((n) => ({ id: n.id, name: n.text, pos: [r(n.x), r(n.y)], size: [r(n.w), r(n.h)] }));
 
+  const junctions = doc.nodes.filter((n) => n.type === 'junction');
+  if (junctions.length) out.junctions = junctions.map((n) => ({ id: n.id, pos: [r(n.x + n.w / 2), r(n.y + n.h / 2)] }));
+
   const y = new Document(out);
   // Keep coordinate pairs and port lists on one line.
   visit(y, {
@@ -299,6 +304,13 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
       nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined, fontSize, bold });
     }
     if (v.area) areaHint.set(id, str(v.area));
+  });
+
+  arr(root.junctions).forEach((v, i) => {
+    if (!isObj(v)) throw new Error(`junctions[${i}]: マップではありません`);
+    const id = claim(v.id, 'j', `junctions[${i}]`);
+    const at = place(id, v.pos);
+    nodes.push({ id, type: 'junction', x: at.x - JUNCTION / 2, y: at.y - JUNCTION / 2, w: JUNCTION, h: JUNCTION, text: '分岐' });
   });
 
   arr(root.sequences).forEach((v, i) => {

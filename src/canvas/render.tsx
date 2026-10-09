@@ -314,6 +314,17 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
         </g>
       );
     }
+    case 'junction': {
+      // The dot takes the colour of the lines it joins.
+      const line = doc?.edges.find((e) => e.from.node === n.id || e.to.node === n.id);
+      const ink = theme.mono && !theme.color ? '#000' : line && doc ? signalStroke(line.signal, theme, lineColor(doc, line)).stroke : '#64748b';
+      return (
+        <g>
+          <rect x={x} y={y} width={w} height={h} fill="none" pointerEvents="all" />
+          <circle cx={cx} cy={cy} r={theme.mono ? Math.max(2.2, lw(theme, 0.9)) : 4.5} fill={ink} />
+        </g>
+      );
+    }
     case 'image':
       return <image href={assetUrl(doc?.id, n.src)} x={x} y={y} width={w} height={h} preserveAspectRatio="xMidYMid meet" />;
     case 'text':
@@ -497,6 +508,8 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
   if (!pts || pts.length < 2) return null;
   if (isTagged(doc, e)) return <TaggedEdge doc={doc} e={e} theme={theme} />;
   const flow = e.signal === 'flow';
+  // A line running into a junction carries on from there: no arrowhead at the dot.
+  const intoJunction = doc.nodes.find((n) => n.id === e.to.node)?.type === 'junction';
   const signal = signalStroke(e.signal, theme, lineColor(doc, e));
   const stroke = signal.stroke;
   // On drawings the dash pattern already encodes the cable type, so only flows take the user's dash.
@@ -521,7 +534,7 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
   return (
     <g>
       <path d={d} fill="none" stroke={stroke} strokeWidth={width} strokeDasharray={dash} strokeLinejoin="round" strokeLinecap={flow ? 'round' : undefined} />
-      {(e.arrow !== 'none' || cadArrow) && <polygon points={arrowHead(tip(n - 1, -1, !!e.to.port), distinct(pts, n - 1, -1), head, cadArrow ? 0.3 : 0.42)} fill={stroke} />}
+      {(e.arrow !== 'none' || cadArrow) && !intoJunction && <polygon points={arrowHead(tip(n - 1, -1, !!e.to.port), distinct(pts, n - 1, -1), head, cadArrow ? 0.3 : 0.42)} fill={stroke} />}
       {e.arrow === 'both' && <polygon points={arrowHead(tip(0, 1, !!e.from.port), distinct(pts, 0, 1), head)} fill={stroke} />}
       {label && (
         <g>

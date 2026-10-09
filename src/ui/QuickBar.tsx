@@ -4,6 +4,7 @@ import { SCREEN, edgeTags, textHeightFor, textWeight } from '../canvas/render';
 import { docBounds, isTagged, labelPoint, routeEdges } from '../model/geometry';
 import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
 import { COLOR_KEYS, PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
+import { splitEdge } from '../model/presets';
 import { copySelection, pasteClipboard, useStore } from '../model/store';
 import { type ColorKey, type Node, hasText } from '../model/types';
 import { safeUrl } from '../model/url';
@@ -230,6 +231,25 @@ export function QuickBar() {
         <Btn className="labeled" tip={tagged ? '線を引いて表示する' : '線を引かず、両端に接続先だけ表示する'} on={tagged} onClick={() => st().updateEdge(edge.id, { tag: !tagged, route: undefined })}>
           {ICON.omit}
           <span>線を省略</span>
+        </Btn>
+      )}
+      {edge && !tagged && (
+        <Btn
+          className="labeled"
+          tip="この線の途中に分岐点を入れる（点から別の機材へ線を引けます。線の上に線をドロップしても分岐します）"
+          onClick={() => {
+            // The middle of the longest straight run: clear of the bends and of both ends.
+            const pts = routeEdges(doc).get(edge.id) ?? [];
+            const runs = pts.slice(1).map((q, i) => ({ p: pts[i], q, len: Math.hypot(q.x - pts[i].x, q.y - pts[i].y) }));
+            const run = runs.sort((a, b) => b.len - a.len)[0];
+            const cut = run && splitEdge(doc, edge.id, { x: (run.p.x + run.q.x) / 2, y: (run.p.y + run.q.y) / 2 });
+            if (!cut) return;
+            st().setDoc(cut.doc);
+            st().select([cut.junction]);
+          }}
+        >
+          {ICON.branch}
+          <span>分岐</span>
         </Btn>
       )}
       {edge?.route && !tagged && (

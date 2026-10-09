@@ -62,6 +62,8 @@ export function anchorOf(node: Node, end: EdgeEnd, toward: Pt): Anchor {
   const dx = (toward.x - c.x) / Math.max(1, rect.w);
   const dy = (toward.y - c.y) / Math.max(1, rect.h);
   const dir: Dir = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? 'right' : 'left') : dy >= 0 ? 'bottom' : 'top';
+  // Lines meet in the middle of a junction dot, not on its rim.
+  if (node.type === 'junction') return { x: c.x, y: c.y, dir, rect };
   return { ...sidePoint(rect, dir), dir, rect };
 }
 
@@ -158,7 +160,7 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
   }
   // What a line must not run through: every node except area frames (lines belong inside those)
   // and free text (captions are meant to sit next to lines).
-  const obstacles = doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'text').map(nodeRect);
+  const obstacles = doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'text' && n.type !== 'junction').map(nodeRect);
   const out = new Map<string, Pt[]>();
   // First the attachment points of every line, then one pass that hands jogging lines their bends.
   const drawn = doc.edges.flatMap((e, index) => {
@@ -168,8 +170,21 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
     const pa = anchorOf(a, e.from, center(nodeRect(b)));
     const pb = anchorOf(b, e.to, center(nodeRect(a)));
     // Re-aim port-less ends at the real attachment point of the other end.
-    const ea = e.from.port ? pa : anchorOf(a, e.from, pb);
-    const eb = e.to.port ? pb : anchorOf(b, e.to, pa);
+    const ra = e.from.port ? pa : anchorOf(a, e.from, pb);
+    const rb = e.to.port ? pb : anchorOf(b, e.to, pa);
+    // A junction dot lets the line leave whichever way makes a single clean corner into the other
+    // end: straight on when they are level, else square to the side the other end is entered from.
+    const turn = (n: Node, self: Anchor, other: Anchor, dot: boolean): Anchor => {
+      if (n.type !== 'junction' || dot) return self;
+      const dx = other.x - self.x;
+      const dy = other.y - self.y;
+      const along: Dir = dx >= 0 ? 'right' : 'left';
+      const across: Dir = dy >= 0 ? 'bottom' : 'top';
+      const dir = isH(other.dir) ? (Math.abs(dy) < 0.5 ? along : across) : Math.abs(dx) < 0.5 ? across : along;
+      return { ...self, dir };
+    };
+    const ea = turn(a, ra, rb, b.type === 'junction');
+    const eb = turn(b, rb, ra, a.type === 'junction');
     return [{ e, index, a, b, pa, pb, ea, eb, tagged: isTagged(doc, e) }];
   });
   const manual = (e: Edge) => !!e.route && e.route.length >= 2;
@@ -374,4 +389,24 @@ export function nearestT(pts: Pt[], p: Pt): number {
     acc += l;
   }
   return at / total;
+}
+
+/** The drawn line passing closest to `p` within `tol`, with the point on it. Lines drawn as tags have no run to hit. */
+export function edgeNear(doc: Doc, p: Pt, tol: number, skip?: string): { edge: Edge; at: Pt } | null {
+  let best: { edge: Edge; at: Pt; d: number } | null = null;
+  const routes = routeEdges(doc);
+  for (const edge of doc.edges) {
+    const pts = routes.get(edge.id);
+    if (!pts || edge.id === skip || isTagged(doc, edge)) continue;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const len = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+      const t = len ? Math.min(1, Math.max(0, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / len)) : 0;
+      const at = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+      const d = Math.hypot(p.x - at.x, p.y - at.y);
+      if (d <= tol && (!best || d < best.d)) best = { edge, at, d };
+    }
+  }
+  return best && { edge: best.edge, at: best.at };
 }

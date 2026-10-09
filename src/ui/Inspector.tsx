@@ -229,6 +229,19 @@ function NodePanel({ n }: { n: Node }) {
       </>
     );
   }
+  if (n.type === 'junction') {
+    const lines = useStore.getState().doc.edges.filter((e) => e.from.node === n.id || e.to.node === n.id).length;
+    return (
+      <>
+        <h3>分岐点 <code>{n.id}</code></h3>
+        <p className="hint">
+          {lines} 本の線がここでつながっています。
+          <br />
+          点を選ぶと出る ● をドラッグすると、ここから別の機材へ線を引けます。線の上に線をドロップしても分岐点ができます。
+        </p>
+      </>
+    );
+  }
   if (n.type === 'image') {
     const replace = () => {
       const input = document.createElement('input');

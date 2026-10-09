@@ -89,9 +89,13 @@ export interface ImageNode extends Base {
   type: 'image';
   src: string;
 }
-export type Node = ShapeNode | StickyNode | TextNode | FrameNode | DeviceNode | SequenceNode | ImageNode;
+/** A dot where lines meet: a line splits here into several, or several join into one. */
+export interface JunctionNode extends Base {
+  type: 'junction';
+}
+export type Node = ShapeNode | StickyNode | TextNode | FrameNode | DeviceNode | SequenceNode | ImageNode | JunctionNode;
 /** Nodes whose `text` is edited in place on the canvas. */
-export const hasText = (n: Node): boolean => n.type !== 'sequence' && n.type !== 'image';
+export const hasText = (n: Node): boolean => n.type !== 'sequence' && n.type !== 'image' && n.type !== 'junction';
 export type NodeType = Node['type'];
 
 export interface EdgeEnd {

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as RMouseEvent, ReactNode, PointerEvent as RPointerEvent } from 'react';
 import {
+  edgeNear,
   DEV,
   type Dir,
   center,
@@ -19,7 +20,7 @@ import {
   simplify,
   snap,
 } from '../model/geometry';
-import { type CreateKind, allIds, claimPort, makeEdge, makeImage, makeNode } from '../model/presets';
+import { type CreateKind, allIds, claimPort, junctionSignal, makeEdge, makeImage, makeNode, splitEdge } from '../model/presets';
 import { SEQUENCE_SAMPLE } from '../model/sequence';
 import { STRONG } from '../model/signals';
 import { copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
@@ -46,7 +47,9 @@ const ACCENT = '#2563eb';
 const SPAWN_GAP = 70;
 type Flowable = Extract<Node, { type: 'shape' | 'sticky' | 'text' }>;
 const canConnect = (n: Node): n is Flowable => n.type === 'shape' || n.type === 'sticky' || n.type === 'text';
-const canResize = (n: Node): boolean => n.type !== 'sequence';
+const canResize = (n: Node): boolean => n.type !== 'sequence' && n.type !== 'junction';
+/** Nodes that offer side dots to pull a line from. */
+const hasHandles = (n: Node): boolean => canConnect(n) || n.type === 'junction';
 const st = useStore.getState;
 
 const portOf = (doc: Doc, end: EdgeEnd) => {
@@ -588,10 +591,17 @@ export function Canvas() {
       if (!edge) return;
       const keep = d.end === 'from' ? edge.to : edge.from;
       const over = nodeAt(s.doc, p);
-      const hit: EdgeEnd | null = portAt(s.doc, p) ?? (over && over.type !== 'frame' ? { node: over.id } : null);
+      let hit: EdgeEnd | null = portAt(s.doc, p) ?? (over && over.type !== 'frame' ? { node: over.id } : null);
+      let base = s.doc;
+      if (!hit) {
+        // Dropped on another line: branch off it through a new junction dot.
+        const line = edgeNear(base, p, 8 / s.view.k, d.id);
+        const cut = line && splitEdge(base, line.edge.id, line.at);
+        if (cut) [base, hit] = [cut.doc, { node: cut.junction }];
+      }
       if (!hit || hit.node === keep.node) return;
       // Dropped on a device body: take a free port of the cable's type on the matching side.
-      const claimed = hit.port ? { end: hit, doc: s.doc } : claimPort(s.doc, hit.node, edge.signal, d.end === 'from' ? 'right' : 'left');
+      const claimed = hit.port ? { end: hit, doc: base } : claimPort(base, hit.node, edge.signal, d.end === 'from' ? 'right' : 'left');
       s.setDoc({ ...claimed.doc, edges: claimed.doc.edges.map((x) => (x.id === d.id ? { ...x, [d.end]: claimed.end, route: undefined } : x)) });
       return;
     }
@@ -603,19 +613,29 @@ export function Canvas() {
       return;
     }
     const p = world(e);
-    const taken = allIds(s.doc);
     const source = s.doc.nodes.find((n) => n.id === d.from.node)!;
     const over = nodeAt(s.doc, p);
     let to: EdgeEnd | null = portAt(s.doc, p) ?? (over && over.type !== 'frame' ? { node: over.id } : null);
     if (to && to.node === d.from.node) to = null;
+    let base = s.doc;
+    if (!to) {
+      // Dropped on a line: branch off it through a new junction dot.
+      const line = edgeNear(base, p, 8 / s.view.k);
+      const touches = line && (line.edge.from.node === d.from.node || line.edge.to.node === d.from.node);
+      const cut = line && !touches ? splitEdge(base, line.edge.id, line.at) : null;
+      if (cut) [base, to] = [cut.doc, { node: cut.junction }];
+    }
+    const taken = allIds(base);
     if (to) {
       let from = d.from;
+      const isDot = (end: EdgeEnd) => base.nodes.find((n) => n.id === end.node)?.type === 'junction';
       // Cables run output → input regardless of which end the drag started from.
-      if (portOf(s.doc, from)?.side === 'left' && portOf(s.doc, to)?.side !== 'left') [from, to] = [to, from];
-      const signal = portOf(s.doc, from)?.signal ?? portOf(s.doc, to)?.signal ?? 'flow';
+      if (portOf(base, from)?.side === 'left' && portOf(base, to)?.side !== 'left') [from, to] = [to, from];
+      else if (isDot(from) && portOf(base, to)?.side === 'right') [from, to] = [to, from];
+      const signal = portOf(base, from)?.signal ?? portOf(base, to)?.signal ?? junctionSignal(base, to.node) ?? junctionSignal(base, from.node) ?? 'flow';
       // An end dropped on a device body takes a free port of that signal (a new one if all are used),
       // so a row of devices can be plugged into a UPS without managing its outlets by hand.
-      let next = s.doc;
+      let next = base;
       if (!from.port) ({ end: from, doc: next } = claimPort(next, from.node, signal, 'right'));
       if (!to.port) ({ end: to, doc: next } = claimPort(next, to.node, signal, 'left'));
       const edge = makeEdge(taken, from, to, signal);
@@ -638,11 +658,11 @@ export function Canvas() {
   const others = doc.nodes.filter((n) => n.type !== 'frame');
   const single = selection.length === 1 ? doc.nodes.find((n) => n.id === selection[0]) : undefined;
   const selectedEdge = selection.length === 1 ? doc.edges.find((e) => e.id === selection[0]) : undefined;
-  const handleNode = doc.nodes.find((n) => n.id === hover && canConnect(n)) ?? (single && canConnect(single) ? single : undefined);
+  const handleNode = doc.nodes.find((n) => n.id === hover && hasHandles(n)) ?? (single && hasHandles(single) ? single : undefined);
   const hs = 8 / view.k;
   const idle = tool === 'select' && !editing && !busy;
   const cursor = space || tool === 'pan' ? 'grab' : tool === 'select' ? 'default' : 'crosshair';
-  const preview = idle && handleNode && hoverSide ? spawnRect(doc, handleNode, hoverSide) : null;
+  const preview = idle && handleNode && canConnect(handleNode) && hoverSide ? spawnRect(doc, handleNode, hoverSide) : null;
 
   const nodeGroup = (n: Node) => (
     <g
@@ -741,7 +761,10 @@ export function Canvas() {
           {handleNode &&
             idle &&
             SIDES.map((side) => {
-              const p = sidePoint(nodeRect(handleNode), side);
+              const at = sidePoint(nodeRect(handleNode), side);
+              // A junction dot is smaller than its handles: stand them off so they don't pile up on it.
+              const off = handleNode.type === 'junction' ? 10 / view.k : 0;
+              const p = { x: at.x + (side === 'right' ? off : side === 'left' ? -off : 0), y: at.y + (side === 'bottom' ? off : side === 'top' ? -off : 0) };
               const on = hoverSide === side;
               return (
                 <g
