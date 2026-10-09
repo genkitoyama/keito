@@ -1,6 +1,7 @@
 import { fromYaml } from '../model/dsl';
 import { randomId } from '../model/presets';
 import { type Panel, emptyDoc, useStore } from '../model/store';
+import { tidy } from '../model/tidy';
 import type { Doc } from '../model/types';
 import { download, inlineImages, pickTextFile, safeName } from '../platform/storage';
 
@@ -37,6 +38,7 @@ export function TopBar() {
   const canRedo = useStore((s) => s.future.length > 0);
   const saving = useStore((s) => s.saving);
   const mode = useStore((s) => s.mode);
+  const viewing = useStore((s) => !!s.viewing);
   const st = useStore.getState;
   const toggle = (p: Panel) => st().setPanel(panel === p ? null : p);
   const list = boards.some((b) => b.id === doc.id) ? boards : [{ id: doc.id, title: doc.meta.title, updated: 0 }, ...boards];
@@ -61,6 +63,10 @@ export function TopBar() {
       <span className="sep" />
       <button disabled={!canUndo} onClick={() => st().undo()} data-tip="元に戻す（⌘Z）" aria-label="元に戻す">↶</button>
       <button disabled={!canRedo} onClick={() => st().redo()} data-tip="やり直す（⇧⌘Z）" aria-label="やり直す">↷</button>
+      <span className="sep" />
+      <button disabled={viewing} onClick={() => st().setDoc(tidy(st().doc))} data-tip="整頓: 機材の高さをそろえて線をまっすぐにし、折れ位置を並べ直す（⌘Z で戻せます）">
+        整頓
+      </button>
       <span className="sep" />
       <button onClick={openFile} data-tip="ファイルを開く（.keito.json / .yaml）">開く</button>
       <button onClick={() => void saveFile()} data-tip="画像込みの 1 ファイルに書き出す（⌘S）">書き出し</button>
