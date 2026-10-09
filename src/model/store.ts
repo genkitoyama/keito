@@ -5,7 +5,7 @@ import { docBounds, nodeRect } from './geometry';
 import { allIds, freshId, randomId } from './presets';
 import { SAMPLE_YAML } from './sample';
 import { registerSignals } from './signals';
-import { type Doc, type Edge, type Node, type Revision, emptyMeta } from './types';
+import { type Doc, type Edge, type Node, type Revision, type UserPreset, emptyMeta } from './types';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
 export type Panel = null | 'lists' | 'text' | 'export' | 'library';
@@ -92,6 +92,11 @@ interface State {
   /** Make the revision on screen the live board again. */
   restoreRevision(): void;
   deleteRevision(id: string): void;
+  /** Devices saved for reuse, shared by all boards. */
+  presets: UserPreset[];
+  /** Save a device on the board as a preset (replacing one of the same name, maker and model). */
+  savePreset(deviceId: string): void;
+  deletePreset(id: string): void;
 }
 
 let backend: Backend | null = null;
@@ -116,6 +121,7 @@ export const useStore = create<State>((set, get) => ({
   mode: 'local',
   saving: 'saved',
   viewing: null,
+  presets: [],
 
   checkpoint: () => set((s) => ({ past: [...s.past.slice(-HISTORY), s.doc], future: [] })),
   setDoc: (doc, record = true) => {
@@ -217,6 +223,33 @@ export const useStore = create<State>((set, get) => ({
     if (get().viewing) return;
     await b.removeRevision(get().doc.id, id);
     get().setDoc({ ...get().doc, revisions: (get().doc.revisions ?? []).filter((r) => r.id !== id) }, false);
+  }),
+  savePreset: (deviceId) => void run(async (b) => {
+    const d = get().doc.nodes.find((n) => n.id === deviceId);
+    if (d?.type !== 'device') return;
+    const same = (p: UserPreset): boolean => p.name === d.text && p.maker === d.maker && p.model === d.model;
+    const preset: UserPreset = {
+      id: get().presets.find(same)?.id ?? randomId(),
+      name: d.text,
+      category: d.category,
+      maker: d.maker,
+      model: d.model,
+      note: d.note,
+      w: d.w,
+      ports: d.ports.map((p) => ({ ...p })),
+      watts: d.watts,
+      capacity: d.capacity,
+      url: d.url,
+      color: d.color,
+    };
+    const presets = [preset, ...get().presets.filter((p) => !same(p))];
+    await b.savePresets(presets);
+    set({ presets });
+  }),
+  deletePreset: (id) => void run(async (b) => {
+    const presets = get().presets.filter((p) => p.id !== id);
+    await b.savePresets(presets);
+    set({ presets });
   }),
   deleteBoard: (id) => void run(async (b) => {
     if (id === get().doc.id) clearTimeout(timer);
@@ -325,7 +358,7 @@ export async function boot(): Promise<void> {
       await backend.save(doc);
       boards = await backend.list();
     }
-    useStore.setState({ boards, mode: backend.mode, ready: true });
+    useStore.setState({ boards, mode: backend.mode, ready: true, presets: await backend.loadPresets().catch(() => []) });
     show(doc);
   } catch (e) {
     console.error(e);

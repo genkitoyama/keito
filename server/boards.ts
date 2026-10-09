@@ -8,6 +8,7 @@ import type { Connect, Plugin } from 'vite';
  *   boards/<title>__<id>/board.json
  *   boards/<title>__<id>/assets/<hash>.<ext>
  *   boards/<title>__<id>/revisions/<revision id>.json
+ *   boards/presets.json            (the user's own device presets)
  *
  * The folder is named after the board's title so it reads well in Finder and
  * in git; the id after the double underscore is what URLs and the API use, so
@@ -51,6 +52,30 @@ export function keitoBoards(root = process.env.KEITO_BOARDS ?? path.resolve('boa
   const handler: Connect.NextHandleFunction = async (req, res, next) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    // The user's own device presets, shared by every board: boards/presets.json.
+    if (parts[0] === 'api' && parts[1] === 'presets' && parts.length === 2) {
+      const file = path.join(root, 'presets.json');
+      try {
+        if (req.method === 'GET') {
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Cache-Control', 'no-store');
+          return res.end(fs.existsSync(file) ? fs.readFileSync(file) : '[]');
+        }
+        if (req.method === 'PUT') {
+          const list = JSON.parse((await readBody(req)).toString('utf8'));
+          if (!Array.isArray(list)) throw new Error('not a list');
+          fs.mkdirSync(root, { recursive: true });
+          fs.writeFileSync(file, JSON.stringify(list, null, 2));
+          res.statusCode = 204;
+          return res.end();
+        }
+        res.statusCode = 405;
+        return res.end();
+      } catch (e) {
+        res.statusCode = 500;
+        return res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+      }
+    }
     if (parts[0] !== 'api' || parts[1] !== 'boards') return next();
     const send = (status: number, body?: unknown, type = 'application/json') => {
       res.statusCode = status;

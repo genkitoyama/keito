@@ -112,6 +112,7 @@ function DevicePanel({ n }: { n: DeviceNode }) {
   const st = useStore.getState;
   const patch = (p: Partial<DeviceNode>, record = false) => st().updateNode(n.id, p, record);
   const link = safeUrl(n.url);
+  const saved = useStore((s) => s.presets.some((p) => p.name === n.text && p.maker === n.maker && p.model === n.model));
   const setPort = (id: string, p: Partial<Port>, record: boolean) => patch({ ports: n.ports.map((x) => (x.id === id ? { ...x, ...p } : x)) }, record);
   const addPort = (side: Port['side']) =>
     patch({ ports: [...n.ports, { id: freshId(new Set(n.ports.map((p) => p.id)), 'p'), name: side === 'left' ? 'IN' : 'OUT', side, signal: 'hdmi' }] }, true);
@@ -155,6 +156,9 @@ function DevicePanel({ n }: { n: DeviceNode }) {
         ))}
       <Field label="カテゴリ" value={n.category} onChange={(v) => patch({ category: v })} />
       <Field wrap label="備考" value={n.note} onChange={(v) => patch({ note: v })} />
+      <button className="wide" title="名称・メーカー・型番・ポート構成などを、機材ライブラリの「マイプリセット」に保存します" onClick={() => st().savePreset(n.id)}>
+        {saved ? 'マイプリセットを上書き保存' : 'マイプリセットに保存'}
+      </button>
       <label className="field">
         <span>色分け（手配元・系統など）</span>
         <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />

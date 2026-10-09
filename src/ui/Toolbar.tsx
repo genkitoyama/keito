@@ -2,7 +2,8 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { insertImages, insertNode, viewCenter } from '../canvas/Canvas';
 import { snap } from '../model/geometry';
-import { PRESETS, type Preset, allIds, makeDevice } from '../model/presets';
+import { PRESETS, type Preset, allIds, freshId, makeDevice } from '../model/presets';
+import type { DeviceNode, UserPreset } from '../model/types';
 import { type Tool, useStore } from '../model/store';
 import { ICON, ico, shapeIcon } from './icons';
 
@@ -22,14 +23,19 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: ReactNode }[] = [
 ];
 export const TOOL_KEYS: Record<string, Tool> = Object.fromEntries(TOOLS.map((t) => [t.key.toLowerCase(), t.tool]));
 
-function addDevice(p: Preset) {
+function addDevice(p: Preset | UserPreset) {
   const s = useStore.getState();
   const c = viewCenter();
   // Step sideways until the spot is free so repeated clicks don't stack.
   let x = snap(c.x - 90);
   const y = snap(c.y - 60);
   while (s.doc.nodes.some((n) => Math.abs(n.x - x) < 20 && Math.abs(n.y - y) < 20)) x += 220;
-  const d = makeDevice(p, x, y, allIds(s.doc));
+  const taken = allIds(s.doc);
+  // One of the user's own presets comes back exactly as it was saved.
+  const d: DeviceNode =
+    'key' in p
+      ? makeDevice(p, x, y, taken)
+      : { id: freshId(taken, 'dev'), type: 'device', x, y, h: 0, w: p.w, text: p.name, maker: p.maker, model: p.model, category: p.category, note: p.note, ports: p.ports.map((q) => ({ ...q })), watts: p.watts, capacity: p.capacity, url: p.url, color: p.color };
   s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, d] }));
   s.select([d.id]);
   s.setTool('select');
@@ -48,10 +54,36 @@ function Library() {
   const [q, setQ] = useState('');
   const list = PRESETS.filter((p) => !q || `${p.name}${p.category}${p.key}`.toLowerCase().includes(q.toLowerCase()));
   const cats = [...new Set(list.map((p) => p.category || 'その他'))];
+  const mine = useStore((s) => s.presets).filter((p) => !q || `${p.name}${p.category}${p.maker}${p.model}`.toLowerCase().includes(q.toLowerCase()));
   return (
     <div className="library">
       <input autoFocus placeholder="機材を検索…" value={q} onChange={(e) => setQ(e.target.value)} />
       <div className="library-list">
+        {mine.length > 0 && (
+          <div>
+            <h4>マイプリセット</h4>
+            {mine.map((p) => (
+              <div key={p.id} className="my-preset">
+                <button onClick={() => addDevice(p)}>
+                  <span>
+                    {p.name}
+                    {(p.maker || p.model) && <small className="sub">{[p.maker, p.model].filter(Boolean).join(' ')}</small>}
+                  </span>
+                  <small>{p.ports.filter((x) => x.side === 'left').length}in / {p.ports.filter((x) => x.side === 'right').length}out</small>
+                </button>
+                <button
+                  className="mini"
+                  title="このプリセットを消す"
+                  onClick={() => {
+                    if (confirm(`プリセット「${p.name}」を消しますか？ ボード上の機材は変わりません。`)) useStore.getState().deletePreset(p.id);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {cats.map((c) => (
           <div key={c}>
             <h4>{c}</h4>

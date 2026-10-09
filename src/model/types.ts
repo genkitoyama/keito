@@ -143,6 +143,22 @@ export interface DocMeta {
   company: string;
 }
 
+/** A device the user saved to reuse: everything about it except where it sits. */
+export interface UserPreset {
+  id: string;
+  name: string;
+  category: string;
+  maker: string;
+  model: string;
+  note: string;
+  w: number;
+  ports: Port[];
+  watts?: number;
+  capacity?: number;
+  url?: string;
+  color?: ColorKey;
+}
+
 /** A signal type defined on one board, beside the built-in ones (HDBaseT, Dante, 12G-SDI …). */
 export interface CustomSignal {
   id: SignalId;

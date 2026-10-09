@@ -1,4 +1,4 @@
-import type { Doc } from '../model/types';
+import type { Doc, UserPreset } from '../model/types';
 
 /**
  * Persistence boundary. Boards live in a folder on disk when the keito server
@@ -25,6 +25,9 @@ export interface Backend {
   saveRevision(boardId: string, id: string, doc: Doc): Promise<void>;
   loadRevision(boardId: string, id: string): Promise<Doc | null>;
   removeRevision(boardId: string, id: string): Promise<void>;
+  /** The user's own device presets, shared by all boards. */
+  loadPresets(): Promise<UserPreset[]>;
+  savePresets(list: UserPreset[]): Promise<void>;
 }
 
 const INDEX = 'keito:boards';
@@ -83,6 +86,15 @@ const local: Backend = {
     }
   },
   removeRevision: async (boardId, id) => localStorage.removeItem(`keito:rev:${boardId}:${id}`),
+  loadPresets: async () => {
+    try {
+      const v = JSON.parse(localStorage.getItem('keito:presets') ?? '[]');
+      return Array.isArray(v) ? v : [];
+    } catch {
+      return [];
+    }
+  },
+  savePresets: async (list) => localStorage.setItem('keito:presets', JSON.stringify(list)),
 };
 
 const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
@@ -124,6 +136,13 @@ const server: Backend = {
   },
   removeRevision: async (boardId, id) => {
     await ok(await fetch(`${API}/${boardId}/revisions/${id}`, { method: 'DELETE' }));
+  },
+  loadPresets: async () => {
+    const v = await (await ok(await fetch('/api/presets'))).json();
+    return Array.isArray(v) ? v : [];
+  },
+  savePresets: async (list) => {
+    await ok(await fetch('/api/presets', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(list) }));
   },
 };
 

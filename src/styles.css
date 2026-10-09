@@ -959,3 +959,18 @@ td a {
   field-sizing: content;
   overflow-wrap: anywhere;
 }
+
+.my-preset {
+  display: flex;
+  align-items: center;
+}
+.my-preset > button:first-child {
+  flex: 1;
+  min-width: 0;
+}
+.my-preset .sub {
+  display: block;
+}
+.my-preset .mini {
+  border-color: transparent;
+}
