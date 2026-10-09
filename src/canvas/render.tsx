@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { DEV, crossings, isTagged, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
-import { lineColor, signalColor } from '../model/lineColor';
+import { lineColor, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, labelStacked, lengthShown, powerLoads } from '../model/lists';
 import { SEQ, parseSequence } from '../model/sequence';
 import { PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
@@ -482,8 +482,8 @@ function TaggedEdge({ doc, e, theme }: { doc: Doc; e: Edge; theme: Theme }) {
       {edgeTags(doc, e, theme).map((t, i) => (
         <g key={i}>
           <line x1={t.from.x} y1={t.from.y} x2={t.to.x} y2={t.to.y} stroke={ink} strokeWidth={width} />
-          <rect x={t.x} y={t.y} width={t.w} height={t.h} rx={theme.mono ? 0 : 3} fill="#fff" stroke={ink} strokeWidth={theme.mono ? lw(theme, 0.18) : 1} />
-          <text x={t.x + t.w / 2} y={mid(t.y + t.h / 2, 10)} fontFamily={theme.font} fontSize={10} fill={ink} textAnchor="middle">
+          <rect x={t.x} y={t.y} width={t.w} height={t.h} rx={theme.mono ? 0 : 3} fill={theme.mono ? '#fff' : mix(stroke, '#ffffff', 0.84)} stroke={ink} strokeWidth={theme.mono ? lw(theme, 0.18) : 1} />
+          <text x={t.x + t.w / 2} y={mid(t.y + t.h / 2, 10)} fontFamily={theme.font} fontSize={10} fill={theme.mono ? ink : mix(stroke, '#0f172a', 0.5)} textAnchor="middle">
             {t.text}
           </text>
         </g>
@@ -531,11 +531,13 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
             width={box.w}
             height={box.h}
             rx={theme.mono ? 0 : 4}
-            fill={theme.mono ? '#fff' : '#f8fafc'}
-            stroke={theme.mono ? stroke : 'none'}
-            strokeWidth={lw(theme, 0.13)}
+            // On the board the label is a chip in a wash of the line's colour, with darker lettering:
+            // it reads as part of that line, and stays legible where coloured text on white did not.
+            fill={theme.mono ? '#fff' : mix(stroke, '#ffffff', 0.84)}
+            stroke={theme.mono ? stroke : mix(stroke, '#ffffff', 0.45)}
+            strokeWidth={theme.mono ? lw(theme, 0.13) : 0.8}
           />
-          <text fontFamily={theme.font} fontSize={size} fill={theme.mono && !theme.color ? '#000' : flow ? INK : stroke} textAnchor="middle">
+          <text fontFamily={theme.font} fontSize={size} fill={theme.mono ? (theme.color ? stroke : '#000') : mix(stroke, '#0f172a', 0.5)} textAnchor="middle">
             {box.lines.map((l, i) => (
               <tspan key={i} x={at.x} y={mid(at.y + (i - (box.lines.length - 1) / 2) * size * 1.35, size)}>
                 {l}

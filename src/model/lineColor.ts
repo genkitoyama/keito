@@ -7,6 +7,18 @@ export const LINE_COLORS = ['#475569', '#dc2626', '#ea580c', '#eab308', '#16a34a
 /** Colour of a signal type on this board: its own choice if it has made one, else the built-in colour. */
 export const signalColor = (doc: Pick<Doc, 'signalColors'> | undefined, id: SignalId): string => doc?.signalColors?.[id] ?? signalOf(id).color;
 
+/** Blend a hex colour towards another: `t` = 0 keeps it, 1 gives `to`. */
+export function mix(hex: string, to: string, t: number): string {
+  const rgb = (h: string): number[] => {
+    const s = h.replace('#', '');
+    const full = s.length < 6 ? [...s.slice(0, 3)].map((c) => c + c).join('') : s.slice(0, 6);
+    return [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16) || 0);
+  };
+  const a = rgb(hex);
+  const b = rgb(to);
+  return `#${a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, '0')).join('')}`;
+}
+
 /** Colour a line is drawn in: its own, else its signal type's. */
 export const lineColor = (doc: Doc, e: Edge): string => e.color ?? signalColor(doc, e.signal);
 
