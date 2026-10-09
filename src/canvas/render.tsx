@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { DEV, crossings, isTagged, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { lineColor, signalColor } from '../model/lineColor';
-import { cableIds, powerLoads } from '../model/lists';
+import { cableIds, idShown, labelStacked, lengthShown, powerLoads } from '../model/lists';
 import { SEQ, parseSequence } from '../model/sequence';
 import { PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { measure, wrapText } from '../model/text';
@@ -385,9 +385,17 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
   }
 }
 
+/** A line's label; may run over several lines when the user's own text does. */
 export function edgeLabel(doc: Doc, e: Edge): string {
-  const id = cableIds(doc).get(e.id);
-  return [id, e.spec, e.label, e.length != null ? `${e.length}m` : ''].filter(Boolean).join(' · ');
+  const id = idShown(doc, e) ? cableIds(doc).get(e.id) : undefined;
+  const length = e.length != null && lengthShown(doc, e) ? `${e.length}m` : '';
+  return [id, e.spec, e.label.trim(), length].filter(Boolean).join(labelStacked(doc, e) ? '\n' : ' · ');
+}
+
+/** Size of a (possibly multi-line) label box. */
+function labelSize(label: string, size: number, font: string): { w: number; h: number; lines: string[] } {
+  const lines = label.split('\n');
+  return { lines, w: Math.max(...lines.map((l) => measure(l, `${size}px ${font}`))) + 10, h: size * 1.6 + (lines.length - 1) * size * 1.35 };
 }
 
 /** Box the label of a line occupies on the board — what you grab to slide it along the line. */
@@ -396,9 +404,9 @@ export function edgeLabelBox(doc: Doc, e: Edge, theme: Theme): Rect | null {
   const label = edgeLabel(doc, e);
   if (!pts || pts.length < 2 || !label || isTagged(doc, e)) return null;
   const size = e.signal === 'flow' ? 12 : 10.5;
-  const w = measure(label, `${size}px ${theme.font}`) + 10;
+  const { w, h } = labelSize(label, size, theme.font);
   const at = labelPoint(pts, e.labelAt);
-  return { x: at.x - w / 2, y: at.y - size * 0.8, w, h: size * 1.6 };
+  return { x: at.x - w / 2, y: at.y - h / 2, w, h };
 }
 
 /** Nearest point along the route that differs from pts[i] — hand-placed bends can coincide. */
@@ -443,8 +451,8 @@ export function edgeTags(doc: Doc, e: Edge, theme: Theme): EdgeTag[] {
   const pts = routeEdges(doc).get(e.id);
   if (!pts || pts.length < 2) return [];
   const name = (id: string): string => doc.nodes.find((n) => n.id === id)?.text.split('\n')[0] || id;
-  const id = cableIds(doc).get(e.id);
-  const length = e.length != null ? ` ${e.length}m` : '';
+  const id = idShown(doc, e) ? cableIds(doc).get(e.id) : undefined;
+  const length = e.length != null && lengthShown(doc, e) ? ` ${e.length}m` : '';
   const power = e.signal === 'power';
   const size = 10;
   const make = (at: Pt, toward: Pt, text: string): EdgeTag => {
@@ -461,7 +469,7 @@ export function edgeTags(doc: Doc, e: Edge, theme: Theme): EdgeTag[] {
   const before = [...pts].reverse().find((p) => Math.hypot(p.x - end.x, p.y - end.y) > 1) ?? { x: end.x - 1, y: end.y };
   return [
     make(pts[0], first, `${id ? `${id} ` : ''}→ ${name(e.to.node)}${length}`),
-    make(end, before, `${power ? '⚡' : '←'} ${name(e.from.node)}${e.label ? ` · ${e.label}` : ''}`),
+    make(end, before, `${power ? '⚡' : '←'} ${name(e.from.node)}${e.label.trim() ? ` · ${e.label.trim().replace(/\n/g, ' ')}` : ''}`),
   ];
 }
 
@@ -496,7 +504,7 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
   const label = hideLabel ? '' : edgeLabel(doc, e);
   const at = labelPoint(pts, e.labelAt);
   const size = flow ? 12 : 10.5;
-  const lwText = label ? measure(label, `${size}px ${theme.font}`) + 10 : 0;
+  const box = labelSize(label, size, theme.font);
   const n = pts.length;
   const width = theme.mono ? lw(theme, 0.25) : flow ? 2.4 : 1.8;
   const d = theme.mono ? hopPath(pts, crossings(doc).get(e.id), 3.5) : pathD(pts, 8);
@@ -518,17 +526,21 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
       {label && (
         <g>
           <rect
-            x={at.x - lwText / 2}
-            y={at.y - size * 0.8}
-            width={lwText}
-            height={size * 1.6}
+            x={at.x - box.w / 2}
+            y={at.y - box.h / 2}
+            width={box.w}
+            height={box.h}
             rx={theme.mono ? 0 : 4}
             fill={theme.mono ? '#fff' : '#f8fafc'}
             stroke={theme.mono ? stroke : 'none'}
             strokeWidth={lw(theme, 0.13)}
           />
-          <text x={at.x} y={mid(at.y, size)} fontFamily={theme.font} fontSize={size} fill={theme.mono && !theme.color ? '#000' : flow ? INK : stroke} textAnchor="middle">
-            {label}
+          <text fontFamily={theme.font} fontSize={size} fill={theme.mono && !theme.color ? '#000' : flow ? INK : stroke} textAnchor="middle">
+            {box.lines.map((l, i) => (
+              <tspan key={i} x={at.x} y={mid(at.y + (i - (box.lines.length - 1) / 2) * size * 1.35, size)}>
+                {l}
+              </tspan>
+            ))}
           </text>
         </g>
       )}

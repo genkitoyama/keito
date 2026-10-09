@@ -916,7 +916,9 @@ function TextEditor({ id }: { id: string }) {
 
   if (!node && !edge) return null;
   const k = view.k;
-  const oneLine = !node || node.type === 'device' || node.type === 'frame';
+  // Names stay on one line; a line's label may wrap, but Enter still finishes it (Shift+Enter breaks the line).
+  const oneLine = !!node && (node.type === 'device' || node.type === 'frame');
+  const enterCommits = oneLine || !node;
   const read = (): string => {
     const text = (ref.current?.innerText ?? '').replace(/\n+$/, '');
     return oneLine ? text.replace(/\n/g, ' ') : text;
@@ -994,7 +996,7 @@ function TextEditor({ id }: { id: string }) {
           e.stopPropagation();
           // While the IME is composing, Enter / Escape belong to the conversion, not to us.
           if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-          if (e.key === 'Escape' || (e.key === 'Enter' && (oneLine || e.metaKey || e.ctrlKey))) {
+          if (e.key === 'Escape' || (e.key === 'Enter' && ((enterCommits && !e.shiftKey) || e.metaKey || e.ctrlKey))) {
             e.preventDefault();
             commit();
           }

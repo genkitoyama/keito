@@ -110,6 +110,14 @@ export interface Edge {
   note: string;
   /** Dashed line on the board (e.g. optional / future connections). */
   dash?: boolean;
+  /** Cable ID typed by hand; unset = numbered automatically (HDMI-01 …). */
+  cableId?: string;
+  /** Whether the cable ID is part of the line's label; unset = the board's setting. */
+  showId?: boolean;
+  /** Whether the length is part of the label; unset = the board's setting. */
+  showLength?: boolean;
+  /** Label items (ID, spec, text, length) each on a line of their own; unset = the board's setting. */
+  stacked?: boolean;
   /** What the cable is: product name or standard ("光 HDMI AOC", "Cat6A STP"). Shown in its label. */
   spec?: string;
   maker?: string;
@@ -161,6 +169,12 @@ export interface Doc {
   meta: DocMeta;
   nodes: Node[];
   edges: Edge[];
+  /** Cable IDs in line labels (default on); a line's own `showId` wins. */
+  cableIdLabels?: boolean;
+  /** Cable lengths in line labels (default on); a line's own `showLength` wins. */
+  lengthLabels?: boolean;
+  /** Label items one per line instead of side by side (default off); a line's own `stacked` wins. */
+  stackedLabels?: boolean;
   /** Signal types added on this board. */
   signals?: CustomSignal[];
   /** Recorded revisions, oldest first. */

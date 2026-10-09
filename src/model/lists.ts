@@ -5,6 +5,13 @@ import type { DeviceNode, Doc, Edge, EdgeEnd } from './types';
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
+/** Is this cable's ID written in its label on the board? */
+export const idShown = (doc: Doc, e: Edge): boolean => e.showId ?? doc.cableIdLabels !== false;
+
+export const lengthShown = (doc: Doc, e: Edge): boolean => e.showLength ?? doc.lengthLabels !== false;
+/** Are the label's items stacked one per line rather than joined on one? */
+export const labelStacked = (doc: Doc, e: Edge): boolean => e.stacked ?? doc.stackedLabels === true;
+
 const idCache = new WeakMap<Doc, Map<string, string>>();
 
 /** Cable IDs (HDMI-01, LAN-03 …) numbered per signal type in edge order. */
@@ -18,7 +25,8 @@ export function cableIds(doc: Doc): Map<string, string> {
     if (!s.cable) continue;
     const n = (counters.get(s.id) ?? 0) + 1;
     counters.set(s.id, n);
-    out.set(e.id, `${s.prefix}-${pad2(n)}`);
+    // A hand-typed ID replaces the automatic one; the numbering of the others is unaffected.
+    out.set(e.id, e.cableId?.trim() || `${s.prefix}-${pad2(n)}`);
   }
   idCache.set(doc, out);
   return out;

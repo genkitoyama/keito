@@ -2,11 +2,12 @@ import { useRef, useState } from 'react';
 import { isTagged } from '../model/geometry';
 import { safeUrl } from '../model/url';
 import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
+import { cableIds, idShown, labelStacked, lengthShown } from '../model/lists';
 import { freshId } from '../model/presets';
 import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
-import type { Arrow, DeviceNode, DocMeta, Edge, Node, Port, ShapeKind } from '../model/types';
+import type { Arrow, DeviceNode, Doc, DocMeta, Edge, Node, Port, ShapeKind } from '../model/types';
 import { FILLS, FillPreview, SHAPES } from './icons';
 import { Revisions } from './Revisions';
 
@@ -60,6 +61,12 @@ const SignalSelect = ({ value, onChange, flow }: { value: string; onChange: (v: 
 function MetaPanel() {
   const meta = useStore((s) => s.doc.meta);
   const powerTags = useStore((s) => s.doc.powerTags !== false);
+  const idLabels = useStore((s) => s.doc.cableIdLabels !== false);
+  const lenLabels = useStore((s) => s.doc.lengthLabels !== false);
+  const stackLabels = useStore((s) => s.doc.stackedLabels === true);
+  // A board-wide choice applies to every line: per-line exceptions for it are cleared.
+  const boardLabel = (change: Partial<Doc>, clear: 'showLength' | 'stacked') =>
+    useStore.getState().mutate((d) => ({ ...d, ...change, edges: d.edges.map((x) => (x[clear] === undefined ? x : { ...x, [clear]: undefined })) }));
   const set = (k: keyof DocMeta) => (v: string) => useStore.getState().mutate((d) => ({ ...d, meta: { ...d.meta, [k]: v } }), false);
   return (
     <>
@@ -74,6 +81,18 @@ function MetaPanel() {
       <label className="check">
         <input type="checkbox" checked={powerTags} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, powerTags: e.target.checked }))} />
         電源ケーブルは線を省略（両端に接続先だけ表示）
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={idLabels} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, cableIdLabels: e.target.checked, edges: d.edges.map((x) => (x.showId === undefined ? x : { ...x, showId: undefined })) }))} />
+        ケーブル ID を線のラベルに表示
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={lenLabels} onChange={(e) => boardLabel({ lengthLabels: e.target.checked }, 'showLength')} />
+        ケーブルの長さを線のラベルに表示
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={stackLabels} onChange={(e) => boardLabel({ stackedLabels: e.target.checked }, 'stacked')} />
+        ラベルの項目を 1 行ずつに分ける
       </label>
       <p className="hint">
         これらは CAD 風エクスポートの表題欄に入ります。
@@ -337,6 +356,11 @@ function NewSignal({ onAdd }: { onAdd: (id: string) => void }) {
 
 function EdgePanel({ e }: { e: Edge }) {
   const tagged = useStore((s) => isTagged(s.doc, e));
+  const shown = useStore((s) => idShown(s.doc, e));
+  const lenShown = useStore((s) => lengthShown(s.doc, e));
+  const stacked = useStore((s) => labelStacked(s.doc, e));
+  // What the ID would be if left to the automatic numbering.
+  const autoId = useStore((s) => cableIds({ ...s.doc, edges: s.doc.edges.map((x) => (x.id === e.id ? { ...x, cableId: undefined } : x)) }).get(e.id) ?? '');
   const color = useStore((s) => lineColor(s.doc, e));
   const custom = useStore((s) => !!s.doc.signalColors?.[e.signal]);
   // Cables are colour-coded by type; arrows one by one.
@@ -387,7 +411,24 @@ function EdgePanel({ e }: { e: Edge }) {
           </button>
         )}
       </div>
-      <Field label="ラベル" value={e.label} onChange={(v) => patch({ label: v })} />
+      <Field wrap label="ラベル（改行できます）" value={e.label} onChange={(v) => patch({ label: v })} />
+      {signalOf(e.signal).cable && (
+        <>
+          <Field label="ケーブル ID" placeholder={`自動: ${autoId}`} value={e.cableId ?? ''} onChange={(v) => patch({ cableId: v || undefined })} />
+          <label className="check">
+            <input type="checkbox" checked={shown} onChange={(ev) => patch({ showId: ev.target.checked }, true)} />
+            ケーブル ID をラベルに表示
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={lenShown} onChange={(ev) => patch({ showLength: ev.target.checked }, true)} />
+            長さをラベルに表示
+          </label>
+        </>
+      )}
+      <label className="check">
+        <input type="checkbox" checked={stacked} onChange={(ev) => patch({ stacked: ev.target.checked }, true)} />
+        ラベルの項目（ID・品名・文・長さ）を 1 行ずつに分ける
+      </label>
       {e.signal !== 'flow' && (
         <Field label="長さ (m)" type="number" value={e.length == null ? '' : String(e.length)} onChange={(v) => patch({ length: v === '' || isNaN(Number(v)) ? null : Number(v) })} />
       )}
