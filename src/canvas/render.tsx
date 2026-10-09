@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { DEV, crossings, isTagged, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { DEV, crossings, hopOrder, isTagged, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { lineColor, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, labelStacked, lengthShown, powerLoads } from '../model/lists';
 import { SEQ, parseSequence } from '../model/sequence';
@@ -446,6 +446,38 @@ function hopPath(pts: Pt[], hops: Map<number, number[]> | undefined, r: number):
   return d;
 }
 
+/** The crossings on one run that get a hop: those clear of the rounded corners at both ends. */
+const hopsOn = (xs: number[] | undefined, a: Pt, b: Pt, radius: number, r: number): number[] =>
+  (xs ?? []).filter((x) => Math.abs(x - a.x) > radius + r && Math.abs(x - b.x) > radius + r);
+
+/** Rounded-corner path, like `pathD`, with a small hop wherever another line crosses underneath. */
+function hopRound(pts: Pt[], hops: Map<number, number[]> | undefined, radius: number, r: number): string {
+  if (!hops?.size || pts.length < 2) return pathD(pts, radius);
+  let d = `M${pts[0].x},${pts[0].y}`;
+  let from = pts[0];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const p = pts[i];
+    const b = pts[i + 1];
+    // Where this run stops: at the start of the rounded corner, or at the very end of the line.
+    const la = Math.hypot(p.x - a.x, p.y - a.y);
+    const lb = b ? Math.hypot(b.x - p.x, b.y - p.y) : 0;
+    const cut = b ? Math.min(radius, la / 2, lb / 2) : 0;
+    const to = cut >= 1 ? { x: p.x + ((a.x - p.x) / la) * cut, y: p.y + ((a.y - p.y) / la) * cut } : p;
+    const dir = to.x > from.x ? 1 : -1;
+    for (const x of hopsOn(hops.get(i - 1), a, p, radius, r).sort((u, v) => (u - v) * dir)) {
+      d += ` L${x - dir * r},${a.y} A${r},${r} 0 0 ${dir > 0 ? 1 : 0} ${x + dir * r},${a.y}`;
+    }
+    d += ` L${to.x},${to.y}`;
+    from = to;
+    if (cut >= 1) {
+      from = { x: p.x + ((b.x - p.x) / lb) * cut, y: p.y + ((b.y - p.y) / lb) * cut };
+      d += ` Q${p.x},${p.y} ${from.x},${from.y}`;
+    }
+  }
+  return d;
+}
+
 export interface EdgeTag extends Rect {
   text: string;
   /** Short lead from the port to the tag. */
@@ -520,7 +552,7 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
   const box = labelSize(label, size, theme.font);
   const n = pts.length;
   const width = theme.mono ? lw(theme, 0.25) : flow ? 2.4 : 1.8;
-  const d = theme.mono ? hopPath(pts, crossings(doc).get(e.id), 3.5) : pathD(pts, 8);
+  const d = theme.mono ? hopPath(pts, crossings(doc).get(e.id), 3.5) : doc.hops ? hopRound(pts, crossings(doc).get(e.id), 8, 5) : pathD(pts, 8);
   // Drawings mark signal direction with an arrowhead at the receiving end.
   const cadArrow = theme.mono && signalOf(e.signal).cable;
   const head = theme.mono ? 7 : flow ? 11 : 9;
@@ -564,11 +596,34 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
 }
 
 /** The whole board: frames, then cables, then everything else. */
+/**
+ * The hops alone, painted after every line: wherever a line hops over another its little arch
+ * ends up in front, even when two lines hop over each other and no painting order could do it.
+ */
+export function HopCaps({ doc, theme }: { doc: Doc; theme: Theme }) {
+  if (theme.mono || !doc.hops) return null;
+  const routes = routeEdges(doc);
+  return (
+    <g pointerEvents="none">
+      {doc.edges.map((e) => {
+        const hops = crossings(doc).get(e.id);
+        const pts = routes.get(e.id);
+        if (!hops || !pts || isTagged(doc, e)) return null;
+        const r = 5;
+        const d = [...hops].flatMap(([i, xs]) => hopsOn(xs, pts[i], pts[i + 1], 8, r).map((x) => `M${x - r},${pts[i].y} A${r},${r} 0 0 1 ${x + r},${pts[i].y}`)).join(' ');
+        const flow = e.signal === 'flow';
+        return d && <path key={e.id} d={d} fill="none" stroke={signalStroke(e.signal, theme, lineColor(doc, e)).stroke} strokeWidth={flow ? 2.4 : 1.8} strokeLinecap="round" />;
+      })}
+    </g>
+  );
+}
+
 export function DocView({ doc, theme }: { doc: Doc; theme: Theme }) {
   return (
     <g>
       {doc.nodes.filter((n) => n.type === 'frame').map((n) => <NodeView key={n.id} n={n} theme={theme} />)}
-      {doc.edges.map((e) => <EdgeView key={e.id} doc={doc} e={e} theme={theme} />)}
+      {(theme.mono || doc.hops ? hopOrder(doc) : doc.edges).map((e) => <EdgeView key={e.id} doc={doc} e={e} theme={theme} />)}
+      <HopCaps doc={doc} theme={theme} />
       {doc.nodes.filter((n) => n.type !== 'frame').map((n) => <NodeView key={n.id} n={n} theme={theme} doc={doc} />)}
     </g>
   );

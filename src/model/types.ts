@@ -195,6 +195,8 @@ export interface Doc {
   lengthLabels?: boolean;
   /** Label items one per line instead of side by side (default off); a line's own `stacked` wins. */
   stackedLabels?: boolean;
+  /** Draw a small hop where one line crosses another on screen (default off; drawings always hop). */
+  hops?: boolean;
   /** Signal types added on this board. */
   signals?: CustomSignal[];
   /** Recorded revisions, oldest first. */

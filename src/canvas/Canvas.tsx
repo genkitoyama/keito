@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as RMouseEvent, ReactNode, PointerEvent as RPointerEvent } from 'react';
 import {
   edgeNear,
+  hopOrder,
   DEV,
   type Dir,
   center,
@@ -26,7 +27,7 @@ import { STRONG } from '../model/signals';
 import { copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
-import { EdgeView, INK, NodeView, SCREEN, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
+import { EdgeView, HopCaps, INK, NodeView, SCREEN, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
@@ -698,7 +699,7 @@ export function Canvas() {
         {view.k > 0.4 && <rect width="100%" height="100%" fill="url(#dots)" />}
         <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
           {frames.map(nodeGroup)}
-          {doc.edges.map((e) => {
+          {(doc.hops ? hopOrder(doc) : doc.edges).map((e) => {
             const pts = routes.get(e.id);
             if (!pts) return null;
             if (isTagged(doc, e)) {
@@ -723,6 +724,7 @@ export function Canvas() {
               </g>
             );
           })}
+          <HopCaps doc={doc} theme={SCREEN} />
           {others.map(nodeGroup)}
 
           {preview && handleNode && hoverSide && (

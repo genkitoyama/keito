@@ -96,6 +96,7 @@ export function toYaml(doc: Doc): string {
   if (doc.cableIdLabels === false) out.cableIdLabels = false;
   if (doc.lengthLabels === false) out.lengthLabels = false;
   if (doc.stackedLabels) out.stackedLabels = true;
+  if (doc.hops) out.hops = true;
   if (doc.signals?.length) out.signals = doc.signals.map((s) => ({ ...s }));
   if (doc.signalColors) out.colors = doc.signalColors;
 
@@ -463,5 +464,5 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
   const picked = isObj(root.colors) ? Object.entries(root.colors).filter(([k, v]) => isSignal(k) && HEX.test(str(v))) : null;
   const signalColors = !picked ? prev.signalColors : picked.length ? Object.fromEntries(picked.map(([k, v]) => [k, str(v)])) : undefined;
   // Revision history is not part of the text form; it stays with the board.
-  return { version: 1, id: prev.id, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, revisions: prev.revisions };
+  return { version: 1, id: prev.id, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, revisions: prev.revisions };
 }

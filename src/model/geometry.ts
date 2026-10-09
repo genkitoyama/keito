@@ -350,6 +350,7 @@ export function crossings(doc: Doc): Map<string, Map<number, number[]>> {
     }
   }
   const out = new Map<string, Map<number, number[]>>();
+  const over = new Map<string, Set<string>>();
   for (const [id, pts] of routes) {
     if (tagged.has(id)) continue;
     for (let i = 1; i < pts.length; i++) {
@@ -358,13 +359,42 @@ export function crossings(doc: Doc): Map<string, Map<number, number[]>> {
       if (Math.abs(a.y - b.y) > 0.5) continue;
       const lo = Math.min(a.x, b.x) + 8;
       const hi = Math.max(a.x, b.x) - 8;
-      const xs = verticals.filter((v) => v.id !== id && v.x > lo && v.x < hi && a.y > v.y0 + 1 && a.y < v.y1 - 1).map((v) => v.x);
-      if (!xs.length) continue;
+      const under = verticals.filter((v) => v.id !== id && v.x > lo && v.x < hi && a.y > v.y0 + 1 && a.y < v.y1 - 1);
+      if (!under.length) continue;
       if (!out.has(id)) out.set(id, new Map());
-      out.get(id)!.set(i - 1, [...new Set(xs)]);
+      out.get(id)!.set(i - 1, [...new Set(under.map((v) => v.x))]);
+      over.set(id, new Set([...(over.get(id) ?? []), ...under.map((v) => v.id)]));
     }
   }
   hopCache.set(doc, out);
+  overCache.set(doc, over);
+  return out;
+}
+
+const overCache = new WeakMap<Doc, Map<string, Set<string>>>();
+
+/**
+ * The lines in painting order when crossings are drawn as hops: a line that hops over another
+ * comes after it, so the hop sits in front. Otherwise the order of the board is kept.
+ */
+export function hopOrder(doc: Doc): Edge[] {
+  crossings(doc);
+  const over = overCache.get(doc)!;
+  if (!over.size) return doc.edges;
+  const byId = new Map(doc.edges.map((e) => [e.id, e]));
+  const out: Edge[] = [];
+  const seen = new Set<string>();
+  const place = (e: Edge) => {
+    if (seen.has(e.id)) return;
+    // Marked before its dependencies: two lines hopping over each other must not go round forever.
+    seen.add(e.id);
+    for (const id of over.get(e.id) ?? []) {
+      const below = byId.get(id);
+      if (below) place(below);
+    }
+    out.push(e);
+  };
+  doc.edges.forEach(place);
   return out;
 }
 

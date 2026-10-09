@@ -64,6 +64,7 @@ function MetaPanel() {
   const idLabels = useStore((s) => s.doc.cableIdLabels !== false);
   const lenLabels = useStore((s) => s.doc.lengthLabels !== false);
   const stackLabels = useStore((s) => s.doc.stackedLabels === true);
+  const hops = useStore((s) => s.doc.hops === true);
   // A board-wide choice applies to every line: per-line exceptions for it are cleared.
   const boardLabel = (change: Partial<Doc>, clear: 'showLength' | 'stacked') =>
     useStore.getState().mutate((d) => ({ ...d, ...change, edges: d.edges.map((x) => (x[clear] === undefined ? x : { ...x, [clear]: undefined })) }));
@@ -93,6 +94,10 @@ function MetaPanel() {
       <label className="check">
         <input type="checkbox" checked={stackLabels} onChange={(e) => boardLabel({ stackedLabels: e.target.checked }, 'stacked')} />
         ラベルの項目を 1 行ずつに分ける
+      </label>
+      <label className="check">
+        <input type="checkbox" checked={hops} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, hops: e.target.checked || undefined }))} />
+        線が交差するところを跨ぎ線（小さな山）にする
       </label>
       <p className="hint">
         これらは CAD 風エクスポートの表題欄に入ります。
