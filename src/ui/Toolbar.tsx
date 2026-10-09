@@ -55,34 +55,34 @@ const MINE = 'マイプリセット';
 
 function Library() {
   const [q, setQ] = useState('');
-  // Folded categories are remembered across sessions; a search opens everything.
-  const [closed, setClosed] = useState<string[]>(() => {
+  // Categories start folded; the opened ones are remembered, and a search opens everything.
+  const [opened, setOpened] = useState<string[]>(() => {
     try {
-      const v: unknown = JSON.parse(getSetting('libraryClosed') || '[]');
+      const v: unknown = JSON.parse(getSetting('libraryOpen') || '[]');
       return Array.isArray(v) ? v.map(String) : [];
     } catch {
       return [];
     }
   });
   const fold = (next: string[]) => {
-    setClosed(next);
-    setSetting('libraryClosed', JSON.stringify(next));
+    setOpened(next);
+    setSetting('libraryOpen', JSON.stringify(next));
   };
   const hit = (text: string) => !q || text.toLowerCase().includes(q.toLowerCase());
   const list = PRESETS.filter((p) => hit(`${p.name}${p.category}${p.key}`));
   const cats = [...new Set(list.map((p) => p.category || 'その他'))];
   const mine = useStore((s) => s.presets).filter((p) => hit(`${p.name}${p.category}${p.maker}${p.model}`));
   const all = [...(mine.length ? [MINE] : []), ...cats];
-  const allClosed = all.every((c) => closed.includes(c));
+  const allClosed = !all.some((c) => opened.includes(c));
   const section = (name: string, count: number, body: () => ReactNode) => {
-    const open = !!q || !closed.includes(name);
+    const open = !!q || opened.includes(name);
     return (
       <div key={name} className="library-cat">
         <button
           className="library-head"
           aria-expanded={open}
           disabled={!!q}
-          onClick={() => fold(open ? [...closed, name] : closed.filter((c) => c !== name))}
+          onClick={() => fold(open ? opened.filter((c) => c !== name) : [...opened, name])}
         >
           <span className={open ? 'chev open' : 'chev'}>▸</span>
           <span className="name">{name}</span>
@@ -100,7 +100,7 @@ function Library() {
           className="mini"
           disabled={!!q}
           data-tip={allClosed ? 'すべてのカテゴリを開く' : 'すべてのカテゴリをしまう'}
-          onClick={() => fold(allClosed ? [] : [...new Set([...closed, ...all])])}
+          onClick={() => fold(allClosed ? all : [])}
         >
           {allClosed ? '開く' : 'しまう'}
         </button>
