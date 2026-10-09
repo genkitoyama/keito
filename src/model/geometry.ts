@@ -1,4 +1,4 @@
-import { collides, routeAround } from './router';
+import { CLEAR, type Run, chip, collides, lanes, routeAround } from './router';
 import { parseSequence } from './sequence';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node, Port, PortSide, Pt, Rect } from './types';
 
@@ -160,19 +160,37 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
   // and free text (captions are meant to sit next to lines).
   const obstacles = doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'text').map(nodeRect);
   const out = new Map<string, Pt[]>();
-  for (const [index, e] of doc.edges.entries()) {
+  // First the attachment points of every line, then one pass that hands jogging lines their bends.
+  const drawn = doc.edges.flatMap((e, index) => {
     const a = nodes.get(e.from.node);
     const b = nodes.get(e.to.node);
-    if (!a || !b) continue;
+    if (!a || !b) return [];
+    const pa = anchorOf(a, e.from, center(nodeRect(b)));
+    const pb = anchorOf(b, e.to, center(nodeRect(a)));
+    // Re-aim port-less ends at the real attachment point of the other end.
+    const ea = e.from.port ? pa : anchorOf(a, e.from, pb);
+    const eb = e.to.port ? pb : anchorOf(b, e.to, pa);
+    return [{ e, index, a, b, pa, pb, ea, eb, tagged: isTagged(doc, e) }];
+  });
+  const manual = (e: Edge) => !!e.route && e.route.length >= 2;
+  const facing = (l: Anchor, r: Anchor) => l.dir === 'right' && r.dir === 'left' && r.x - l.x >= CLEAR * 2;
+  const runs: Run[] = [];
+  // A line drawn as tags leaves a chip beside each port; bends keep off those too.
+  const chips: Rect[] = [];
+  for (const { e, a, b, ea, eb, tagged } of drawn) {
+    if (tagged) chips.push(chip(ea, `XXX-00 → ${b.text}`), chip(eb, `⚡ ${a.text} ${e.label}`));
+    else if (a !== b && !manual(e) && Math.abs(ea.y - eb.y) >= 0.5) {
+      if (facing(ea, eb)) runs.push({ id: e.id, l: ea, r: eb });
+      else if (facing(eb, ea)) runs.push({ id: e.id, l: eb, r: ea });
+    }
+  }
+  const bends = lanes(runs, [...obstacles, ...chips], doc.nodes.filter((n) => n.type === 'frame').map(nodeRect));
+  for (const { e, index, a, b, pa, pb, ea, eb, tagged } of drawn) {
     const siblings = bySource.get(e.from.node)!;
     const lane = (siblings.indexOf(e) - (siblings.length - 1) / 2) * 8;
-    const ca = center(nodeRect(a));
-    const cb = center(nodeRect(b));
-    const pa = anchorOf(a, e.from, cb);
-    const pb = anchorOf(b, e.to, ca);
-    if (e.route && e.route.length >= 2 && !isTagged(doc, e)) {
+    if (manual(e) && !tagged) {
       // Hand-placed bends: the first and last follow their end so the outer segments stay square.
-      const mid = e.route.map((p) => ({ x: p.x, y: p.y }));
+      const mid = e.route!.map((p) => ({ x: p.x, y: p.y }));
       const ma = e.from.port ? pa : anchorOf(a, e.from, mid[0]);
       const mb = e.to.port ? pb : anchorOf(b, e.to, mid[mid.length - 1]);
       if (isH(ma.dir)) mid[0].y = ma.y;
@@ -186,12 +204,14 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
         continue;
       }
     }
-    // Re-aim port-less ends at the real attachment point of the other end.
-    const ea = e.from.port ? pa : anchorOf(a, e.from, pb);
-    const eb = e.to.port ? pb : anchorOf(b, e.to, pa);
+    const x = bends.get(e.id);
+    if (x !== undefined) {
+      out.set(e.id, [{ x: ea.x, y: ea.y }, { x, y: ea.y }, { x, y: eb.y }, { x: eb.x, y: eb.y }]);
+      continue;
+    }
     let pts = route(ea, eb, lane);
     // The plain elbow would cut through a node: find a way around. Lines drawn as tags have no run to fix.
-    if (a !== b && !isTagged(doc, e) && collides(pts, obstacles)) {
+    if (a !== b && !tagged && collides(pts, obstacles)) {
       // Neighbouring lines keep slightly different clearances so they don't sit on top of each other.
       const around = routeAround(ea, eb, obstacles, 8 + (index % 3) * 4);
       if (around) pts = simplify(around);

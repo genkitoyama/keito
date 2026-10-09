@@ -186,3 +186,89 @@ export function routeAround(a: Anchor, b: Anchor, obstacles: Rect[], margin: num
   }
   return null;
 }
+
+const TRACK = 30; // distance between parallel bends
+export const CLEAR = 20; // straight run kept next to a port before a bend
+
+/** A line that leaves one port to the right and enters another from the left, with a jog in between. */
+export interface Run {
+  id: string;
+  /** The end on the left and the end on the right. */
+  l: Pt;
+  r: Pt;
+}
+
+/** Roughly where the tag chip next to a port lands (the exact size depends on the font). */
+export function chip(at: Pt & { dir: Dir }, text: string): Rect {
+  const w = 40 + [...text.split('\n')[0]].reduce((sum, ch) => sum + (ch.charCodeAt(0) > 255 ? 10 : 6), 0);
+  if (at.dir === 'left') return { x: at.x - w, y: at.y - 8, w, h: 16 };
+  if (at.dir === 'right') return { x: at.x, y: at.y - 8, w, h: 16 };
+  return { x: at.x - w / 2, y: at.dir === 'top' ? at.y - 26 : at.y, w, h: 26 };
+}
+
+const span = (u: Run): [number, number] => [Math.min(u.l.y, u.r.y), Math.max(u.l.y, u.r.y)];
+const inside = (y: number, [lo, hi]: [number, number]) => y > lo + 0.5 && y < hi - 0.5;
+/** Crossings between two runs when `u` bends to the left of `v`. */
+const crossed = (u: Run, v: Run) => (inside(v.l.y, span(u)) ? 1 : 0) + (inside(u.r.y, span(v)) ? 1 : 0);
+
+function permutations<T>(list: T[]): T[][] {
+  if (list.length < 2) return [list];
+  return list.flatMap((item, i) => permutations([...list.slice(0, i), ...list.slice(i + 1)]).map((rest) => [item, ...rest]));
+}
+
+function ordered(group: Run[]): Run[] {
+  const cost = (list: Run[]) => list.reduce((sum, u, i) => sum + list.slice(i + 1).reduce((s, v) => s + crossed(u, v), 0), 0);
+  // Top to bottom is the tie-break, so equal layouts always come out the same.
+  const base = [...group].sort((p, q) => p.r.y - q.r.y || p.l.y - q.l.y);
+  if (base.length <= 6) return permutations(base).reduce((best, list) => (cost(list) < cost(best) ? list : best));
+  const wins = (u: Run) => base.reduce((s, v) => s + (v === u ? 0 : crossed(v, u) - crossed(u, v)), 0);
+  return base.sort((p, q) => wins(q) - wins(p));
+}
+
+/**
+ * Where each jogging line should bend: lines that could sit on top of each other get bends side
+ * by side, ordered so they do not cross, in the open corridor between areas when there is one.
+ * A line missing from the result has no clear spot and is left to the ordinary router.
+ */
+export function lanes(runs: Run[], obstacles: Rect[], frames: Rect[]): Map<string, number> {
+  const out = new Map<string, number>();
+  const group = runs.map((_, i) => i);
+  const find = (i: number): number => (group[i] === i ? i : (group[i] = find(group[i])));
+  for (const [i, u] of runs.entries()) {
+    for (const [j, v] of runs.entries()) {
+      if (j <= i) continue;
+      const [a0, a1] = span(u);
+      const [b0, b1] = span(v);
+      if (a0 < b1 && b0 < a1 && u.l.x + CLEAR < v.r.x - CLEAR && v.l.x + CLEAR < u.r.x - CLEAR) group[find(i)] = find(j);
+    }
+  }
+  const groups = new Map<number, Run[]>();
+  for (const [i, u] of runs.entries()) groups.set(find(i), [...(groups.get(find(i)) ?? []), u]);
+
+  for (const list of groups.values()) {
+    const lo = Math.max(...list.map((u) => u.l.x)) + CLEAR;
+    const hi = Math.min(...list.map((u) => u.r.x)) - CLEAR;
+    const step = list.length > 1 ? Math.min(TRACK, (hi - lo) / (list.length - 1)) : 0;
+    if (hi < lo || (list.length > 1 && step < 8)) continue;
+    const order = ordered(list);
+    const width = step * (list.length - 1);
+    const mid = (lo + hi) / 2;
+    const path = (u: Run, x: number): Pt[] => [u.l, { x, y: u.l.y }, { x, y: u.r.y }, u.r];
+    let best: { score: number[]; first: number } | null = null;
+    for (let c = Math.ceil((lo + width / 2) / 10) * 10; c <= hi - width / 2; c += 10) {
+      const first = c - width / 2;
+      const blocked = order.some((u, k) => collides(path(u, first + k * step), obstacles));
+      // Bends read best in the open corridor between areas rather than inside one or on its border.
+      const framed = order.reduce((sum, u, k) => {
+        const p = { x: first + k * step, y: (u.l.y + u.r.y) / 2 };
+        return sum + frames.filter((f) => p.x > f.x - CLEAR && p.x < f.x + f.w + CLEAR && p.y > f.y && p.y < f.y + f.h).length;
+      }, 0);
+      const score = [blocked ? 1 : 0, framed, Math.abs(c - mid)];
+      const at = best ? score.findIndex((v, i) => v !== best!.score[i]) : 0;
+      if (!best || (at >= 0 && score[at] < best.score[at])) best = { score, first };
+    }
+    if (!best || best.score[0]) continue;
+    for (const [k, u] of order.entries()) out.set(u.id, best.first + k * step);
+  }
+  return out;
+}

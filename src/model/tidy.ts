@@ -1,12 +1,13 @@
 import { anchorOf, center, frameOf, isTagged, nodeRect } from './geometry';
-import { collides } from './router';
-import type { Doc, Edge, Node, Pt, Rect } from './types';
+import { CLEAR } from './router';
+import type { Doc, Edge, Node, Rect } from './types';
 
 const COLUMN = 60; // nodes whose centres are this close in x share a column
 const GAP = 24; // least space kept between neighbours in a column
-const FRAME_GAP = 30; // space left between area frames pushed apart
-const TRACK = 30; // distance between parallel bends
-const CLEAR = 20; // straight run kept next to a port before a bend
+const PACK = 30; // space between nodes packed under one another inside an area
+const FRAME_GAP = 60; // space between area frames stacked in a column
+const PAD = 40; // space between an area frame and what it holds
+const EDGE = 120; // frame edges in neighbouring columns this close are made to line up
 const ROW_REACH = 200; // loose items further apart than this are not a row
 const ROW_EVEN = 40; // gaps this close to each other are made equal
 
@@ -30,6 +31,7 @@ function level(doc: Doc, frozen: Set<string>): { nodes: Map<string, Node>; clash
   const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
   const items = doc.nodes.filter((n) => n.type !== 'frame');
   const lines = doc.edges.filter((e) => !isTagged(doc, e));
+  const members = membersOf(doc);
   const cx = (n: Node) => center(nodeRect(n)).x;
 
   const column = new Map<string, number>();
@@ -74,12 +76,14 @@ function level(doc: Doc, frozen: Set<string>): { nodes: Map<string, Node>; clash
       let y = want.get(n.id);
       if (y === undefined && frozen.has(n.id)) y = n.y;
       if (y === undefined) {
-        // A node with nothing to line up with follows the one it is wired to in its own column.
-        const partner = lines
-          .map((e) => (e.from.node === n.id ? e.to.node : e.to.node === n.id ? e.from.node : ''))
-          .find((id) => id !== n.id && column.get(id) === index && nodes.get(id)!.y !== doc.nodes.find((m) => m.id === id)!.y);
-        const was = partner ? doc.nodes.find((m) => m.id === partner)! : null;
-        y = n.y + (was ? nodes.get(was.id)!.y - was.y : 0);
+        // Nothing to line up with: inside an area, sit right under the neighbour above, or, when
+        // first in its column there, on the nearest row the columns to the left already laid out.
+        const mine = frameOf(doc, n);
+        if (mine && prev && frameOf(doc, prev.before) === mine) y = prev.after.y + nodeRect(prev.after).h + PACK;
+        else if (mine) {
+          const tops = (members.get(mine.id) ?? []).filter((id) => column.get(id)! < index).map((id) => nodes.get(id)!.y);
+          y = tops.reduce((best, top) => (Math.abs(top - n.y) < Math.abs(best - n.y) ? top : best), tops[0] ?? n.y);
+        } else y = n.y;
       }
       if (prev) {
         const { before, after } = prev;
@@ -89,8 +93,10 @@ function level(doc: Doc, frozen: Set<string>): { nodes: Map<string, Node>; clash
         if (y < floor) {
           // Neighbours in one area make room for each other. Across areas nothing gets shoved:
           // whoever caused the squeeze stays where it was instead.
-          if (frameOf(doc, before) !== frameOf(doc, n) || frozen.has(n.id)) return { nodes, clash: y !== n.y ? n.id : before.id };
-          y = floor;
+          const mine = frameOf(doc, n);
+          if (mine === frameOf(doc, before) && !frozen.has(n.id)) y = floor;
+          // A frame nothing outside is wired to simply gets pushed down as a whole afterwards.
+          else if (!(mine && y === n.y && free(doc, members, mine.id))) return { nodes, clash: y !== n.y ? n.id : before.id };
         }
       }
       const moved: Node = y === n.y ? n : { ...n, y };
@@ -107,6 +113,12 @@ const bounds = (list: Node[]): Rect => {
   const y = Math.min(...rects.map((r) => r.y));
   return { x, y, w: Math.max(...rects.map((r) => r.x + r.w)) - x, h: Math.max(...rects.map((r) => r.y + r.h)) - y };
 };
+
+/** True when no line crosses the border of this frame, so moving it as a whole bends nothing. */
+function free(doc: Doc, members: Map<string, string[]>, frame: string): boolean {
+  const ids = new Set(members.get(frame) ?? []);
+  return !doc.edges.some((e) => ids.has(e.from.node) !== ids.has(e.to.node));
+}
 
 const membersOf = (doc: Doc): Map<string, string[]> => {
   const members = new Map<string, string[]>();
@@ -134,16 +146,12 @@ function refit(doc: Doc, nodes: Map<string, Node>): void {
     const next = { ...f, x: f.x + now.x - was.x, y: f.y + now.y - was.y, w: f.w + now.w - was.w, h: f.h + now.h - was.h };
     if (next.x !== f.x || next.y !== f.y || next.w !== f.w || next.h !== f.h) nodes.set(f.id, next as Node);
   }
-  const free = (f: Node) => {
-    const ids = new Set(members.get(f.id) ?? []);
-    return !doc.edges.some((e) => ids.has(e.from.node) !== ids.has(e.to.node));
-  };
   const placed: Node[] = [];
   for (const f of [...frames].sort((p, q) => nodes.get(p.id)!.y - nodes.get(q.id)!.y)) {
     let now = nodes.get(f.id)!;
     for (const g of placed) {
       const other = nodes.get(g.id)!;
-      if (!free(f) || !overlap(nodeRect(now), nodeRect(other)) || overlap(nodeRect(f), nodeRect(g))) continue;
+      if (!free(doc, members, f.id) || !overlap(nodeRect(now), nodeRect(other)) || overlap(nodeRect(f), nodeRect(g))) continue;
       const dy = other.y + nodeRect(other).h + FRAME_GAP - now.y;
       now = { ...now, y: now.y + dy };
       nodes.set(f.id, now);
@@ -190,6 +198,146 @@ function settle(doc: Doc): Map<string, Node> {
   return new Map(doc.nodes.map((n) => [n.id, n]));
 }
 
+/** Area frames that hold something and stand clear of every other frame, the ones we dare reshape. */
+function plain(doc: Doc, nodes: Map<string, Node>, members: Map<string, string[]>): Node[] {
+  const frames = doc.nodes.filter((n) => n.type === 'frame');
+  return frames.filter((f) => members.has(f.id) && !frames.some((g) => g !== f && overlap(nodeRect(nodes.get(f.id)!), nodeRect(nodes.get(g.id)!))));
+}
+
+/** Frames that sit above one another, as columns from left to right, each sorted top to bottom. */
+function stacks(frames: Node[], nodes: Map<string, Node>): Node[][] {
+  const at = (f: Node) => nodeRect(nodes.get(f.id)!);
+  const columns: Node[][] = [];
+  for (const f of [...frames].sort((p, q) => at(p).x - at(q).x)) {
+    const a = at(f);
+    const home = columns.find((col) =>
+      col.some((g) => {
+        const b = at(g);
+        return Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) >= Math.min(a.w, b.w) / 2;
+      }),
+    );
+    if (home) home.push(f);
+    else columns.push([f]);
+  }
+  return columns.map((col) => col.sort((p, q) => at(p).y - at(q).y));
+}
+
+/** Apply a change, and take it back if it puts anything on top of something it was clear of. */
+function attempt(doc: Doc, nodes: Map<string, Node>, change: () => void): void {
+  const before = new Map(nodes);
+  change();
+  if (!collision(doc, nodes)) return;
+  nodes.clear();
+  for (const [id, n] of before) nodes.set(id, n);
+}
+
+const shift = (nodes: Map<string, Node>, ids: string[], dx: number, dy: number) => {
+  if (!dx && !dy) return;
+  for (const id of ids) nodes.set(id, { ...nodes.get(id)!, x: nodes.get(id)!.x + dx, y: nodes.get(id)!.y + dy });
+};
+
+/** Inside one area: centre each column of nodes on a common axis, and even out nearly even space between columns. */
+function spread(nodes: Map<string, Node>, ids: string[]): void {
+  const cx = (id: string) => center(nodeRect(nodes.get(id)!)).x;
+  const columns: string[][] = [];
+  let start = -Infinity;
+  for (const id of [...ids].sort((p, q) => cx(p) - cx(q))) {
+    if (cx(id) - start > COLUMN) {
+      columns.push([]);
+      start = cx(id);
+    }
+    columns[columns.length - 1].push(id);
+  }
+  for (const col of columns) {
+    const axis = col.map(cx).sort((p, q) => p - q)[Math.floor((col.length - 1) / 2)];
+    for (const id of col) shift(nodes, [id], Math.round(axis - cx(id)), 0);
+  }
+  const left = (col: string[]) => Math.min(...col.map((id) => nodes.get(id)!.x));
+  const right = (col: string[]) => Math.max(...col.map((id) => nodes.get(id)!.x + nodeRect(nodes.get(id)!).w));
+  // The space between columns is sized by hand for the labels in it: only even it out when it nearly is.
+  const gaps = columns.slice(1).map((col, i) => left(col) - right(columns[i]));
+  if (gaps.length < 2 || Math.max(...gaps) - Math.min(...gaps) > ROW_EVEN || Math.min(...gaps) <= 0) return;
+  const aisle = Math.round(gaps.reduce((sum, g) => sum + g, 0) / gaps.length / 10) * 10;
+  for (const [i, col] of columns.entries()) if (i) shift(nodes, col, right(columns[i - 1]) + aisle - left(col), 0);
+}
+
+/**
+ * Balance the area frames: the same margin around the contents of each, and frames stacked in a
+ * column share a left edge, a width and the gap between them.
+ */
+function arrange(doc: Doc): Map<string, Node> {
+  const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
+  const members = membersOf(doc);
+  const frames = plain(doc, nodes, members);
+  const whole = (f: Node) => [f.id, ...members.get(f.id)!];
+  const right = (col: Node[]) => Math.max(...col.map((f) => nodes.get(f.id)!.x + nodeRect(nodes.get(f.id)!).w));
+  const fit = (f: Node) => {
+    const b = bounds(members.get(f.id)!.map((id) => nodes.get(id)!));
+    const top = ((f as { fontSize?: number }).fontSize ?? 13) + 19 + PAD - 12;
+    nodes.set(f.id, { ...f, x: b.x - PAD, y: b.y - top, w: b.w + PAD * 2, h: b.h + top + PAD } as Node);
+  };
+  for (const col of stacks(frames, nodes)) {
+    for (const f of col) attempt(doc, nodes, () => fit(f));
+    attempt(doc, nodes, () => {
+      const edge = right(col);
+      const beyond = doc.nodes.filter((n) => nodes.get(n.id)!.x >= edge && !col.some((f) => whole(f).includes(n.id))).map((n) => n.id);
+      for (const f of col) {
+        spread(nodes, members.get(f.id)!);
+        fit(f);
+      }
+      const left = Math.min(...col.map((f) => nodes.get(f.id)!.x));
+      for (const f of col) shift(nodes, whole(f), left - nodes.get(f.id)!.x, 0);
+      const width = Math.max(...col.map((f) => nodeRect(nodes.get(f.id)!).w));
+      for (const f of col) nodes.set(f.id, { ...nodes.get(f.id)!, w: width } as Node);
+      // Whatever stood to the right keeps its distance from this column.
+      shift(nodes, beyond, right(col) - edge, 0);
+    });
+    for (const [i, f] of col.entries()) {
+      if (!i) continue;
+      // Everything below comes along, so a frame that cannot close up still keeps its followers in step.
+      const rest = col.slice(i).flatMap(whole);
+      const above = nodeRect(nodes.get(col[i - 1].id)!);
+      attempt(doc, nodes, () => shift(nodes, rest, 0, above.y + above.h + FRAME_GAP - nodes.get(f.id)!.y));
+    }
+  }
+  return nodes;
+}
+
+/**
+ * After levelling: frames in neighbouring columns whose tops or bottoms nearly meet are stretched
+ * to line up, and frames nothing outside is wired to close up under the one above.
+ */
+function square(doc: Doc, nodes: Map<string, Node>): void {
+  const members = membersOf(doc);
+  const frames = plain(doc, nodes, members);
+  const columns = stacks(frames, nodes);
+  const at = (f: Node) => nodeRect(nodes.get(f.id)!);
+  const closeUp = () => {
+    for (const col of columns) {
+      for (const [i, f] of col.entries()) {
+        const ids = members.get(f.id)!;
+        if (!i || !free(doc, members, f.id)) continue;
+        const above = at(col[i - 1]);
+        attempt(doc, nodes, () => shift(nodes, [f.id, ...ids], 0, above.y + above.h + FRAME_GAP - at(f).y));
+      }
+    }
+  };
+  closeUp();
+  for (const col of columns) {
+    const others = columns.filter((c) => c !== col).flat();
+    for (const f of col) {
+      const r = at(f);
+      const tops = others.map((g) => at(g).y).filter((y) => y < r.y && r.y - y <= EDGE);
+      const bottoms = others.map((g) => at(g).y + at(g).h).filter((y) => y > r.y + r.h && y - (r.y + r.h) <= EDGE);
+      const top = tops.length ? Math.min(...tops) : r.y;
+      const bottom = bottoms.length ? Math.max(...bottoms) : r.y + r.h;
+      if (top !== r.y) attempt(doc, nodes, () => nodes.set(f.id, { ...nodes.get(f.id)!, y: top, h: at(f).y + at(f).h - top } as Node));
+      if (bottom !== r.y + r.h) attempt(doc, nodes, () => nodes.set(f.id, { ...nodes.get(f.id)!, h: bottom - at(f).y } as Node));
+    }
+  }
+  closeUp();
+}
+
 /**
  * Loose items (notes, pictures, sequence diagrams, anything without a line) that sit roughly in a
  * row get a common top edge, and even gaps when the gaps were nearly even already.
@@ -228,132 +376,48 @@ function rows(doc: Doc, nodes: Map<string, Node>): void {
   }
 }
 
-/** Roughly where the tag chip next to a port lands (the exact size depends on the font). */
-function chip(at: Pt & { dir: string }, text: string): Rect {
-  const w = 20 + [...text.split('\n')[0]].reduce((sum, ch) => sum + (ch.charCodeAt(0) > 255 ? 10 : 6), 0);
-  if (at.dir === 'left') return { x: at.x - w, y: at.y - 8, w, h: 16 };
-  if (at.dir === 'right') return { x: at.x, y: at.y - 8, w, h: 16 };
-  return { x: at.x - w / 2, y: at.dir === 'top' ? at.y - 26 : at.y, w, h: 26 };
-}
-
-interface Run {
-  e: Edge;
-  /** The end on the left and the end on the right. */
-  l: Pt;
-  r: Pt;
-  fromLeft: boolean;
-}
-
-const span = (u: Run): [number, number] => [Math.min(u.l.y, u.r.y), Math.max(u.l.y, u.r.y)];
-const inside = (y: number, [lo, hi]: [number, number]) => y > lo + 0.5 && y < hi - 0.5;
-/** Crossings between two runs when `u` bends to the left of `v`. */
-const crossed = (u: Run, v: Run) => (inside(v.l.y, span(u)) ? 1 : 0) + (inside(u.r.y, span(v)) ? 1 : 0);
-
-function permutations<T>(list: T[]): T[][] {
-  if (list.length < 2) return [list];
-  return list.flatMap((item, i) => permutations([...list.slice(0, i), ...list.slice(i + 1)]).map((rest) => [item, ...rest]));
-}
-
-function ordered(group: Run[]): Run[] {
-  const cost = (list: Run[]) => list.reduce((sum, u, i) => sum + list.slice(i + 1).reduce((s, v) => s + crossed(u, v), 0), 0);
-  // Top to bottom is the tie-break, so equal layouts always come out the same.
-  const base = [...group].sort((p, q) => p.r.y - q.r.y || p.l.y - q.l.y);
-  if (base.length <= 6) return permutations(base).reduce((best, list) => (cost(list) < cost(best) ? list : best));
-  const wins = (u: Run) => base.reduce((s, v) => s + (v === u ? 0 : crossed(v, u) - crossed(u, v)), 0);
-  return base.sort((p, q) => wins(q) - wins(p));
-}
-
-/** Give lines that jog between two facing ports their own bend positions, side by side. */
+/**
+ * Lines between facing ports go back to automatic routing, which lays their bends side by side.
+ * Other hand-made bends come along if both ends moved together, and are dropped otherwise.
+ */
 function comb(doc: Doc, nodes: Map<string, Node>): Edge[] {
-  const frames = doc.nodes.filter((n) => n.type === 'frame').map((n) => nodeRect(nodes.get(n.id)!));
-  const obstacles = doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'text').map((n) => nodeRect(nodes.get(n.id)!));
-  const routes = new Map<string, Pt[] | null>();
-  const runs: Run[] = [];
-  for (const e of doc.edges) {
+  return doc.edges.map((e) => {
+    if (isTagged(doc, e) || (!e.route && e.labelAt === undefined)) return e;
     const at = ends(nodes, e);
-    if (!at) continue;
-    if (isTagged(doc, e)) {
-      // A line drawn as tags leaves a chip beside each port; keep bends off those too.
-      obstacles.push(chip(at.pa, `XXX-00 → ${at.b.text}`), chip(at.pb, `⚡ ${at.a.text} ${e.label}`));
-      continue;
-    }
+    if (!at) return e;
     const { pa, pb } = at;
     const facing = (l: typeof pa, r: typeof pa) => l.dir === 'right' && r.dir === 'left' && r.x - l.x >= CLEAR * 2;
-    if (!facing(pa, pb) && !facing(pb, pa)) {
-      // Not ours to place: carry hand-made bends along if both ends moved together, else let it re-route.
-      const was = (id: string) => doc.nodes.find((n) => n.id === id)!;
-      const da = { x: at.a.x - was(at.a.id).x, y: at.a.y - was(at.a.id).y };
-      const db = { x: at.b.x - was(at.b.id).x, y: at.b.y - was(at.b.id).y };
-      if (!e.route || (!da.x && !da.y && !db.x && !db.y)) continue;
-      routes.set(e.id, da.x === db.x && da.y === db.y ? e.route.map((p) => ({ x: p.x + da.x, y: p.y + da.y })) : null);
-      continue;
-    }
-    routes.set(e.id, null);
-    const fromLeft = facing(pa, pb);
-    const run: Run = { e, l: fromLeft ? pa : pb, r: fromLeft ? pb : pa, fromLeft };
-    if (Math.abs(run.l.y - run.r.y) >= 0.5) runs.push(run);
-  }
-
-  // Runs that could sit on top of each other are placed together.
-  const group = runs.map((_, i) => i);
-  const find = (i: number): number => (group[i] === i ? i : (group[i] = find(group[i])));
-  for (const [i, u] of runs.entries()) {
-    for (const [j, v] of runs.entries()) {
-      if (j <= i) continue;
-      const [a0, a1] = span(u);
-      const [b0, b1] = span(v);
-      if (a0 < b1 && b0 < a1 && u.l.x + CLEAR < v.r.x - CLEAR && v.l.x + CLEAR < u.r.x - CLEAR) group[find(i)] = find(j);
-    }
-  }
-  const groups = new Map<number, Run[]>();
-  for (const [i, u] of runs.entries()) groups.set(find(i), [...(groups.get(find(i)) ?? []), u]);
-
-  for (const list of groups.values()) {
-    const lo = Math.max(...list.map((u) => u.l.x)) + CLEAR;
-    const hi = Math.min(...list.map((u) => u.r.x)) - CLEAR;
-    const step = list.length > 1 ? Math.min(TRACK, (hi - lo) / (list.length - 1)) : 0;
-    if (hi < lo || (list.length > 1 && step < 8)) continue;
-    const order = ordered(list);
-    const width = step * (list.length - 1);
-    const mid = (lo + hi) / 2;
-    const path = (u: Run, x: number): Pt[] => [u.l, { x, y: u.l.y }, { x, y: u.r.y }, u.r];
-    let best: { score: number[]; first: number } | null = null;
-    for (let c = Math.ceil((lo + width / 2) / 10) * 10; c <= hi - width / 2; c += 10) {
-      const first = c - width / 2;
-      const blocked = order.some((u, k) => collides(path(u, first + k * step), obstacles));
-      // Bends read best in the open corridor between areas rather than inside one.
-      const framed = order.reduce((sum, u, k) => {
-        const p = { x: first + k * step, y: (u.l.y + u.r.y) / 2 };
-        return sum + frames.filter((f) => p.x > f.x && p.x < f.x + f.w && p.y > f.y && p.y < f.y + f.h).length;
-      }, 0);
-      const score = [blocked ? 1 : 0, framed, Math.abs(c - mid)];
-      const at = best ? score.findIndex((v, i) => v !== best!.score[i]) : 0;
-      if (!best || (at >= 0 && score[at] < best.score[at])) best = { score, first };
-    }
-    if (!best || best.score[0]) continue;
-    for (const [k, u] of order.entries()) {
-      const x = best.first + k * step;
-      const bends = [{ x, y: u.l.y }, { x, y: u.r.y }];
-      routes.set(u.e.id, u.fromLeft ? bends : bends.reverse());
-    }
-  }
-
-  return doc.edges.map((e) => {
-    if (!routes.has(e.id)) return e;
-    const { route: _route, labelAt: _labelAt, ...rest } = e;
-    const route = routes.get(e.id);
-    return route ? { ...rest, route } : rest;
+    const { route, labelAt, ...rest } = e;
+    if (facing(pa, pb) || facing(pb, pa)) return rest;
+    const was = (id: string) => doc.nodes.find((n) => n.id === id)!;
+    const da = { x: at.a.x - was(at.a.id).x, y: at.a.y - was(at.a.id).y };
+    const db = { x: at.b.x - was(at.b.id).x, y: at.b.y - was(at.b.id).y };
+    if (!da.x && !da.y && !db.x && !db.y) return e;
+    if (route && da.x === db.x && da.y === db.y) return { ...e, route: route.map((p) => ({ x: p.x + da.x, y: p.y + da.y })) };
+    return labelAt === undefined ? rest : { ...rest, labelAt };
   });
 }
 
+function pass(doc: Doc): Doc {
+  const arranged = arrange(doc);
+  const balanced = { ...doc, nodes: doc.nodes.map((n) => arranged.get(n.id)!), edges: comb(doc, arranged) };
+  const nodes = settle(balanced);
+  square(balanced, nodes);
+  rows(balanced, nodes);
+  return { ...balanced, nodes: balanced.nodes.map((n) => nodes.get(n.id)!), edges: comb(balanced, nodes) };
+}
+
 /**
- * Tidy the whole board without rearranging it: level nodes so lines run straight, refit the
- * area frames, and lay parallel bends side by side so they neither overlap nor cross.
+ * Tidy the whole board without rearranging it: balance the area frames, level nodes so lines run
+ * straight, and lay parallel bends side by side so they neither overlap nor cross.
  */
 export function tidy(doc: Doc): Doc {
-  const nodes = settle(doc);
-  rows(doc, nodes);
-  const edges = comb(doc, nodes);
-  const next = { ...doc, nodes: doc.nodes.map((n) => nodes.get(n.id)!), edges };
+  let next = doc;
+  // One pass can open up room for the next; a handful settles any board.
+  for (let i = 0; i < 6; i++) {
+    const after = pass(next);
+    if (JSON.stringify(after) === JSON.stringify(next)) break;
+    next = after;
+  }
   return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;
 }
