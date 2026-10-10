@@ -747,7 +747,7 @@ export function Canvas() {
             (() => {
               const r = nodeRect(single);
               const corners: [Corner, number, number, string][] =
-                single.type === 'device'
+                single.type === 'device' || single.type === 'legend'
                   ? [['e', r.x + r.w, r.y + r.h / 2, 'ew-resize']]
                   : [
                       ['nw', r.x, r.y, 'nwse-resize'],

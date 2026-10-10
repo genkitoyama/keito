@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { insertImages, insertNode, viewCenter } from '../canvas/Canvas';
 import { snap } from '../model/geometry';
-import { PRESETS, type Preset, allIds, freshId, makeDevice } from '../model/presets';
+import { PRESETS, type Preset, allIds, freshId, makeDevice, makeLegend } from '../model/presets';
 import type { DeviceNode, UserPreset } from '../model/types';
 import { type Tool, useStore } from '../model/store';
 import { getSetting, setSetting } from '../platform/storage';
@@ -40,6 +40,14 @@ function addDevice(p: Preset | UserPreset) {
   s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, d] }));
   s.select([d.id]);
   s.setTool('select');
+}
+
+function addLegend() {
+  const s = useStore.getState();
+  const c = viewCenter();
+  const n = makeLegend(allIds(s.doc), snap(c.x - 100), snap(c.y - 40));
+  s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, n] }));
+  s.select([n.id]);
 }
 
 function pickImages() {
@@ -171,6 +179,9 @@ export function Toolbar() {
         ))}
         <button data-tip="画像・SVG（ドロップや貼り付けでも可）" aria-label="画像・SVG を埋め込む" onClick={pickImages}>
           {ico(<path d="M3 4h14v12H3zM3 13l4-4 3 3 3-4 4 5M7 7.5h.01" />)}
+        </button>
+        <button data-tip="凡例（使っている線の色の一覧。色を変えると追従します）" aria-label="凡例を置く" onClick={addLegend}>
+          {ico(<path d="M3 6h5M3 10h5M3 14h5M11 6h6M11 10h6M11 14h4" />)}
         </button>
         <hr />
         <button className={panel === 'library' ? 'on' : ''} data-tip="機材ライブラリ（L）" aria-label="機材ライブラリ" onClick={() => st().setPanel(panel === 'library' ? null : 'library')}>

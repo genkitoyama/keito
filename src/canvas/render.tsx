@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { DEV, crossings, hopOrder, isTagged, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { LEGEND, legendRows } from '../model/legend';
 import { lineColor, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, labelStacked, lengthShown, powerLoads } from '../model/lists';
 import { SEQ, parseSequence } from '../model/sequence';
@@ -311,6 +312,28 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
             strokeDasharray={theme.mono ? [14, 3, 2, 3].map((v) => v * k).join(' ') : '6 5'}
           />
           <TextBlock x={x + 12} y={y + 11.5 + textSize(n) / 2} w={w - 24} text={n.text} size={textSize(n)} weight={textWeight(n)} fill={tint && n.color !== 'white' ? tint.line : '#475569'} anchor="start" theme={theme} />
+        </g>
+      );
+    }
+    case 'legend': {
+      // A drawing sheet carries its own legend, by line type rather than colour.
+      if (!doc || theme.mono) return null;
+      const rows = legendRows(doc, n);
+      const top = y + LEGEND.pad + (n.text.trim() ? LEGEND.title : 0);
+      return (
+        <g>
+          <rect x={x} y={y} width={w} height={h} rx={8} fill="#fff" stroke="#cbd5e1" strokeWidth={1.2} />
+          {n.text.trim() && <TextBlock x={x + LEGEND.pad} y={y + LEGEND.pad + 7} w={w - LEGEND.pad * 2} text={n.text} size={11} weight={700} fill="#64748b" anchor="start" theme={theme} />}
+          {rows.map((row, i) => {
+            const cy = top + i * LEGEND.row + LEGEND.row / 2;
+            return (
+              <g key={row.color}>
+                <line x1={x + LEGEND.pad} y1={cy} x2={x + LEGEND.pad + LEGEND.sample} y2={cy} stroke={row.color} strokeWidth={2.4} strokeLinecap="round" />
+                <TextBlock x={x + LEGEND.pad + LEGEND.sample + 10} y={cy} w={w - LEGEND.pad * 2 - LEGEND.sample - 10} text={row.name} size={12} fill={INK} anchor="start" theme={theme} />
+              </g>
+            );
+          })}
+          {!rows.length && <TextBlock x={x + LEGEND.pad} y={top + LEGEND.row / 2} w={w - LEGEND.pad * 2} text="線を引くと、ここに色が並びます" size={11} fill="#94a3b8" anchor="start" theme={theme} />}
         </g>
       );
     }

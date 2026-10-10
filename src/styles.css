@@ -1028,3 +1028,19 @@ td a {
   border-color: transparent;
   color: var(--sub);
 }
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.legend-row .swatch {
+  flex: none;
+  width: 28px;
+  height: 4px;
+  border-radius: 2px;
+}
+.legend-row input {
+  flex: 1;
+}

@@ -57,6 +57,8 @@ flows:                     # 矢印コネクタ（shapes / devices どちらも�
   - { from: s1, to: s2, label: はい }
 images:                    # 埋め込み画像。データ本体は id で引き継がれる（src に data URL / URL も可）
   - { id: img1, name: logo, pos: [x, y], size: [w, h] }
+legends:                   # 凡例。使っている線の色が自動で並ぶ。names で行の呼び名を付けられる
+  - { id: legend1, pos: [x, y], title: 凡例, names: { "#ea7a2e": 映像系統 } }
 junctions:                 # 分岐点（線が枝分かれする点）。cables の from / to に id だけを書いてつなぐ
   - { id: j1, pos: [x, y] }
 sequences:
@@ -192,6 +194,15 @@ export function toYaml(doc: Doc): string {
   const junctions = doc.nodes.filter((n) => n.type === 'junction');
   if (junctions.length) out.junctions = junctions.map((n) => ({ id: n.id, pos: [r(n.x + n.w / 2), r(n.y + n.h / 2)] }));
 
+  const legends = doc.nodes.filter((n) => n.type === 'legend');
+  if (legends.length) {
+    out.legends = legends.map((n) => {
+      const o: Obj = { id: n.id, pos: [r(n.x), r(n.y)], width: r(n.w), title: n.text };
+      if (n.names && Object.keys(n.names).length) o.names = n.names;
+      return o;
+    });
+  }
+
   const y = new Document(out);
   // Keep coordinate pairs and port lists on one line.
   visit(y, {
@@ -312,6 +323,13 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     const id = claim(v.id, 'j', `junctions[${i}]`);
     const at = place(id, v.pos);
     nodes.push({ id, type: 'junction', x: at.x - JUNCTION / 2, y: at.y - JUNCTION / 2, w: JUNCTION, h: JUNCTION, text: '分岐' });
+  });
+
+  arr(root.legends).forEach((v, i) => {
+    if (!isObj(v)) throw new Error(`legends[${i}]: マップではありません`);
+    const id = claim(v.id, 'legend', `legends[${i}]`);
+    const names = isObj(v.names) ? Object.fromEntries(Object.entries(v.names).map(([k, name]) => [k.toLowerCase(), str(name)]).filter(([, name]) => name)) : {};
+    nodes.push({ id, type: 'legend', ...place(id, v.pos), w: typeof v.width === 'number' ? v.width : 200, h: 64, text: typeof v.title === 'string' ? v.title : '凡例', names: Object.keys(names).length ? names : undefined });
   });
 
   arr(root.sequences).forEach((v, i) => {

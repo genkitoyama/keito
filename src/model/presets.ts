@@ -305,6 +305,9 @@ export function claimPort(doc: Doc, nodeId: string, signal: string, side: Port['
 
 export const JUNCTION = 12;
 
+/** A legend block with its top-left corner at (x, y); its height follows its rows once it is on a board. */
+export const makeLegend = (taken: Set<string>, x: number, y: number): Node => ({ id: freshId(taken, 'legend'), type: 'legend', x, y, w: 200, h: 64, text: '凡例' });
+
 /**
  * Put a junction dot on a line at `at`. The line keeps its identity up to the dot; a second line
  * of the same kind carries on from the dot to where the original ended.

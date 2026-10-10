@@ -1,3 +1,4 @@
+import { fitLegends } from './legend';
 import { create } from 'zustand';
 import { type Backend, type BoardInfo, connect, externalize, localBoards } from '../platform/storage';
 import { fromYaml } from './dsl';
@@ -126,7 +127,7 @@ export const useStore = create<State>((set, get) => ({
   checkpoint: () => set((s) => ({ past: [...s.past.slice(-HISTORY), s.doc], future: [] })),
   setDoc: (doc, record = true) => {
     if (record) get().checkpoint();
-    set({ doc });
+    set({ doc: fitLegends(doc) });
   },
   mutate: (fn, record = true) => get().setDoc(fn(get().doc), record),
   updateNode: (id, patch, record = true) =>
@@ -281,7 +282,7 @@ async function run(fn: (b: Backend) => Promise<void>): Promise<void> {
 function show(doc: Doc): void {
   stored = doc;
   live = null;
-  useStore.setState({ doc, viewing: null, past: [], future: [], selection: [], editing: null });
+  useStore.setState({ doc: fitLegends(doc), viewing: null, past: [], future: [], selection: [], editing: null });
   showInUrl(doc.id);
   requestAnimationFrame(useStore.getState().fit);
 }

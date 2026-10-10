@@ -1,3 +1,4 @@
+import { legendRows } from '../model/legend';
 import { useRef, useState } from 'react';
 import { isTagged } from '../model/geometry';
 import { safeUrl } from '../model/url';
@@ -230,6 +231,33 @@ function NodePanel({ n }: { n: Node }) {
           <code>participant A as 表示名</code>
           <br />
           <code>note over A: メモ</code>　／　<code>title: 題名</code>
+        </p>
+      </>
+    );
+  }
+  if (n.type === 'legend') {
+    const doc = useStore.getState().doc;
+    const rows = legendRows(doc, n);
+    return (
+      <>
+        <h3>凡例 <code>{n.id}</code></h3>
+        <Field label="見出し（空にすると出しません）" value={n.text} onChange={(v) => patch({ text: v })} />
+        {rows.map((row) => (
+          <div key={row.color} className="legend-row">
+            <span className="swatch" style={{ background: row.color }} />
+            <input
+              value={n.names?.[row.color] ?? ''}
+              placeholder={row.usual}
+              onChange={(e) => {
+                const names = { ...n.names, [row.color]: e.target.value };
+                if (!e.target.value) delete names[row.color];
+                patch({ names: Object.keys(names).length ? names : undefined });
+              }}
+            />
+          </div>
+        ))}
+        <p className="hint">
+          このボードで使っている線の色が 1 行ずつ並びます。同じ色の種別は 1 行にまとまり、名前を書くとその行の呼び名になります（空なら種別の名前）。線の色を変えると自動で追従します。
         </p>
       </>
     );

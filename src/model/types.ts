@@ -93,9 +93,18 @@ export interface ImageNode extends Base {
 export interface JunctionNode extends Base {
   type: 'junction';
 }
-export type Node = ShapeNode | StickyNode | TextNode | FrameNode | DeviceNode | SequenceNode | ImageNode | JunctionNode;
+/**
+ * Key to the line colours in use, kept up to date by itself. `text` is its title; the height
+ * follows the number of rows.
+ */
+export interface LegendNode extends Base {
+  type: 'legend';
+  /** Names given to rows by hand, keyed by line colour (lower-case hex). */
+  names?: Record<string, string>;
+}
+export type Node = ShapeNode | StickyNode | TextNode | FrameNode | DeviceNode | SequenceNode | ImageNode | JunctionNode | LegendNode;
 /** Nodes whose `text` is edited in place on the canvas. */
-export const hasText = (n: Node): boolean => n.type !== 'sequence' && n.type !== 'image' && n.type !== 'junction';
+export const hasText = (n: Node): boolean => n.type !== 'sequence' && n.type !== 'image' && n.type !== 'junction' && n.type !== 'legend';
 export type NodeType = Node['type'];
 
 export interface EdgeEnd {
