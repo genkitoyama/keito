@@ -19,7 +19,7 @@ export function ListsPanel() {
       <div className="tabs">
         {TABS.map((name, i) => (
           <button key={name} className={tab === i ? 'on' : ''} onClick={() => setTab(i)}>
-            {name} <small>{tables[i].rows.length}</small>
+            {name} <small>{tables[i].rows.length - (tables[i].total ? 1 : 0)}</small>
           </button>
         ))}
         <span className="grow" />
@@ -33,13 +33,13 @@ export function ListsPanel() {
       <div className="table-wrap">
         <table>
           <thead>
-            <tr>{t.head.map((h) => <th key={h}>{h}</th>)}</tr>
+            <tr>{t.head.map((h) => <th key={h} className={t.numeric?.includes(h) ? 'num' : ''}>{h}</th>)}</tr>
           </thead>
           <tbody>
             {t.rows.map((row, i) => (
-              <tr key={i} className={t.refs[i].some((id) => sel.has(id)) ? 'on' : ''} onClick={() => useStore.getState().select(t.refs[i])}>
+              <tr key={i} className={t.total && i === t.rows.length - 1 ? 'total' : t.refs[i].some((id) => sel.has(id)) ? 'on' : ''} onClick={() => t.refs[i].length && useStore.getState().select(t.refs[i])}>
                 {row.map((c, j) => (
-                  <td key={j}>
+                  <td key={j} className={t.numeric?.includes(t.head[j]) ? 'num' : ''}>
                     {/^https?:\/\//.test(c) ? (
                       <a href={c} target="_blank" rel="noopener noreferrer" title={c} onClick={(e) => e.stopPropagation()}>
                         {c.replace(/^https?:\/\/(www\.)?/, '')}

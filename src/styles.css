@@ -1044,3 +1044,17 @@ td a {
 .legend-row input {
   flex: 1;
 }
+.preview.pages {
+  padding: 0;
+  border: 0;
+  width: 100%;
+}
+.lists tr.total td {
+  font-weight: 700;
+  background: #f1f5f9;
+  cursor: default;
+}
+.lists td.num,
+.lists th.num {
+  text-align: right;
+}
