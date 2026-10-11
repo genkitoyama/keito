@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type Paper, boardImage, copyPng, pdfHtml, printHtml, toPng } from '../export/exporters';
 import { type Table, cableSummaryTable, cableTable, compact, equipmentTable, powerTable } from '../model/lists';
 import { useStore } from '../model/store';
-import type { Doc } from '../model/types';
+import { type Doc, latestRev } from '../model/types';
 import { download, getSetting, inlineImages, safeName, setSetting } from '../platform/storage';
 
 const LISTS = [
@@ -54,7 +54,9 @@ export function ExportPanel() {
     return () => watch.disconnect();
   }, [mode]);
   const zoom = width ? Math.min(1, (width - 16) / (PAGE_PX[paper] + 48)) : 0.5;
-  const html = useMemo(() => pdfHtml(doc, { paper, tables: chosen }, zoom), [doc, paper, zoom, chosen.map((t) => t.title).join()]);
+  // An old revision on screen exports under its own mark; the live board under the latest one recorded.
+  const rev = useStore((s) => s.viewing?.entry.rev ?? latestRev(s.doc));
+  const html = useMemo(() => pdfHtml(doc, { paper, rev, tables: chosen }, zoom), [doc, paper, rev, zoom, chosen.map((t) => t.title).join()]);
 
   const run = (fn: () => Promise<void> | void, done: string) => async () => {
     try {
@@ -110,9 +112,9 @@ export function ExportPanel() {
                   );
                 })}
                 <p className="hint">
-                  何も書かれていない列（URL や備考など）は出しません。長いリストは自動で改ページされ、見出し行が各ページに付きます。見出しの右にはボード情報（案件名・REV など）と今日の日付が入ります。
+                  何も書かれていない列（URL や備考など）は出しません。長いリストは自動で改ページされ、見出し行が各ページに付きます。見出しの右にはボード情報（案件名・REV・作成者）と今日の日付が入ります。
                 </p>
-                <button className="primary wide" onClick={run(() => printHtml(pdfHtml(doc, { paper, tables: chosen })), '印刷ダイアログで送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。')}>
+                <button className="primary wide" onClick={run(() => printHtml(pdfHtml(doc, { paper, rev, tables: chosen })), '印刷ダイアログで送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。')}>
                   PDF にする（{paper} 横）
                 </button>
               </>

@@ -13,7 +13,7 @@ export function Revisions() {
       <h4>
         改訂履歴
         {!viewing && !form && (
-          <button className="mini" onClick={() => setForm({ rev: list.length ? nextRev(list[list.length - 1].rev) : doc.meta.rev || 'A', note: '' })}>
+          <button className="mini" onClick={() => setForm({ rev: list.length ? nextRev(list[list.length - 1].rev) : 'A', note: '' })}>
             版を記録
           </button>
         )}

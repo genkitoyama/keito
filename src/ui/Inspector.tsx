@@ -8,7 +8,7 @@ import { freshId } from '../model/presets';
 import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
-import type { Arrow, DeviceNode, Doc, DocMeta, Edge, Node, Port, ShapeKind } from '../model/types';
+import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type ShapeKind, latestRev } from '../model/types';
 import { FILLS, FillPreview, SHAPES } from './icons';
 import { Revisions } from './Revisions';
 
@@ -61,6 +61,8 @@ const SignalSelect = ({ value, onChange, flow }: { value: string; onChange: (v: 
 
 function MetaPanel() {
   const meta = useStore((s) => s.doc.meta);
+  // While an old revision is on screen, that revision is the one shown.
+  const rev = useStore((s) => s.viewing?.entry.rev ?? latestRev(s.doc));
   const powerTags = useStore((s) => s.doc.powerTags !== false);
   const idLabels = useStore((s) => s.doc.cableIdLabels !== false);
   const lenLabels = useStore((s) => s.doc.lengthLabels !== false);
@@ -75,10 +77,11 @@ function MetaPanel() {
       <h3>ボード情報</h3>
       <Field label="タイトル（図面名称）" value={meta.title} onChange={set('title')} />
       <Field label="案件名" value={meta.project} onChange={set('project')} />
-      <Field label="図番" value={meta.drawingNo} onChange={set('drawingNo')} />
       <Field label="作成者" value={meta.author} onChange={set('author')} />
-      <Field label="REV" value={meta.rev} onChange={set('rev')} />
-      <Field label="会社" value={meta.company} onChange={set('company')} />
+      <div className="field">
+        <span>REV（改訂履歴の最新の版）</span>
+        <output className="readout">{rev || '—（版を記録すると付きます）'}</output>
+      </div>
       <Revisions />
       <label className="check">
         <input type="checkbox" checked={powerTags} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, powerTags: e.target.checked }))} />
@@ -101,7 +104,7 @@ function MetaPanel() {
         線が交差するところを跨ぎ線（小さな山）にする
       </label>
       <p className="hint">
-        タイトル・案件名・図番・作成者・REV・会社は、PDF エクスポートの見出しに入ります。
+        タイトル・案件名・作成者・REV は、PDF エクスポートの見出しに入ります。
         <br />
         <br />
         <b>操作</b>

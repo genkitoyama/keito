@@ -9,7 +9,7 @@ import { PALETTE } from './signals';
 /** Schema reference shown in the editor and given to the AI. */
 export const DSL_GUIDE = `# keito YAML 書式
 title: 図のタイトル
-project: 案件名            # 任意。drawingNo / author / rev / company も同様
+project: 案件名            # 任意。author（作成者）も同様
 signals:                   # 任意。このボードだけの信号種別
   - { id: hdbt, label: HDBaseT, prefix: HDB, color: "#0d9488" }
 areas:                     # 設置場所の枠（任意）
@@ -92,7 +92,7 @@ function refOf(doc: Doc, end: EdgeEnd): string {
 
 export function toYaml(doc: Doc): string {
   const out: Obj = { title: doc.meta.title };
-  for (const k of ['project', 'drawingNo', 'author', 'rev', 'company'] as const) put(out, k, doc.meta[k]);
+  for (const k of ['project', 'author'] as const) put(out, k, doc.meta[k]);
 
   if (doc.powerTags === false) out.powerTags = false;
   if (doc.cableIdLabels === false) out.cableIdLabels = false;
@@ -473,7 +473,7 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
   }
 
   const meta = { ...prev.meta };
-  for (const k of ['title', 'project', 'drawingNo', 'author', 'rev', 'company'] as const) {
+  for (const k of ['title', 'project', 'author'] as const) {
     if (root[k] != null) meta[k] = str(root[k]);
   }
   const powerTags = typeof root.powerTags === 'boolean' ? root.powerTags : prev.powerTags;

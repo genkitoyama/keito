@@ -1058,3 +1058,12 @@ td a {
 .lists th.num {
   text-align: right;
 }
+
+.field .readout {
+  display: block;
+  padding: 5px 7px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--sub);
+  background: #f8fafc;
+}

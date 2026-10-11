@@ -150,11 +150,11 @@ export interface Edge {
 export interface DocMeta {
   title: string;
   project: string;
-  drawingNo: string;
   author: string;
-  rev: string;
-  company: string;
 }
+
+/** The mark of the latest recorded revision, or '' while none has been recorded. */
+export const latestRev = (doc: Pick<Doc, 'revisions'>): string => doc.revisions?.[doc.revisions.length - 1]?.rev ?? '';
 
 /** A device the user saved to reuse: everything about it except where it sits. */
 export interface UserPreset {
@@ -219,8 +219,5 @@ export interface Doc {
 export const emptyMeta = (title = '無題のボード'): DocMeta => ({
   title,
   project: '',
-  drawingNo: '',
   author: '',
-  rev: 'A',
-  company: '',
 });
