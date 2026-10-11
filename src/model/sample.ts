@@ -1,7 +1,6 @@
 /** First-run demo board, written in the same YAML the editor imports. */
 export const SAMPLE_YAML = `title: 展示システム系統図（サンプル）
 project: サンプル展示
-author: keito
 devices:
   - id: pc1
     name: メインPC

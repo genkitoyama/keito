@@ -77,7 +77,7 @@ function tableHtml(t: Table, doc: Doc): string {
 export function pdfHtml(doc: Doc, opts: PdfOptions, zoom = 1): string {
   const [w, h] = SIZE[opts.paper];
   const figure = boardImage(doc, true, 24).svg.replace(/width="[\d.]+" height="[\d.]+"/, 'width="100%" height="100%"');
-  const meta = [doc.meta.project, opts.rev && `REV ${opts.rev}`, doc.meta.author, new Date().toLocaleDateString('sv-SE')].filter(Boolean);
+  const meta = [doc.meta.project, opts.rev && `REV ${opts.rev}`, new Date().toLocaleDateString('sv-SE')].filter(Boolean);
   return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(doc.meta.title)}</title><style>
 @page{size:${opts.paper} landscape;margin:${MARGIN}mm}
 html,body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}

@@ -77,7 +77,6 @@ function MetaPanel() {
       <h3>ボード情報</h3>
       <Field label="タイトル（図面名称）" value={meta.title} onChange={set('title')} />
       <Field label="案件名" value={meta.project} onChange={set('project')} />
-      <Field label="作成者" value={meta.author} onChange={set('author')} />
       <div className="field">
         <span>REV（改訂履歴の最新の版）</span>
         <output className="readout">{rev || '—（版を記録すると付きます）'}</output>
@@ -104,7 +103,7 @@ function MetaPanel() {
         線が交差するところを跨ぎ線（小さな山）にする
       </label>
       <p className="hint">
-        タイトル・案件名・作成者・REV は、PDF エクスポートの見出しに入ります。
+        タイトル・案件名・REV は、PDF エクスポートの見出しに入ります。
         <br />
         <br />
         <b>操作</b>

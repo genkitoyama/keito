@@ -150,7 +150,6 @@ export interface Edge {
 export interface DocMeta {
   title: string;
   project: string;
-  author: string;
 }
 
 /** The mark of the latest recorded revision, or '' while none has been recorded. */
@@ -189,7 +188,6 @@ export interface Revision {
   /** YYYY-MM-DD. */
   date: string;
   note: string;
-  author: string;
 }
 
 export interface Doc {
@@ -219,5 +217,4 @@ export interface Doc {
 export const emptyMeta = (title = '無題のボード'): DocMeta => ({
   title,
   project: '',
-  author: '',
 });

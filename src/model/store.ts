@@ -185,7 +185,7 @@ export const useStore = create<State>((set, get) => ({
     if (get().viewing) return;
     await flush();
     const doc = get().doc;
-    const entry: Revision = { id: randomId(), rev, date: new Date().toLocaleDateString('sv-SE'), note, author: doc.meta.author };
+    const entry: Revision = { id: randomId(), rev, date: new Date().toLocaleDateString('sv-SE'), note };
     // The snapshot is the drawing itself; the list of revisions lives only on the live board.
     await b.saveRevision(doc.id, entry.id, { ...doc, revisions: undefined });
     const all = [...(doc.revisions ?? []), entry];

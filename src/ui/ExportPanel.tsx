@@ -112,7 +112,7 @@ export function ExportPanel() {
                   );
                 })}
                 <p className="hint">
-                  何も書かれていない列（URL や備考など）は出しません。長いリストは自動で改ページされ、見出し行が各ページに付きます。見出しの右にはボード情報（案件名・REV・作成者）と今日の日付が入ります。
+                  何も書かれていない列（URL や備考など）は出しません。長いリストは自動で改ページされ、見出し行が各ページに付きます。見出しの右にはボード情報（案件名・REV）と今日の日付が入ります。
                 </p>
                 <button className="primary wide" onClick={run(() => printHtml(pdfHtml(doc, { paper, rev, tables: chosen })), '印刷ダイアログで送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。')}>
                   PDF にする（{paper} 横）
