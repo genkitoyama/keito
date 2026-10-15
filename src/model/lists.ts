@@ -55,7 +55,9 @@ const oneLine = (text: string): string => text.split('\n').map((l) => l.trim()).
 export function quantityOf(name: string): { name: string; count: number } {
   // A name broken over several lines on the board reads as one line in a list.
   const first = oneLine(name);
-  const m = /^(.*?)\s*[x×✕]\s*(\d{1,3})$/i.exec(first.trim());
+  // A latin x only counts when it stands apart ("Speaker x2"), so "Xbox 360", "DMX 512" and
+  // "Matrix 4x4" keep their names; the multiplication sign may sit right after the name ("スピーカー×2").
+  const m = /^(.*?)(?:\s+[xX]|\s*[×✕])\s*(\d{1,3})$/.exec(first.trim());
   return m && m[1] ? { name: m[1].trim(), count: Math.max(1, Number(m[2])) } : { name: first.trim(), count: 1 };
 }
 
