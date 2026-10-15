@@ -461,7 +461,8 @@ export function subset(doc: Doc, ids: Iterable<string>): Doc {
   for (const n of doc.nodes) {
     if (!want.has(n.id)) continue;
     keep.add(n.id);
-    if (n.type === 'frame') for (const m of doc.nodes) if (m !== n && frameOf(doc, m)?.id === n.id) keep.add(m.id);
+    // Everything inside the area comes along, areas nested in it and their contents included.
+    if (n.type === 'frame') for (const m of doc.nodes) if (m !== n && contains(nodeRect(n), center(nodeRect(m)))) keep.add(m.id);
   }
   for (const e of doc.edges) {
     if (!want.has(e.id)) continue;
