@@ -1,6 +1,6 @@
 import { UI_FONT, wrapText } from './text';
 import { CLEAR, type Run, chip, collides, lanes, routeAround } from './router';
-import { parseSequence } from './sequence';
+import { seqLayout, seqScale } from './sequence';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node, Port, PortSide, Pt, Rect } from './types';
 
 export const GRID = 10;
@@ -29,7 +29,7 @@ export function nodeSize(n: Node): { w: number; h: number } {
     return { w: n.w, h: deviceHead(n) + rows * DEV.row + DEV.pad };
   }
   if (n.type === 'sequence') {
-    const d = parseSequence(n.text);
+    const d = seqLayout(n.text, n.w, n.h, seqScale(n.fontSize));
     return { w: d.w, h: d.h };
   }
   return { w: n.w, h: n.h };

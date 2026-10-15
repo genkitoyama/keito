@@ -265,6 +265,9 @@ function NodePanel({ n }: { n: Node }) {
           <br />
           <code>note over A: メモ</code>　／　<code>title: 題名</code>
         </p>
+        <TextStyle n={n} />
+        <p className="hint">角をドラッグで大きさを変えられます（列と行の間隔が広がります）。文字を大きくすると、図全体がそれに合わせて大きくなります。</p>
+        {(n.w > 0 || n.h > 0) && <button onClick={() => patch({ w: 0, h: 0 }, true)}>大きさを自動に戻す</button>}
       </>
     );
   }
@@ -389,9 +392,9 @@ function NodePanel({ n }: { n: Node }) {
 }
 
 /** Size and weight of a node's text, as in the floating bar: the box grows so the text never spills out. */
-function TextStyle({ n }: { n: Extract<Node, { type: 'shape' | 'sticky' | 'text' | 'frame' }> }) {
+function TextStyle({ n }: { n: Extract<Node, { type: 'shape' | 'sticky' | 'text' | 'frame' | 'sequence' }> }) {
   const restyle = (change: { fontSize?: number; bold?: boolean }) => {
-    if (n.type === 'frame') return useStore.getState().updateNode(n.id, change, true);
+    if (n.type === 'frame' || n.type === 'sequence') return useStore.getState().updateNode(n.id, change, true);
     const need = textHeightFor({ ...n, ...change }, n.text);
     useStore.getState().updateNode(n.id, { ...change, h: n.type === 'text' ? need : Math.max(n.h, need) }, true);
   };
@@ -407,10 +410,12 @@ function TextStyle({ n }: { n: Extract<Node, { type: 'shape' | 'sticky' | 'text'
           {n.fontSize != null && !sizes.some((o) => o.px === n.fontSize) && <option value={n.fontSize}>{n.fontSize}px</option>}
         </select>
       </label>
-      <label className="check" style={{ alignSelf: 'end' }}>
-        <input type="checkbox" checked={textWeight(n) === 700} onChange={(e) => restyle({ bold: e.target.checked })} />
-        太字
-      </label>
+      {n.type !== 'sequence' && (
+        <label className="check" style={{ alignSelf: 'end' }}>
+          <input type="checkbox" checked={textWeight(n) === 700} onChange={(e) => restyle({ bold: e.target.checked })} />
+          太字
+        </label>
+      )}
     </div>
   );
 }

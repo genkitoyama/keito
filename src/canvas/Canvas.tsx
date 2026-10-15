@@ -49,7 +49,7 @@ const ACCENT = '#2563eb';
 const SPAWN_GAP = 70;
 type Flowable = Extract<Node, { type: 'shape' | 'sticky' | 'text' }>;
 const canConnect = (n: Node): n is Flowable => n.type === 'shape' || n.type === 'sticky' || n.type === 'text';
-const canResize = (n: Node): boolean => n.type !== 'sequence' && n.type !== 'junction';
+const canResize = (n: Node): boolean => n.type !== 'junction';
 /** Nodes that offer side dots to pull a line from. */
 const hasHandles = (n: Node): boolean => canConnect(n) || n.type === 'junction';
 const st = useStore.getState;
@@ -382,7 +382,7 @@ export function Canvas() {
     if (e.button !== 0) return;
     e.stopPropagation();
     // Pictures keep their proportions unless Shift is held.
-    begin(e, { kind: 'resize', id: n.id, corner, start: world(e), orig: { x: n.x, y: n.y, w: n.w, h: n.h }, moved: false, lock: n.type === 'image' ? n.w / n.h : undefined });
+    begin(e, { kind: 'resize', id: n.id, corner, start: world(e), orig: nodeRect(n), moved: false, lock: n.type === 'image' ? n.w / n.h : undefined });
   };
 
   /** Snap the dragged node's edges / centre to those of its neighbours; falls back to the grid. */

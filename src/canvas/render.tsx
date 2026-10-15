@@ -3,7 +3,7 @@ import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isTagged, labelPoint
 import { LEGEND, shownRows } from '../model/legend';
 import { lineColor, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, labelStacked, lengthShown, powerLoads } from '../model/lists';
-import { SEQ, parseSequence } from '../model/sequence';
+import { SEQ, SEQ_TEXT, parseSequence, seqLayout, seqScale } from '../model/sequence';
 import { PALETTE, STICKY, STRONG } from '../model/signals';
 import { UI_FONT, measure, wrapText } from '../model/text';
 import { safeUrl } from '../model/url';
@@ -168,32 +168,39 @@ function arrowHead(tip: Pt, from: Pt, size: number, spread = 0.42): string {
 
 function Sequence({ n, theme }: { n: SequenceNode; theme: Theme }) {
   const d = parseSequence(n.text);
+  // Everything scales with the text size, so a bigger text never outgrows its boxes.
+  const k = seqScale(n.fontSize);
+  const { col, step, w: dw, h: dh } = seqLayout(n.text, n.w, n.h, k);
+  // Narrow columns take narrower boxes so neighbours never touch.
+  const boxW = Math.min(SEQ.boxW * k, col - 12);
+  const boxH = SEQ.boxH * k;
+  const text = SEQ_TEXT * k;
   const line = '#334155';
   const sw = 1.3;
-  const top = n.y + SEQ.padTop + (d.title ? SEQ.titleH : 0);
-  const cx = (i: number): number => n.x + SEQ.padX + i * SEQ.col + SEQ.col / 2;
-  const lifeTop = top + SEQ.boxH;
+  const top = n.y + (SEQ.padTop + (d.title ? SEQ.titleH : 0)) * k;
+  const cx = (i: number): number => n.x + SEQ.padX * k + i * col + col / 2;
+  const lifeTop = top + boxH;
   const out: ReactNode[] = [
-    <rect key="bg" x={n.x} y={n.y} width={d.w} height={d.h} rx={8} fill="#fff" stroke={'#cbd5e1'} strokeWidth={1} />,
+    <rect key="bg" x={n.x} y={n.y} width={dw} height={dh} rx={8} fill="#fff" stroke={'#cbd5e1'} strokeWidth={1} />,
   ];
-  if (d.title) out.push(<TextBlock key="t" x={n.x + d.w / 2} y={n.y + SEQ.padTop + 8} w={d.w - 20} text={d.title} size={13} weight={700} theme={theme} />);
+  if (d.title) out.push(<TextBlock key="t" x={n.x + dw / 2} y={n.y + (SEQ.padTop + 8) * k} w={dw - 20} text={d.title} size={13 * k} weight={700} theme={theme} />);
   d.participants.forEach((p, i) => {
     out.push(
       <g key={`p${i}`}>
-        <line x1={cx(i)} y1={lifeTop} x2={cx(i)} y2={n.y + d.h - 12} stroke={line} strokeWidth={sw * 0.75} strokeDasharray="4 4" />
-        <rect x={cx(i) - SEQ.boxW / 2} y={top} width={SEQ.boxW} height={SEQ.boxH} rx={5} fill={'#e8edf3'} stroke={line} strokeWidth={sw} />
-        <TextBlock x={cx(i)} y={top + SEQ.boxH / 2} w={SEQ.boxW - 8} text={p.label} size={11.5} weight={600} theme={theme} />
+        <line x1={cx(i)} y1={lifeTop} x2={cx(i)} y2={n.y + dh - 12 * k} stroke={line} strokeWidth={sw * 0.75} strokeDasharray="4 4" />
+        <rect x={cx(i) - boxW / 2} y={top} width={boxW} height={boxH} rx={5} fill={'#e8edf3'} stroke={line} strokeWidth={sw} />
+        <TextBlock x={cx(i)} y={top + boxH / 2} w={boxW - 8} text={p.label} size={11.5 * k} weight={600} theme={theme} />
       </g>,
     );
   });
   d.items.forEach((it, i) => {
-    const y = lifeTop + (i + 1) * SEQ.step;
+    const y = lifeTop + (i + 1) * step;
     if (it.kind === 'note') {
-      const w = Math.min(SEQ.col - 12, measure(it.text, `11px ${theme.font}`) + 18);
+      const w = Math.min(col - 12, measure(it.text, `${text}px ${theme.font}`) + 18 * k);
       out.push(
         <g key={`i${i}`}>
-          <rect x={cx(it.over) - w / 2} y={y - 13} width={w} height={26} fill={'#fef3c7'} stroke={'#eab308'} strokeWidth={1} />
-          <TextBlock x={cx(it.over)} y={y} w={w - 8} text={it.text} size={11} theme={theme} />
+          <rect x={cx(it.over) - w / 2} y={y - 13 * k} width={w} height={26 * k} fill={'#fef3c7'} stroke={'#eab308'} strokeWidth={1} />
+          <TextBlock x={cx(it.over)} y={y} w={w - 8} text={it.text} size={text} theme={theme} />
         </g>,
       );
       return;
@@ -201,11 +208,13 @@ function Sequence({ n, theme }: { n: SequenceNode; theme: Theme }) {
     const dash = it.dashed ? '5 3' : undefined;
     if (it.from === it.to) {
       const x = cx(it.from);
+      const loop = 36 * k;
+      const rise = 8 * k;
       out.push(
         <g key={`i${i}`}>
-          <path d={`M${x},${y - 8} H${x + 36} V${y + 8} H${x}`} fill="none" stroke={line} strokeWidth={sw} strokeDasharray={dash} />
-          <polygon points={arrowHead({ x, y: y + 8 }, { x: x + 36, y: y + 8 }, 8)} fill={line} />
-          <text x={x + 42} y={mid(y, 11)} fontFamily={theme.font} fontSize={11} fill={INK}>
+          <path d={`M${x},${y - rise} H${x + loop} V${y + rise} H${x}`} fill="none" stroke={line} strokeWidth={sw} strokeDasharray={dash} />
+          <polygon points={arrowHead({ x, y: y + rise }, { x: x + loop, y: y + rise }, 8)} fill={line} />
+          <text x={x + loop + 6 * k} y={mid(y, text)} fontFamily={theme.font} fontSize={text} fill={INK}>
             {it.text}
           </text>
         </g>,
@@ -218,7 +227,7 @@ function Sequence({ n, theme }: { n: SequenceNode; theme: Theme }) {
       <g key={`i${i}`}>
         <line x1={a.x} y1={y} x2={b.x} y2={y} stroke={line} strokeWidth={sw} strokeDasharray={dash} />
         <polygon points={arrowHead(b, a, 8)} fill={line} />
-        <TextBlock x={(a.x + b.x) / 2} y={y - 10} w={Math.abs(b.x - a.x) - 12} text={it.text} size={11} theme={theme} />
+        <TextBlock x={(a.x + b.x) / 2} y={y - 10 * k} w={Math.abs(b.x - a.x) - 12} text={it.text} size={text} theme={theme} />
       </g>,
     );
   });

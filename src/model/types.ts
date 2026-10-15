@@ -90,6 +90,8 @@ export interface DeviceNode extends Base {
 /** `text` is the sequence source. Size is derived from the parsed diagram. */
 export interface SequenceNode extends Base {
   type: 'sequence';
+  /** Size of the message text in px (default 11); the whole diagram scales with it. */
+  fontSize?: number;
 }
 /** Embedded picture (raster or SVG) as a data URL. `text` is its name. */
 export interface ImageNode extends Base {

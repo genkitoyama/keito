@@ -22,7 +22,32 @@ export interface SeqDiagram {
   h: number;
 }
 
-export const SEQ = { col: 170, boxW: 130, boxH: 34, step: 42, padX: 20, padTop: 16, titleH: 26 };
+export const SEQ = { col: 170, boxW: 130, boxH: 34, step: 42, padX: 20, padTop: 16, titleH: 26, minCol: 90, minStep: 26 };
+
+export interface SeqLayout {
+  w: number;
+  h: number;
+  /** Width given to each participant, and the distance between messages. */
+  col: number;
+  step: number;
+}
+
+/**
+ * How big the diagram is drawn. Without a size of its own it takes its natural size; resized by
+ * hand, the columns and rows stretch or squeeze to fill it, down to what stays readable.
+ */
+export function seqLayout(text: string, w = 0, h = 0, k = 1): SeqLayout {
+  const d = parseSequence(text);
+  const n = Math.max(1, d.participants.length);
+  const head = (SEQ.padTop + (d.title ? SEQ.titleH : 0) + SEQ.boxH) * k;
+  const col = w > 0 ? Math.max(SEQ.minCol * k, (w - SEQ.padX * 2 * k) / n) : SEQ.col * k;
+  const step = h > 0 ? Math.max(SEQ.minStep * k, (h - head) / (d.items.length + 1)) : SEQ.step * k;
+  return { col, step, w: SEQ.padX * 2 * k + n * col, h: head + (d.items.length + 1) * step };
+}
+
+/** The message text is 11px by default; a bigger text size scales the whole diagram with it. */
+export const SEQ_TEXT = 11;
+export const seqScale = (fontSize?: number): number => (fontSize ?? SEQ_TEXT) / SEQ_TEXT;
 
 const cache = new Map<string, SeqDiagram>();
 

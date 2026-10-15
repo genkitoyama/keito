@@ -191,7 +191,7 @@ export function toYaml(doc: Doc): string {
   }
 
   const seqs = doc.nodes.filter((n) => n.type === 'sequence');
-  if (seqs.length) out.sequences = seqs.map((s) => ({ id: s.id, pos: [r(s.x), r(s.y)], text: s.text }));
+  if (seqs.length) out.sequences = seqs.map((s) => ({ id: s.id, pos: [r(s.x), r(s.y)], ...(s.w > 0 || s.h > 0 ? { size: [r(s.w), r(s.h)] } : {}), ...(s.type === 'sequence' && s.fontSize ? { fontSize: s.fontSize } : {}), text: s.text }));
 
   // Pictures are listed without their data so the text stays readable; applying
   // the YAML keeps each picture by id.
@@ -347,7 +347,8 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
   arr(root.sequences).forEach((v, i) => {
     if (!isObj(v)) throw new Error(`sequences[${i}]: マップではありません`);
     const id = claim(v.id, 'seq', `sequences[${i}]`);
-    nodes.push({ id, type: 'sequence', ...place(id, v.pos), w: 0, h: 0, text: str(v.text).trimEnd() });
+    const size = nums(v.size, 2);
+    nodes.push({ id, type: 'sequence', ...place(id, v.pos), w: size?.[0] ?? 0, h: size?.[1] ?? 0, text: str(v.text).trimEnd(), fontSize: typeof v.fontSize === 'number' ? v.fontSize : undefined });
   });
 
   arr(root.images).forEach((v, i) => {

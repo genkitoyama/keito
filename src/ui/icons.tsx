@@ -69,7 +69,14 @@ export interface SizeOption {
 }
 /** Free text doubles as headings; text inside shapes and stickies just gets smaller or larger. */
 export const sizesFor = (type: Node['type']): SizeOption[] =>
-  type === 'text'
+  type === 'sequence'
+    ? [
+        { px: undefined, label: '標準' },
+        { px: 14, label: '大' },
+        { px: 18, label: '特大' },
+        { px: 24, label: 'タイトル' },
+      ]
+    : type === 'text'
     ? [
         { px: undefined, label: '標準' },
         { px: 20, label: '中見出し' },

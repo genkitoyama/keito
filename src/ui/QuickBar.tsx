@@ -97,16 +97,17 @@ export function QuickBar() {
   // Shapes, stickies, devices and area frames can be colour-coded; one without a colour shows as gray.
   const tinted = one?.type === 'shape' || one?.type === 'sticky' || one?.type === 'device' || one?.type === 'frame' ? one : undefined;
   const color: ColorKey = tinted ? (tinted.color ?? 'gray') : 'gray';
-  const sized = one?.type === 'text' || one?.type === 'shape' || one?.type === 'sticky' || one?.type === 'frame' ? one : undefined;
+  const sized = one?.type === 'text' || one?.type === 'shape' || one?.type === 'sticky' || one?.type === 'frame' || one?.type === 'sequence' ? one : undefined;
   const sizes = sized ? sizesFor(sized.type) : [];
   // The built-in size of this kind of node; an unset fontSize means exactly this.
-  const baseSize = sized?.type === 'sticky' ? 13.5 : sized?.type === 'frame' ? 13 : 14;
-  const isBold = !!sized && textWeight(sized) === 700;
+  const baseSize = sized?.type === 'sticky' ? 13.5 : sized?.type === 'frame' ? 13 : sized?.type === 'sequence' ? 11 : 14;
+  const isBold = !!sized && sized.type !== 'sequence' && textWeight(sized) === 700;
   const fontSize = sized?.fontSize ?? baseSize;
   // Apply a text style, letting the box follow so the text never spills out of it.
   const restyle = (change: { fontSize?: number; bold?: boolean }) => {
     if (!sized) return;
-    if (sized.type === 'frame') return patch(change);
+    // Areas and sequence diagrams size themselves around their text.
+    if (sized.type === 'frame' || sized.type === 'sequence') return patch(change);
     const need = textHeightFor({ ...sized, ...change }, sized.text);
     // Free text hugs its words; a shape or sticky only ever grows, since its size was chosen by hand.
     patch({ ...change, h: sized.type === 'text' ? need : Math.max(sized.h, need) });
@@ -166,7 +167,7 @@ export function QuickBar() {
           )}
         </div>
       )}
-      {sized && (
+      {sized && sized.type !== 'sequence' && (
         <Btn tip={isBold ? '太字をやめる' : '太字にする'} on={isBold} onClick={() => restyle({ bold: !isBold })}>
           {ICON.bold}
         </Btn>
