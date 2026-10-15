@@ -43,8 +43,7 @@ export function ExportPanel() {
   const [scale, setScale] = useState(2);
   const [msg, setMsg] = useState('');
 
-  // A part of the board still reads its colour key ("既存機材" …) from the whole board.
-  const tables = useMemo(() => new Map<ListKey, Table>(LISTS.map((l) => [l.key, compact(l.key === 'equipment' ? equipmentTable(doc, true, whole) : l.make(doc))])), [doc, whole]);
+  const tables = useMemo(() => new Map<ListKey, Table>(LISTS.map((l) => [l.key, compact(l.make(doc))])), [doc]);
   const chosen = LISTS.filter((l) => lists.includes(l.key) && tables.get(l.key)!.rows.length).map((l) => tables.get(l.key)!);
   const image = useMemo(() => boardImage(doc, background), [doc, background]);
   const name = `${safeName(doc.meta.title)}${partial ? '_選択範囲' : ''}`;

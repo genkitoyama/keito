@@ -1,7 +1,7 @@
 import { frameOf } from './geometry';
 import { allSignals, signalOf } from './signals';
 import { safeUrl } from './url';
-import type { DeviceNode, Doc, Edge, EdgeEnd } from './types';
+import type { DeviceNode, Doc, Edge, EdgeEnd, Node } from './types';
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
 
@@ -48,6 +48,13 @@ export interface Table {
   total?: boolean;
 }
 
+/**
+ * The full board behind a list. A part cut out for export keeps neither the areas around its
+ * devices nor the colour key, so locations and groups are read from the board it came from.
+ */
+const boardOf = (doc: Doc): Doc => doc.whole ?? doc;
+const placeOf = (doc: Doc, n: Node): string => frameOf(boardOf(doc), n)?.text ?? '';
+
 const devices = (doc: Doc): DeviceNode[] => doc.nodes.filter((n): n is DeviceNode => n.type === 'device');
 
 /** Text as one line: line breaks become spaces. */
@@ -91,16 +98,15 @@ export function colourKey(doc: Doc): Map<string, string> {
 }
 
 /** One row per distinct model (or name, for devices without one) and group, with a quantity. */
-/** `board` is where the colour key is read from: the whole board, when listing only part of it. */
-export function equipmentTable(doc: Doc, withUrl = true, board: Doc = doc): Table {
-  const key = colourKey(board);
+export function equipmentTable(doc: Doc, withUrl = true): Table {
+  const key = colourKey(boardOf(doc));
   // A supplier typed on the device wins over what its colour stands for.
   const groupOf = (d: DeviceNode): string => d.vendor?.trim() || key.get(d.color ?? 'gray') || '';
   const groups = new Map<string, { d: DeviceNode; ids: string[]; names: Set<string>; places: Set<string>; count: number; watts: number | null }>();
   for (const d of devices(doc)) {
     const q = unitsOf(d);
     const id = `${groupOf(d)}|${d.category}|${d.model ? `${d.maker}|${d.model}` : `|${q.name}`}`;
-    const place = frameOf(doc, d)?.text ?? '';
+    const place = placeOf(doc, d);
     const g = groups.get(id) ?? { d, ids: [], names: new Set<string>(), places: new Set<string>(), count: 0, watts: null };
     g.ids.push(d.id);
     g.names.add(q.name);
@@ -158,7 +164,7 @@ function endOf(doc: Doc, end: EdgeEnd): { name: string; port: string; place: str
   // Junction dots all carry the same word: their id tells them apart.
   const name = n.type === 'junction' ? `分岐点 ${n.id}` : oneLine(n.text) || n.id;
   const port = n.type === 'device' && end.port ? (n.ports.find((p) => p.id === end.port)?.name ?? '') : '';
-  return { name, port, place: frameOf(doc, n)?.text ?? '' };
+  return { name, port, place: placeOf(doc, n) };
 }
 
 const cables = (doc: Doc): Edge[] => doc.edges.filter((e) => signalOf(e.signal).cable);
@@ -215,7 +221,7 @@ export function networkTable(doc: Doc): Table {
     title: 'ネットワーク',
     head: ['名称', 'ホスト名', 'IP アドレス', 'メーカー', '型番', '設置場所', '備考'],
     widths: [20, 16, 14, 12, 14, 12, 16],
-    rows: list.map((d) => [unitsOf(d).name, d.host ?? '', d.ip ?? '', d.maker, d.model, frameOf(doc, d)?.text ?? '', d.note]),
+    rows: list.map((d) => [unitsOf(d).name, d.host ?? '', d.ip ?? '', d.maker, d.model, placeOf(doc, d), d.note]),
     refs: list.map((d) => [d.id]),
   };
 }
