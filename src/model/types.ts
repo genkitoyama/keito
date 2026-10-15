@@ -219,6 +219,11 @@ export interface Doc {
   signals?: CustomSignal[];
   /** Recorded revisions, oldest first. */
   revisions?: Revision[];
+  /**
+   * Set only on a part of a board cut out for export (never saved): the whole board, from which
+   * cable numbers, power loads and locations are read so the part matches the full drawing.
+   */
+  whole?: Doc;
   /** Colours chosen on this board for signal types, by signal id (hex). */
   signalColors?: Record<string, string>;
   /** Show power cables as tags at both ends rather than lines (default on). */

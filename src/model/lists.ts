@@ -16,6 +16,8 @@ const idCache = new WeakMap<Doc, Map<string, string>>();
 
 /** Cable IDs (HDMI-01, LAN-03 …) numbered per signal type in edge order. */
 export function cableIds(doc: Doc): Map<string, string> {
+  // A cut-out part keeps the numbers its cables have on the full board.
+  if (doc.whole) return cableIds(doc.whole);
   const hit = idCache.get(doc);
   if (hit) return hit;
   const counters = new Map<string, number>();
@@ -270,6 +272,8 @@ const loadCache = new WeakMap<Doc, Map<string, PowerLoad>>();
 
 /** What each power source (UPS, power strip …) feeds: device id → its load. */
 export function powerLoads(doc: Doc): Map<string, PowerLoad> {
+  // A UPS in a cut-out part still carries everything it feeds on the full board.
+  if (doc.whole) return powerLoads(doc.whole);
   const hit = loadCache.get(doc);
   if (hit) return hit;
   const byId = new Map(doc.nodes.map((n) => [n.id, n]));
@@ -293,11 +297,14 @@ export function powerLoads(doc: Doc): Map<string, PowerLoad> {
 
 /** Power distribution: one row per fed device, with a total per source. */
 export function powerTable(doc: Doc): Table {
-  const byId = new Map(doc.nodes.map((n) => [n.id, n]));
+  // Names come from the full board, since a source in a cut-out part may feed devices outside it.
+  const byId = new Map((doc.whole ?? doc).nodes.map((n) => [n.id, n]));
+  const shown = new Set(doc.nodes.map((n) => n.id));
   const name = (id: string): string => oneLine(byId.get(id)?.text ?? '') || id;
   const rows: string[][] = [];
   const refs: string[][] = [];
   for (const [id, load] of powerLoads(doc)) {
+    if (!shown.has(id)) continue;
     for (const d of load.ids) {
       const n = byId.get(d);
       rows.push([name(id), name(d), n?.type === 'device' && n.watts != null ? String(n.watts) : '', '', '']);

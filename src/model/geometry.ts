@@ -476,6 +476,7 @@ export function subset(doc: Doc, ids: Iterable<string>): Doc {
   }
   return {
     ...doc,
+    whole: doc.whole ?? doc,
     nodes: doc.nodes.filter((n) => keep.has(n.id)),
     edges: doc.edges.filter((e) => want.has(e.id) || (keep.has(e.from.node) && keep.has(e.to.node))),
   };
