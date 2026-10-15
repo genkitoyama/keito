@@ -404,12 +404,32 @@ window.addEventListener('focus', () => void run(async (b) => {
   }
 }));
 
+/** Browsers drop a keepalive request whose body is over 64KB. */
+const KEEPALIVE_LIMIT = 60_000;
+const unsaved = (): Doc | null => {
+  const { doc, ready, viewing } = useStore.getState();
+  return ready && !viewing && doc !== stored ? doc : null;
+};
+
+// Closing within the autosave delay: browser storage is written on the spot; a board too big to
+// go out as the page dies is sent now, and the browser is asked to hold the page until it lands.
+window.addEventListener('beforeunload', (e) => {
+  const doc = unsaved();
+  if (!doc || !backend) return;
+  if (backend.mode === 'local') return void backend.save(doc);
+  if (JSON.stringify(doc).length <= KEEPALIVE_LIMIT) return;
+  void flush();
+  e.preventDefault();
+  e.returnValue = '';
+});
+
 window.addEventListener('pagehide', () => {
-  const { doc, ready } = useStore.getState();
-  // Last-moment save: keepalive lets the request outlive the page.
-  if (ready && !useStore.getState().viewing && doc !== stored && backend?.mode === 'server') {
-    void fetch(`/api/boards/${doc.id}`, { method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(doc) });
-  }
+  const doc = unsaved();
+  if (!doc || !backend) return;
+  if (backend.mode === 'local') return void backend.save(doc);
+  // Last-moment save: keepalive lets the request outlive the page (small boards only, see above).
+  const body = JSON.stringify(doc);
+  if (body.length <= KEEPALIVE_LIMIT) void fetch(`/api/boards/${doc.id}`, { method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json' }, body }).catch(() => {});
 });
 
 let clipboard: { nodes: Node[]; edges: Edge[] } | null = null;
