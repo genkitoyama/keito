@@ -469,12 +469,20 @@ export function subset(doc: Doc, ids: Iterable<string>): Doc {
     keep.add(e.from.node);
     keep.add(e.to.node);
   }
-  // A branch point joining two or more of the kept nodes keeps their cable whole.
-  for (const n of doc.nodes) {
-    if (n.type !== 'junction' || keep.has(n.id)) continue;
-    const ends = doc.edges.flatMap((e) => (e.from.node === n.id ? [e.to.node] : e.to.node === n.id ? [e.from.node] : []));
-    if (ends.filter((id) => keep.has(id)).length >= 2) keep.add(n.id);
+  // Branch points keep a cable whole between kept nodes, however many it runs through: take every
+  // dot, then shed the ones left at a dead end until each remaining one links two kept things.
+  const near = (id: string): string[] => doc.edges.flatMap((e) => (e.from.node === id ? [e.to.node] : e.to.node === id ? [e.from.node] : []));
+  const dots = new Set(doc.nodes.filter((n) => n.type === 'junction' && !keep.has(n.id)).map((n) => n.id));
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const id of dots) {
+      if (new Set(near(id).filter((x) => keep.has(x) || dots.has(x))).size < 2) {
+        dots.delete(id);
+        changed = true;
+      }
+    }
   }
+  for (const id of dots) keep.add(id);
   return {
     ...doc,
     whole: doc.whole ?? doc,
