@@ -183,14 +183,17 @@ export const useStore = create<State>((set, get) => ({
   }),
   recordRevision: (rev, note) => void run(async (b) => {
     if (get().viewing) return;
+    // The board the button was pressed on, even if another one is opened while this runs.
+    const board = get().doc.id;
     await flush();
-    const doc = get().doc;
+    const doc = get().doc.id === board ? get().doc : await b.load(board);
+    if (!doc) return;
     const entry: Revision = { id: randomId(), rev, date: new Date().toLocaleDateString('sv-SE'), note };
     // The snapshot is the drawing itself; the list of revisions lives only on the live board.
     await b.saveRevision(doc.id, entry.id, { ...doc, revisions: undefined });
     const all = [...(doc.revisions ?? []), entry];
     for (const old of all.slice(0, Math.max(0, all.length - MAX_REVISIONS))) await b.removeRevision(doc.id, old.id);
-    get().setDoc({ ...get().doc, revisions: all.slice(-MAX_REVISIONS) }, false);
+    await setRevisions(b, doc.id, () => all.slice(-MAX_REVISIONS));
   }),
   viewRevision: (id) => void run(async (b) => {
     if (!get().viewing) await flush();
@@ -221,8 +224,9 @@ export const useStore = create<State>((set, get) => ({
   },
   deleteRevision: (id) => void run(async (b) => {
     if (get().viewing) return;
-    await b.removeRevision(get().doc.id, id);
-    get().setDoc({ ...get().doc, revisions: (get().doc.revisions ?? []).filter((r) => r.id !== id) }, false);
+    const board = get().doc.id;
+    await b.removeRevision(board, id);
+    await setRevisions(b, board, (list) => list.filter((r) => r.id !== id));
   }),
   savePreset: (deviceId) => void run(async (b) => {
     const d = get().doc.nodes.find((n) => n.id === deviceId);
@@ -278,6 +282,21 @@ async function run(fn: (b: Backend) => Promise<void>): Promise<void> {
 }
 
 /** Put a freshly loaded (or created) board on screen. */
+/**
+ * Update a board's list of revisions once the files are written. The writes take a moment, and
+ * by then another board may be open: the list then goes to the board it belongs to, on disk.
+ */
+async function setRevisions(b: Backend, board: string, change: (list: Revision[]) => Revision[]): Promise<void> {
+  const s = useStore.getState();
+  if (s.doc.id === board && !s.viewing) return s.setDoc({ ...s.doc, revisions: change(s.doc.revisions ?? []) }, false);
+  if (live?.id === board) {
+    live = { ...live, revisions: change(live.revisions ?? []) };
+    return;
+  }
+  const saved = await b.load(board);
+  if (saved) await b.save({ ...saved, revisions: change(saved.revisions ?? []) });
+}
+
 function show(doc: Doc): void {
   stored = doc;
   live = null;
