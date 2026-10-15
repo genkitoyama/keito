@@ -2,7 +2,7 @@ import { Document, isScalar, parse, visit } from 'yaml';
 import { docBounds, frameOf } from './geometry';
 import { autoLayout } from './layout';
 import { JUNCTION, freshId, makeEdge, parsePort, presetOf, presetPorts } from './presets';
-import { isBuiltInSignal, isSignal, registerSignals } from './signals';
+import { customSignals, isBuiltInSignal, isSignal, registerSignals } from './signals';
 import type { ColorKey, CustomSignal, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FrameNode, Node, ShapeKind } from './types';
 import { PALETTE } from './signals';
 
@@ -246,6 +246,18 @@ const DEFAULT_SIZE: Record<string, [number, number]> = {
  * (matched by id) unless `relayout`; anything still unplaced is auto-laid-out.
  */
 export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
+  // Reading the YAML registers its own signal types so cables can use them. The registry is
+  // global, so it goes back to what it was afterwards, whether or not the YAML was valid: the
+  // store registers the new ones itself if the result is applied.
+  const before = customSignals();
+  try {
+    return readYaml(src, prev, relayout);
+  } finally {
+    registerSignals(before);
+  }
+}
+
+function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   const root = parse(src);
   if (!isObj(root)) throw new Error('YAML のトップレベルはマップ（title: … など）にしてください');
 

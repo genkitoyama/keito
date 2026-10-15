@@ -39,6 +39,8 @@ const DASHES = ['11 3 3 3', '7 3 1 3 1 3', '4 2', '16 3 2 3 2 3', '9 2 3 2'];
 export function registerSignals(list: CustomSignal[] | undefined): void {
   custom = new Map((list ?? []).filter((s) => !byId.has(s.id)).map((s, i) => [s.id, { ...s, dash: DASHES[i % DASHES.length], cable: true }]));
 }
+/** The types registered now, in a form `registerSignals` takes back. */
+export const customSignals = (): CustomSignal[] => [...custom.values()].map(({ id, label, prefix, color }) => ({ id, label, prefix, color }));
 export const signalOf = (id: SignalId): Signal => custom.get(id) ?? byId.get(id) ?? byId.get('other')!;
 export const isSignal = (id: string): boolean => custom.has(id) || byId.has(id);
 export const isBuiltInSignal = (id: string): boolean => byId.has(id);
