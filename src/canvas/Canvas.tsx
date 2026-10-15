@@ -23,7 +23,7 @@ import {
   snap,
 } from '../model/geometry';
 import { type CreateKind, allIds, claimPort, junctionSignal, makeEdge, makeImage, makeNode, splitEdge } from '../model/presets';
-import { SEQUENCE_SAMPLE } from '../model/sequence';
+import { SEQUENCE_SAMPLE, seqLayout, seqScale } from '../model/sequence';
 import { STRONG } from '../model/signals';
 import { copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
@@ -527,6 +527,10 @@ export function Canvas() {
     }
     const o = d.orig;
     let { x, y, w, h } = o;
+    // A sequence diagram stops at the smallest size it stays readable at; anything smaller would
+    // move its corner without making it any smaller, so the diagram would slide away.
+    const resized = s.doc.nodes.find((n) => n.id === d.id);
+    const min = resized?.type === 'sequence' ? seqLayout(resized.text, 1, 1, seqScale(resized.fontSize)) : MIN;
     // The edge being dragged snaps like a moved node does: to the edges and centres of the other
     // nodes, and to the position that gives this node the same width or height as one of them.
     const tol = 6 / s.view.k;
@@ -550,19 +554,19 @@ export function Canvas() {
       if (line !== undefined) guide[horizontal ? 'x' : 'y'] = line;
       return best;
     };
-    if (d.corner.includes('e')) w = Math.max(MIN.w, snapEdge(o.x + o.w + dx, true, o.x) - o.x);
+    if (d.corner.includes('e')) w = Math.max(min.w, snapEdge(o.x + o.w + dx, true, o.x) - o.x);
     if (d.corner.includes('w')) {
-      x = Math.min(snapEdge(o.x + dx, true, o.x + o.w), o.x + o.w - MIN.w);
+      x = Math.min(snapEdge(o.x + dx, true, o.x + o.w), o.x + o.w - min.w);
       w = o.x + o.w - x;
     }
-    if (d.corner === 'se' || d.corner === 'sw') h = Math.max(MIN.h, snapEdge(o.y + o.h + dy, false, o.y) - o.y);
+    if (d.corner === 'se' || d.corner === 'sw') h = Math.max(min.h, snapEdge(o.y + o.h + dy, false, o.y) - o.y);
     if (d.corner === 'ne' || d.corner === 'nw') {
-      y = Math.min(snapEdge(o.y + dy, false, o.y + o.h), o.y + o.h - MIN.h);
+      y = Math.min(snapEdge(o.y + dy, false, o.y + o.h), o.y + o.h - min.h);
       h = o.y + o.h - y;
     }
     setGuides(guide);
     if (d.lock && !e.shiftKey) {
-      h = Math.max(MIN.h, Math.round(w / d.lock));
+      h = Math.max(min.h, Math.round(w / d.lock));
       if (d.corner === 'ne' || d.corner === 'nw') y = o.y + o.h - h;
       // The height follows the width here, so only the horizontal guide means anything.
       setGuides({ x: guide.x });
