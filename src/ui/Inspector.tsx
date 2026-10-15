@@ -124,8 +124,14 @@ function DevicePanel({ n }: { n: DeviceNode }) {
   const link = safeUrl(n.url);
   const saved = useStore((s) => s.presets.some((p) => p.name === n.text && p.maker === n.maker && p.model === n.model));
   const setPort = (id: string, p: Partial<Port>, record: boolean) => patch({ ports: n.ports.map((x) => (x.id === id ? { ...x, ...p } : x)) }, record);
-  const addPort = (side: Port['side']) =>
-    patch({ ports: [...n.ports, { id: freshId(new Set(n.ports.map((p) => p.id)), 'p'), name: side === 'left' ? 'IN' : 'OUT', side, signal: 'hdmi' }] }, true);
+  const addPort = (side: Port['side']) => {
+    // A name of its own (IN, IN 2, IN 3 …), so a cable can always tell its port from the others.
+    const base = side === 'left' ? 'IN' : 'OUT';
+    const names = new Set(n.ports.map((p) => p.name));
+    let name = base;
+    for (let i = 2; names.has(name); i++) name = `${base} ${i}`;
+    patch({ ports: [...n.ports, { id: freshId(new Set(n.ports.map((p) => p.id)), 'p'), name, side, signal: 'hdmi' }] }, true);
+  };
   const removePort = (id: string) =>
     st().mutate((d) => ({
       ...d,

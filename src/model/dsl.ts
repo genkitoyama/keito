@@ -36,7 +36,7 @@ devices:
     out: ["HDMI 1:hdmi", DP:dp]       # 右側ポート
     pos: [x, y]            # 省略すると自動レイアウト
 cables:
-  - from: pc1.HDMI 1       # 機材ID.ポート名（無いポートは自動追加）
+  - from: pc1.HDMI 1       # 機材ID.ポート名（無いポートは自動追加。同じ名前のポートが複数あるときは IN#2 のように何番目かを付ける）
     to: pj1.HDMI
     type: hdmi             # hdmi sdi dp lan usb audio power fiber dmx serial wireless other、または signals で足した種別
     cableId: V-01          # 任意。ケーブルIDを手で決める（省略で自動採番）。showId / showLength: false でラベルから隠す。stacked: true で項目を 1 行ずつに
@@ -87,10 +87,18 @@ const put = (o: Obj, key: string, v: unknown): void => {
 };
 const r = Math.round;
 
+const portKey = (name: string): string => name.normalize('NFKC').toLowerCase();
+
+/**
+ * A cable end as `device.port`. Ports are named, not numbered, so when a device has several
+ * ports of one name the reference says which: `pc1.IN#2` is the second port called IN.
+ */
 function refOf(doc: Doc, end: EdgeEnd): string {
   const n = doc.nodes.find((x) => x.id === end.node);
   const port = n?.type === 'device' && end.port ? n.ports.find((p) => p.id === end.port) : undefined;
-  return port ? `${end.node}.${port.name}` : end.node;
+  if (!port || n?.type !== 'device') return end.node;
+  const twins = n.ports.filter((p) => portKey(p.name) === portKey(port.name));
+  return twins.length > 1 ? `${end.node}.${port.name}#${twins.indexOf(port) + 1}` : `${end.node}.${port.name}`;
 }
 
 export function toYaml(doc: Doc): string {
@@ -382,7 +390,10 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
       return { node: nodeId, port: free.id };
     }
     if (node.type !== 'device' || !portName) return { node: nodeId };
-    let port = node.ports.find((p) => p.name.normalize('NFKC').toLowerCase() === portName.toLowerCase());
+    let port = node.ports.find((p) => portKey(p.name) === portKey(portName));
+    // `IN#2`: the second port called IN, unless a port is really called "IN#2".
+    const nth = /^(.*?)#(\d+)$/.exec(portName);
+    if (nth && !port) port = node.ports.filter((p) => portKey(p.name) === portKey(nth[1]))[Number(nth[2]) - 1];
     if (!port) {
       port = { id: freshId(new Set(node.ports.map((p) => p.id)), 'p'), name: portName, side, signal };
       node.ports.push(port);
