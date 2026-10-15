@@ -6,6 +6,8 @@ import type { Doc, LegendNode } from './types';
 export const LEGEND = { pad: 10, row: 22, title: 20, sample: 40 };
 
 export interface LegendRow {
+  /** Left out of the drawn legend; still listed in the panel so it can be brought back. */
+  hidden: boolean;
   /** The line colour this row stands for (lower-case hex), and the key of its custom name. */
   color: string;
   name: string;
@@ -30,11 +32,14 @@ export function legendRows(doc: Doc, n: LegendNode): LegendRow[] {
     .sort((a, b) => first(a[1]) - first(b[1]))
     .map(([color, signals]) => {
       const usual = [...signals].sort((a, b) => order.indexOf(a) - order.indexOf(b)).map((s) => signalOf(s).label).join(' / ');
-      return { color, usual, name: n.names?.[color]?.trim() || usual };
+      return { color, usual, name: n.names?.[color]?.trim() || usual, hidden: !!n.hidden?.includes(color) };
     });
 }
 
-export const legendHeight = (doc: Doc, n: LegendNode): number => LEGEND.pad * 2 + (n.text.trim() ? LEGEND.title : 0) + Math.max(1, legendRows(doc, n).length) * LEGEND.row;
+/** The rows actually drawn. */
+export const shownRows = (doc: Doc, n: LegendNode): LegendRow[] => legendRows(doc, n).filter((r) => !r.hidden);
+
+export const legendHeight = (doc: Doc, n: LegendNode): number => LEGEND.pad * 2 + (n.text.trim() ? LEGEND.title : 0) + Math.max(1, shownRows(doc, n).length) * LEGEND.row;
 
 /** Legends grow and shrink with the colours in use: keep each one's stored height in step with its rows. */
 export function fitLegends(doc: Doc): Doc {

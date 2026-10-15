@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isTagged, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
-import { LEGEND, legendRows } from '../model/legend';
+import { LEGEND, shownRows } from '../model/legend';
 import { lineColor, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, labelStacked, lengthShown, powerLoads } from '../model/lists';
 import { SEQ, parseSequence } from '../model/sequence';
@@ -300,7 +300,8 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
     case 'legend': {
       // A drawing sheet carries its own legend, by line type rather than colour.
       if (!doc) return null;
-      const rows = legendRows(doc, n);
+      const rows = shownRows(doc, n);
+      const legendRows = doc.edges.some((e) => e.signal !== 'flow');
       const top = y + LEGEND.pad + (n.text.trim() ? LEGEND.title : 0);
       return (
         <g>
@@ -315,7 +316,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
               </g>
             );
           })}
-          {!rows.length && <TextBlock x={x + LEGEND.pad} y={top + LEGEND.row / 2} w={w - LEGEND.pad * 2} text="線を引くと、ここに色が並びます" size={11} fill="#94a3b8" anchor="start" theme={theme} />}
+          {!rows.length && <TextBlock x={x + LEGEND.pad} y={top + LEGEND.row / 2} w={w - LEGEND.pad * 2} text={legendRows ? 'すべての行を隠しています' : '線を引くと、ここに色が並びます'} size={11} fill="#94a3b8" anchor="start" theme={theme} />}
         </g>
       );
     }

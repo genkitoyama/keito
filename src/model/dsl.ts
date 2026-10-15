@@ -206,6 +206,7 @@ export function toYaml(doc: Doc): string {
     out.legends = legends.map((n) => {
       const o: Obj = { id: n.id, pos: [r(n.x), r(n.y)], width: r(n.w), title: n.text };
       if (n.names && Object.keys(n.names).length) o.names = n.names;
+      if (n.hidden?.length) o.hidden = n.hidden;
       return o;
     });
   }
@@ -340,7 +341,7 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
     if (!isObj(v)) throw new Error(`legends[${i}]: マップではありません`);
     const id = claim(v.id, 'legend', `legends[${i}]`);
     const names = isObj(v.names) ? Object.fromEntries(Object.entries(v.names).map(([k, name]) => [k.toLowerCase(), str(name)]).filter(([, name]) => name)) : {};
-    nodes.push({ id, type: 'legend', ...place(id, v.pos), w: typeof v.width === 'number' ? v.width : 200, h: 64, text: typeof v.title === 'string' ? v.title : '凡例', names: Object.keys(names).length ? names : undefined });
+    nodes.push({ id, type: 'legend', ...place(id, v.pos), w: typeof v.width === 'number' ? v.width : 200, h: 64, text: typeof v.title === 'string' ? v.title : '凡例', names: Object.keys(names).length ? names : undefined, hidden: arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean).length ? arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean) : undefined });
   });
 
   arr(root.sequences).forEach((v, i) => {

@@ -1109,3 +1109,12 @@ td a {
   color: var(--sub);
   font-size: 11px;
 }
+
+.legend-row.off .swatch,
+.legend-row.off input:not([type='checkbox']) {
+  opacity: 0.4;
+}
+.legend-row input[type='checkbox'] {
+  flex: none;
+  margin: 0;
+}

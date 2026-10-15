@@ -276,7 +276,16 @@ function NodePanel({ n }: { n: Node }) {
         <h3>凡例 <code>{n.id}</code></h3>
         <Field label="見出し（空にすると出しません）" value={n.text} onChange={(v) => patch({ text: v })} />
         {rows.map((row) => (
-          <div key={row.color} className="legend-row">
+          <div key={row.color} className={`legend-row${row.hidden ? ' off' : ''}`}>
+            <input
+              type="checkbox"
+              checked={!row.hidden}
+              title={row.hidden ? 'この行を凡例に出す' : 'この行を凡例から外す'}
+              onChange={(e) => {
+                const hidden = e.target.checked ? (n.hidden ?? []).filter((c) => c !== row.color) : [...(n.hidden ?? []), row.color];
+                patch({ hidden: hidden.length ? hidden : undefined }, true);
+              }}
+            />
             <span className="swatch" style={{ background: row.color }} />
             <input
               value={n.names?.[row.color] ?? ''}
@@ -290,7 +299,7 @@ function NodePanel({ n }: { n: Node }) {
           </div>
         ))}
         <p className="hint">
-          このボードで使っている線の色が 1 行ずつ並びます。同じ色の種別は 1 行にまとまり、名前を書くとその行の呼び名になります（空なら種別の名前）。線の色を変えると自動で追従します。
+          このボードで使っている線の色が 1 行ずつ並びます。同じ色の種別は 1 行にまとまり、名前を書くとその行の呼び名になります（空なら種別の名前）。チェックを外した行は凡例に出しません。線の色を変えると自動で追従します。
         </p>
       </>
     );

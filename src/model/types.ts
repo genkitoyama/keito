@@ -108,6 +108,8 @@ export interface LegendNode extends Base {
   type: 'legend';
   /** Names given to rows by hand, keyed by line colour (lower-case hex). */
   names?: Record<string, string>;
+  /** Line colours left out of the legend. */
+  hidden?: string[];
 }
 export type Node = ShapeNode | StickyNode | TextNode | FrameNode | DeviceNode | SequenceNode | ImageNode | JunctionNode | LegendNode;
 /** Nodes whose `text` is edited in place on the canvas. */
