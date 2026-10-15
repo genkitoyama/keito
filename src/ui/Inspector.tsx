@@ -594,7 +594,14 @@ function EdgePanel({ e }: { e: Edge }) {
       {!cable && <Field wrap label="備考" value={e.note} onChange={(v) => patch({ note: v })} />}
       <div className="row">
         {e.route && <button onClick={() => patch({ route: undefined }, true)}>経路を自動に戻す</button>}
-        <button onClick={() => patch({ from: e.to, to: e.from }, true)}>向きを反転</button>
+        <button
+          onClick={() =>
+            // Hand-placed bends and the label position run from end to end: turn them round too.
+            patch({ from: e.to, to: e.from, route: e.route && [...e.route].reverse(), labelAt: e.labelAt == null ? undefined : 1 - e.labelAt }, true)
+          }
+        >
+          向きを反転
+        </button>
       </div>
     </>
   );
