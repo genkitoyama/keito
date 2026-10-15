@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type Paper, boardImage, copyPng, pdfHtml, printHtml, toPng } from '../export/exporters';
 import { type Table, cableSummaryTable, cableTable, compact, equipmentTable, networkTable, powerTable } from '../model/lists';
+import { subset } from '../model/geometry';
 import { useStore } from '../model/store';
 import { type Doc, latestRev } from '../model/types';
 import { download, getSetting, inlineImages, safeName, setSetting } from '../platform/storage';
@@ -26,7 +27,12 @@ export function ExportPanel() {
       live = false;
     };
   }, [board]);
-  const doc = inlined?.from === board ? inlined.doc : board;
+  const whole = inlined?.from === board ? inlined.doc : board;
+  // With something selected, the export can be just that part of the board.
+  const selection = useStore((s) => s.selection);
+  const [onlySelected, setOnlySelected] = useState(() => selection.length > 0);
+  const partial = onlySelected && selection.length > 0;
+  const doc = useMemo(() => (partial ? subset(whole, selection) : whole), [whole, partial, selection]);
   const [mode, setMode] = useState<'pdf' | 'image'>('pdf');
   const [paper, setPaper] = useState<Paper>(() => (getSetting('pdfPaper') === 'A3' ? 'A3' : 'A4'));
   const [lists, setLists] = useState<ListKey[]>(() => {
@@ -37,10 +43,11 @@ export function ExportPanel() {
   const [scale, setScale] = useState(2);
   const [msg, setMsg] = useState('');
 
-  const tables = useMemo(() => new Map<ListKey, Table>(LISTS.map((l) => [l.key, compact(l.make(doc))])), [doc]);
+  // A part of the board still reads its colour key ("既存機材" …) from the whole board.
+  const tables = useMemo(() => new Map<ListKey, Table>(LISTS.map((l) => [l.key, compact(l.key === 'equipment' ? equipmentTable(doc, true, whole) : l.make(doc))])), [doc, whole]);
   const chosen = LISTS.filter((l) => lists.includes(l.key) && tables.get(l.key)!.rows.length).map((l) => tables.get(l.key)!);
   const image = useMemo(() => boardImage(doc, background), [doc, background]);
-  const name = safeName(doc.meta.title);
+  const name = `${safeName(doc.meta.title)}${partial ? '_選択範囲' : ''}`;
 
   // The preview shows whole pages scaled to the width of the pane.
   const pane = useRef<HTMLDivElement>(null);
@@ -86,6 +93,11 @@ export function ExportPanel() {
               <button className={mode === 'pdf' ? 'on' : ''} onClick={() => setMode('pdf')}>PDF</button>
               <button className={mode === 'image' ? 'on' : ''} onClick={() => setMode('image')}>画像</button>
             </div>
+            <label className="check">
+              <input type="checkbox" checked={partial} disabled={!selection.length} onChange={(e) => setOnlySelected(e.target.checked)} />
+              選択した要素だけ{selection.length ? `（${selection.length} 個）` : '（何も選択されていません）'}
+            </label>
+            {partial && <p className="hint">エリア枠を選ぶと中の要素も入ります。両端が入っている線は自動で付き、リストも選択した範囲から作ります。</p>}
             {mode === 'pdf' ? (
               <>
                 <label className="field">

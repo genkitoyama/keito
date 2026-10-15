@@ -449,3 +449,34 @@ export function edgeNear(doc: Doc, p: Pt, tol: number, skip?: string): { edge: E
   }
   return best && { edge: best.edge, at: best.at };
 }
+
+/**
+ * The part of the board made of the given nodes and lines, for exporting a selection. An area
+ * frame brings what is inside it; a selected line brings both its ends; a line between two
+ * nodes that are in comes along, through a branch point if need be.
+ */
+export function subset(doc: Doc, ids: Iterable<string>): Doc {
+  const want = new Set(ids);
+  const keep = new Set<string>();
+  for (const n of doc.nodes) {
+    if (!want.has(n.id)) continue;
+    keep.add(n.id);
+    if (n.type === 'frame') for (const m of doc.nodes) if (m !== n && frameOf(doc, m)?.id === n.id) keep.add(m.id);
+  }
+  for (const e of doc.edges) {
+    if (!want.has(e.id)) continue;
+    keep.add(e.from.node);
+    keep.add(e.to.node);
+  }
+  // A branch point joining two or more of the kept nodes keeps their cable whole.
+  for (const n of doc.nodes) {
+    if (n.type !== 'junction' || keep.has(n.id)) continue;
+    const ends = doc.edges.flatMap((e) => (e.from.node === n.id ? [e.to.node] : e.to.node === n.id ? [e.from.node] : []));
+    if (ends.filter((id) => keep.has(id)).length >= 2) keep.add(n.id);
+  }
+  return {
+    ...doc,
+    nodes: doc.nodes.filter((n) => keep.has(n.id)),
+    edges: doc.edges.filter((e) => want.has(e.id) || (keep.has(e.from.node) && keep.has(e.to.node))),
+  };
+}

@@ -87,8 +87,9 @@ export function colourKey(doc: Doc): Map<string, string> {
 }
 
 /** One row per distinct model (or name, for devices without one) and group, with a quantity. */
-export function equipmentTable(doc: Doc, withUrl = true): Table {
-  const key = colourKey(doc);
+/** `board` is where the colour key is read from: the whole board, when listing only part of it. */
+export function equipmentTable(doc: Doc, withUrl = true, board: Doc = doc): Table {
+  const key = colourKey(board);
   // A supplier typed on the device wins over what its colour stands for.
   const groupOf = (d: DeviceNode): string => d.vendor?.trim() || key.get(d.color ?? 'gray') || '';
   const groups = new Map<string, { d: DeviceNode; ids: string[]; names: Set<string>; places: Set<string>; count: number; watts: number | null }>();
