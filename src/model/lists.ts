@@ -94,7 +94,8 @@ export function colourKey(doc: Doc): Map<string, string> {
   for (const c of twice) out.delete(c);
   // A key only means something when devices actually use more than one of its colours.
   const used = new Set(devices(doc).map((d) => d.color ?? 'gray'));
-  return [...out.keys()].filter((c) => used.has(c as never)).length ? out : new Map();
+  // One stray note in a colour the devices happen to share is not a key.
+  return [...out.keys()].filter((c) => used.has(c as never)).length >= 2 ? out : new Map();
 }
 
 /** One row per distinct model (or name, for devices without one) and group, with a quantity. */
