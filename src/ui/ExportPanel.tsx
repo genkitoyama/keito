@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type Paper, boardImage, copyPng, pdfHtml, printHtml, toPng } from '../export/exporters';
-import { type Table, cableSummaryTable, cableTable, compact, equipmentTable, powerTable } from '../model/lists';
+import { type Table, cableSummaryTable, cableTable, compact, equipmentTable, networkTable, powerTable } from '../model/lists';
 import { useStore } from '../model/store';
 import { type Doc, latestRev } from '../model/types';
 import { download, getSetting, inlineImages, safeName, setSetting } from '../platform/storage';
@@ -10,6 +10,7 @@ const LISTS = [
   { key: 'cables', label: 'ケーブルリスト', make: cableTable },
   { key: 'summary', label: 'ケーブル集計', make: cableSummaryTable },
   { key: 'power', label: '電源系統', make: powerTable },
+  { key: 'network', label: 'ネットワーク', make: networkTable },
 ] as const;
 type ListKey = (typeof LISTS)[number]['key'];
 const PAGE_PX: Record<Paper, number> = { A4: (297 / 25.4) * 96, A3: (420 / 25.4) * 96 };

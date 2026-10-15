@@ -3,17 +3,19 @@ import { useRef, useState } from 'react';
 import { isTagged } from '../model/geometry';
 import { safeUrl } from '../model/url';
 import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
-import { cableIds, idShown, labelStacked, lengthShown } from '../model/lists';
-import { freshId } from '../model/presets';
+import { cableIds, colourKey, idShown, labelStacked, lengthShown, quantityOf } from '../model/lists';
+import { PRESETS, freshId } from '../model/presets';
 import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
 import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type ShapeKind, latestRev } from '../model/types';
-import { FILLS, FillPreview, SHAPES } from './icons';
+import { FILLS, FillPreview, SHAPES, sizesFor } from './icons';
+import { textHeightFor, textWeight } from '../canvas/render';
+import { useShallow } from 'zustand/react/shallow';
 import { Revisions } from './Revisions';
 
 /** Text input that records one undo step per editing burst instead of per keystroke. */
-function Field({ label, value, onChange, multiline, wrap, type = 'text', placeholder, onPasteText }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean; wrap?: boolean; type?: string; placeholder?: string; onPasteText?: (text: string) => boolean }) {
+function Field({ label, value, onChange, multiline, wrap, type = 'text', placeholder, onPasteText, list }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean; wrap?: boolean; type?: string; placeholder?: string; onPasteText?: (text: string) => boolean; list?: string }) {
   const dirty = useRef(false);
   const props = {
     value,
@@ -35,7 +37,7 @@ function Field({ label, value, onChange, multiline, wrap, type = 'text', placeho
     <label className="field">
       <span>{label}</span>
       {/* `wrap`: a box that grows with its text, so a long note is all in view and selecting in it never scrolls the field. */}
-      {wrap ? <textarea className="wrap" rows={1} {...props} /> : multiline ? <textarea rows={4} {...props} /> : <input type={type} {...props} />}
+      {wrap ? <textarea className="wrap" rows={1} {...props} /> : multiline ? <textarea rows={4} {...props} /> : <input type={type} list={list} {...props} />}
     </label>
   );
 }
@@ -130,6 +132,9 @@ function DevicePanel({ n }: { n: DeviceNode }) {
       nodes: d.nodes.map((x) => (x.id === n.id ? { ...n, ports: n.ports.filter((p) => p.id !== id) } : x)),
       edges: d.edges.filter((e) => !((e.from.node === n.id && e.from.port === id) || (e.to.node === n.id && e.to.port === id))),
     }));
+  const supplies = n.ports.some((p) => p.side === 'right' && p.signal === 'power');
+  const group = useStore((s) => colourKey(s.doc).get(n.color ?? 'gray') ?? '');
+  const categories = useStore(useShallow((s) => [...new Set([...PRESETS.map((p) => p.category), ...s.doc.nodes.map((x) => (x.type === 'device' ? x.category : ''))].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja'))));
   const move = (id: string, dir: -1 | 1) => {
     const port = n.ports.find((p) => p.id === id)!;
     const same = n.ports.filter((p) => p.side === port.side);
@@ -141,18 +146,29 @@ function DevicePanel({ n }: { n: DeviceNode }) {
     <>
       <h3>機材 <code>{n.id}</code></h3>
       <Field label="名称" value={n.text} onChange={(v) => patch({ text: v })} />
-      <Field label="メーカー" value={n.maker} onChange={(v) => patch({ maker: v })} />
-      <Field
-        label="型番"
-        value={n.model}
-        onChange={(v) => patch({ model: v })}
-        // A web address pasted here is the model's link, not its name.
-        onPasteText={(text) => {
-          if (!/^https?:\/\//i.test(text.trim()) || !safeUrl(text)) return false;
-          patch({ url: text.trim() }, true);
-          return true;
-        }}
-      />
+      <div className="grid2">
+        <Field label="数量" type="number" placeholder={`${quantityOf(n.text).count}（名前から）`} value={n.qty == null ? '' : String(n.qty)} onChange={(v) => patch({ qty: num(v) && num(v)! >= 1 ? Math.round(num(v)!) : undefined })} />
+        <Field label="カテゴリ" list="keito-categories" value={n.category} onChange={(v) => patch({ category: v })} />
+      </div>
+      <datalist id="keito-categories">
+        {categories.map((c) => (
+          <option key={c} value={c} />
+        ))}
+      </datalist>
+      <div className="grid2">
+        <Field label="メーカー" value={n.maker} onChange={(v) => patch({ maker: v })} />
+        <Field
+          label="型番"
+          value={n.model}
+          onChange={(v) => patch({ model: v })}
+          // A web address pasted here is the model's link, not its name.
+          onPasteText={(text) => {
+            if (!/^https?:\/\//i.test(text.trim()) || !safeUrl(text)) return false;
+            patch({ url: text.trim() }, true);
+            return true;
+          }}
+        />
+      </div>
       <Field label="型番のリンク（製品ページなど）" placeholder="https://…" value={n.url ?? ''} onChange={(v) => patch({ url: v || undefined })} />
       {n.url &&
         (link ? (
@@ -162,19 +178,24 @@ function DevicePanel({ n }: { n: DeviceNode }) {
         ) : (
           <p className="error">Web のアドレス（https://…）として読めません。</p>
         ))}
-      <Field label="カテゴリ" value={n.category} onChange={(v) => patch({ category: v })} />
+      <Field label="手配先・担当（機材リストの区分）" placeholder={group ? `${group}（色分けから）` : '例: 自社 / レンタル / 先方支給'} value={n.vendor ?? ''} onChange={(v) => patch({ vendor: v || undefined })} />
+      <label className="field">
+        <span>色分け</span>
+        <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />
+      </label>
+      <div className="grid2">
+        <Field label="IP アドレス" placeholder="192.168.0.10" value={n.ip ?? ''} onChange={(v) => patch({ ip: v || undefined })} />
+        <Field label="ホスト名" value={n.host ?? ''} onChange={(v) => patch({ host: v || undefined })} />
+      </div>
+      <div className="grid2">
+        <Field label="消費電力 (W)" type="number" value={n.watts == null ? '' : String(n.watts)} onChange={(v) => patch({ watts: num(v) })} />
+        {/* Only something with outlets of its own can supply power. */}
+        {(supplies || n.capacity != null) && <Field label="給電容量 (W)" type="number" placeholder="UPS・タップ" value={n.capacity == null ? '' : String(n.capacity)} onChange={(v) => patch({ capacity: num(v) })} />}
+      </div>
       <Field wrap label="備考" value={n.note} onChange={(v) => patch({ note: v })} />
       <button className="wide" title="名称・メーカー・型番・ポート構成などを、機材ライブラリの「マイプリセット」に保存します" onClick={() => st().savePreset(n.id)}>
         {saved ? 'マイプリセットを上書き保存' : 'マイプリセットに保存'}
       </button>
-      <label className="field">
-        <span>色分け（手配元・系統など）</span>
-        <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />
-      </label>
-      <div className="grid2">
-        <Field label="消費電力 (W)" type="number" value={n.watts == null ? '' : String(n.watts)} onChange={(v) => patch({ watts: num(v) })} />
-        <Field label="給電容量 (W)" type="number" placeholder="UPS・タップ" value={n.capacity == null ? '' : String(n.capacity)} onChange={(v) => patch({ capacity: num(v) })} />
-      </div>
       {(['left', 'right'] as const).map((side) => (
         <div key={side}>
           <h4>
@@ -341,9 +362,37 @@ function NodePanel({ n }: { n: Node }) {
           </label>
         </>
       )}
+      {(n.type === 'shape' || n.type === 'sticky' || n.type === 'text' || n.type === 'frame') && <TextStyle n={n} />}
       {n.type === 'frame' && <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />}
       {(n.type === 'shape' || n.type === 'sticky') && <Colors sticky={n.type === 'sticky'} value={n.color} onPick={(color) => patch({ color }, true)} />}
     </>
+  );
+}
+
+/** Size and weight of a node's text, as in the floating bar: the box grows so the text never spills out. */
+function TextStyle({ n }: { n: Extract<Node, { type: 'shape' | 'sticky' | 'text' | 'frame' }> }) {
+  const restyle = (change: { fontSize?: number; bold?: boolean }) => {
+    if (n.type === 'frame') return useStore.getState().updateNode(n.id, change, true);
+    const need = textHeightFor({ ...n, ...change }, n.text);
+    useStore.getState().updateNode(n.id, { ...change, h: n.type === 'text' ? need : Math.max(n.h, need) }, true);
+  };
+  const sizes = sizesFor(n.type);
+  return (
+    <div className="grid2">
+      <label className="field">
+        <span>{n.type === 'frame' ? 'タイトルの大きさ' : '文字の大きさ'}</span>
+        <select value={String(n.fontSize ?? '')} onChange={(e) => restyle({ fontSize: e.target.value ? Number(e.target.value) : undefined })}>
+          {sizes.map((o) => (
+            <option key={o.label} value={o.px ?? ''}>{o.label}</option>
+          ))}
+          {n.fontSize != null && !sizes.some((o) => o.px === n.fontSize) && <option value={n.fontSize}>{n.fontSize}px</option>}
+        </select>
+      </label>
+      <label className="check" style={{ alignSelf: 'end' }}>
+        <input type="checkbox" checked={textWeight(n) === 700} onChange={(e) => restyle({ bold: e.target.checked })} />
+        太字
+      </label>
+    </div>
   );
 }
 
@@ -419,17 +468,23 @@ function EdgePanel({ e }: { e: Edge }) {
   const [all, setAll] = useState(e.signal !== 'flow');
   const paint = (c: string | null) => useStore.getState().mutate((d) => paintLine(d, e.id, c, all));
   const patch = (p: Partial<Edge>, record = false) => useStore.getState().updateEdge(e.id, p, record);
+  const cable = signalOf(e.signal).cable;
   return (
     <>
-      <h3>{e.signal === 'flow' ? 'コネクタ' : 'ケーブル'}</h3>
+      <h3>{cable ? 'ケーブル' : 'コネクタ'}</h3>
+      {cable && <h4>ケーブル情報</h4>}
       <label className="field">
         <span>種別</span>
-        <SignalSelect flow value={e.signal} onChange={(signal) => patch({ signal, arrow: signal === 'flow' ? 'end' : e.arrow }, true)} />
+        <SignalSelect flow value={e.signal} onChange={(signal) => patch({ signal, arrow: signal === 'flow' ? 'end' : signalOf(signal).cable ? 'none' : e.arrow }, true)} />
       </label>
-      <NewSignal onAdd={(signal) => patch({ signal, arrow: e.arrow })} />
-      {e.signal !== 'flow' && (
+      <NewSignal onAdd={(signal) => patch({ signal, arrow: 'none' })} />
+      {cable && (
         <>
-          <Field label="品名・規格（線のラベルに出ます）" placeholder="例: 光 HDMI AOC / Cat6A STP" value={e.spec ?? ''} onChange={(v) => patch({ spec: v || undefined })} />
+          <div className="grid2">
+            <Field label="ケーブル ID" placeholder={`自動: ${autoId}`} value={e.cableId ?? ''} onChange={(v) => patch({ cableId: v || undefined })} />
+            <Field label="長さ (m)" type="number" value={e.length == null ? '' : String(e.length)} onChange={(v) => patch({ length: v === '' || isNaN(Number(v)) ? null : Number(v) })} />
+          </div>
+          <Field label="品名・規格" placeholder="例: 光 HDMI AOC / Cat6A STP" value={e.spec ?? ''} onChange={(v) => patch({ spec: v || undefined })} />
           <div className="grid2">
             <Field label="メーカー" value={e.maker ?? ''} onChange={(v) => patch({ maker: v || undefined })} />
             <Field label="型番" value={e.model ?? ''} onChange={(v) => patch({ model: v || undefined })} />
@@ -443,7 +498,29 @@ function EdgePanel({ e }: { e: Edge }) {
             ) : (
               <p className="error">Web のアドレス（https://…）として読めません。</p>
             ))}
+          <Field wrap label="備考" value={e.note} onChange={(v) => patch({ note: v })} />
+          <h4>見た目</h4>
         </>
+      )}
+      <Field wrap label="ラベル（改行できます）" value={e.label} onChange={(v) => patch({ label: v })} />
+      {cable && (
+        <div className="checks">
+          <span>ラベルに出すもの（品名・規格は書いてあれば出ます）</span>
+          <label className="check">
+            <input type="checkbox" checked={shown} onChange={(ev) => patch({ showId: ev.target.checked }, true)} />
+            ケーブル ID
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={lenShown} onChange={(ev) => patch({ showLength: ev.target.checked }, true)} />
+            長さ
+          </label>
+        </div>
+      )}
+      {cable && (
+        <label className="check">
+          <input type="checkbox" checked={stacked} onChange={(ev) => patch({ stacked: ev.target.checked }, true)} />
+          ラベルの項目（ID・品名・文・長さ）を 1 行ずつに分ける
+        </label>
       )}
       <div className="field">
         <span>線の色</span>
@@ -463,48 +540,32 @@ function EdgePanel({ e }: { e: Edge }) {
           </button>
         )}
       </div>
-      <Field wrap label="ラベル（改行できます）" value={e.label} onChange={(v) => patch({ label: v })} />
-      {signalOf(e.signal).cable && (
-        <>
-          <Field label="ケーブル ID" placeholder={`自動: ${autoId}`} value={e.cableId ?? ''} onChange={(v) => patch({ cableId: v || undefined })} />
-          <label className="check">
-            <input type="checkbox" checked={shown} onChange={(ev) => patch({ showId: ev.target.checked }, true)} />
-            ケーブル ID をラベルに表示
-          </label>
-          <label className="check">
-            <input type="checkbox" checked={lenShown} onChange={(ev) => patch({ showLength: ev.target.checked }, true)} />
-            長さをラベルに表示
-          </label>
-        </>
+      {/* A cable's direction is its From → To; arrowheads are for flow lines (or to take one off a cable). */}
+      {(!cable || e.arrow !== 'none') && (
+        <label className="field">
+          <span>矢印</span>
+          <select value={e.arrow} onChange={(ev) => patch({ arrow: ev.target.value as Arrow }, true)}>
+            <option value="none">なし</option>
+            <option value="end">終点</option>
+            <option value="both">両端</option>
+          </select>
+        </label>
       )}
-      <label className="check">
-        <input type="checkbox" checked={stacked} onChange={(ev) => patch({ stacked: ev.target.checked }, true)} />
-        ラベルの項目（ID・品名・文・長さ）を 1 行ずつに分ける
-      </label>
-      {e.signal !== 'flow' && (
-        <Field label="長さ (m)" type="number" value={e.length == null ? '' : String(e.length)} onChange={(v) => patch({ length: v === '' || isNaN(Number(v)) ? null : Number(v) })} />
-      )}
-      <label className="field">
-        <span>矢印</span>
-        <select value={e.arrow} onChange={(ev) => patch({ arrow: ev.target.value as Arrow }, true)}>
-          <option value="none">なし</option>
-          <option value="end">終点</option>
-          <option value="both">両端</option>
-        </select>
-      </label>
       <label className="check">
         <input type="checkbox" checked={!!e.dash} onChange={(ev) => patch({ dash: ev.target.checked }, true)} />
         点線にする
       </label>
-      {e.signal !== 'flow' && (
+      {cable && (
         <label className="check">
           <input type="checkbox" checked={tagged} onChange={(ev) => patch({ tag: ev.target.checked, route: undefined }, true)} />
           線を省略（両端に接続先だけ表示）
         </label>
       )}
-      {e.route && <button onClick={() => patch({ route: undefined }, true)}>経路を自動に戻す</button>}
-      <Field wrap label="備考" value={e.note} onChange={(v) => patch({ note: v })} />
-      <button onClick={() => patch({ from: e.to, to: e.from }, true)}>向きを反転</button>
+      {!cable && <Field wrap label="備考" value={e.note} onChange={(v) => patch({ note: v })} />}
+      <div className="row">
+        {e.route && <button onClick={() => patch({ route: undefined }, true)}>経路を自動に戻す</button>}
+        <button onClick={() => patch({ from: e.to, to: e.from }, true)}>向きを反転</button>
+      </div>
     </>
   );
 }

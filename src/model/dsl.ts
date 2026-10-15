@@ -27,6 +27,9 @@ devices:
     note: 備考             # 任意
     watts: 120             # 任意。消費電力(W)
     capacity: 900          # 任意。UPS・電源タップが給電できる容量(W)
+    qty: 2                 # 任意。この 1 枠が表す台数（省略時は名前末尾の「x2」、なければ 1）
+    vendor: 手配先          # 任意。手配先・担当（機材リストの「区分」になる）
+    ip: 192.168.0.10       # 任意。IP アドレス / host でホスト名（ネットワーク表に出る）
     color: blue            # 任意。機材の色分け（手配元・系統など）
     preset: pc             # 任意。in/out を省略したときの既定ポート
     in:  [LAN:lan, AC:power]          # 左側ポート "名前:種別"
@@ -117,6 +120,10 @@ export function toYaml(doc: Doc): string {
       put(o, 'category', d.category);
       put(o, 'area', frameOf(doc, d)?.text);
       put(o, 'note', d.note);
+      put(o, 'qty', d.qty);
+      put(o, 'vendor', d.vendor);
+      put(o, 'ip', d.ip);
+      put(o, 'host', d.host);
       put(o, 'watts', d.watts);
       put(o, 'capacity', d.capacity);
       if (d.color && d.color !== 'gray') o.color = d.color;
@@ -295,6 +302,10 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
       watts: typeof v.watts === 'number' ? v.watts : undefined,
       capacity: typeof v.capacity === 'number' ? v.capacity : undefined,
       color: str(v.color) in PALETTE ? (str(v.color) as ColorKey) : undefined,
+      qty: typeof v.qty === 'number' && v.qty >= 1 ? Math.round(v.qty) : undefined,
+      vendor: str(v.vendor) || undefined,
+      ip: str(v.ip) || undefined,
+      host: str(v.host) || undefined,
     });
     if (v.area) areaHint.set(id, str(v.area));
   });

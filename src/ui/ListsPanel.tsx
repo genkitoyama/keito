@@ -1,15 +1,15 @@
 import { useMemo, useState } from 'react';
-import { type Table, cableSummaryTable, cableTable, equipmentTable, powerTable, toCsv } from '../model/lists';
+import { type Table, cableSummaryTable, cableTable, equipmentTable, networkTable, powerTable, toCsv } from '../model/lists';
 import { useStore } from '../model/store';
 import { download, safeName } from '../platform/storage';
 
-const TABS = ['機材リスト', 'ケーブルリスト', 'ケーブル集計', '電源系統'] as const;
+const TABS = ['機材リスト', 'ケーブルリスト', 'ケーブル集計', '電源系統', 'ネットワーク'] as const;
 
 export function ListsPanel() {
   const doc = useStore((s) => s.doc);
   const selection = useStore((s) => s.selection);
   const [tab, setTab] = useState(0);
-  const tables = useMemo<Table[]>(() => [equipmentTable(doc), cableTable(doc), cableSummaryTable(doc), powerTable(doc)], [doc]);
+  const tables = useMemo<Table[]>(() => [equipmentTable(doc), cableTable(doc), cableSummaryTable(doc), powerTable(doc), networkTable(doc)], [doc]);
   const t = tables[tab];
   const sel = new Set(selection);
   const totalLength = doc.edges.reduce((a, e) => a + (e.length ?? 0), 0);

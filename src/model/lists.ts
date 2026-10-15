@@ -55,6 +55,12 @@ export function quantityOf(name: string): { name: string; count: number } {
   return m && m[1] ? { name: m[1].trim(), count: Math.max(1, Number(m[2])) } : { name: first.trim(), count: 1 };
 }
 
+/** The device's name for the lists and how many units it stands for: its quantity if set, else the name's "x2". */
+export function unitsOf(d: DeviceNode): { name: string; count: number } {
+  const q = quantityOf(d.text);
+  return d.qty ? { name: q.name, count: d.qty } : q;
+}
+
 /**
  * What a device colour stands for on this board, read off its hand-made key: a free-standing
  * shape (not wired, outside every area) in that colour whose text names the group, like
@@ -79,10 +85,11 @@ export function colourKey(doc: Doc): Map<string, string> {
 /** One row per distinct model (or name, for devices without one) and group, with a quantity. */
 export function equipmentTable(doc: Doc, withUrl = true): Table {
   const key = colourKey(doc);
-  const groupOf = (d: DeviceNode): string => key.get(d.color ?? 'gray') ?? '';
+  // A supplier typed on the device wins over what its colour stands for.
+  const groupOf = (d: DeviceNode): string => d.vendor?.trim() || key.get(d.color ?? 'gray') || '';
   const groups = new Map<string, { d: DeviceNode; ids: string[]; names: Set<string>; places: Set<string>; count: number; watts: number | null }>();
   for (const d of devices(doc)) {
-    const q = quantityOf(d.text);
+    const q = unitsOf(d);
     const id = `${groupOf(d)}|${d.category}|${d.model ? `${d.maker}|${d.model}` : `|${q.name}`}`;
     const place = frameOf(doc, d)?.text ?? '';
     const g = groups.get(id) ?? { d, ids: [], names: new Set<string>(), places: new Set<string>(), count: 0, watts: null };
@@ -187,6 +194,20 @@ export function cableTable(doc: Doc, withUrl = true): Table {
     refs: [...list.map((e) => [e.id]), ...(list.length ? [[]] : [])],
     numeric: ['長さ(m)'],
     total: list.length > 0,
+  };
+}
+
+/** Network settings: one row per device with an IP address or host name. */
+export function networkTable(doc: Doc): Table {
+  const list = devices(doc)
+    .filter((d) => d.ip?.trim() || d.host?.trim())
+    .sort((a, b) => (a.ip ?? '\uffff').localeCompare(b.ip ?? '\uffff', 'en', { numeric: true }) || a.text.localeCompare(b.text, 'ja'));
+  return {
+    title: 'ネットワーク',
+    head: ['名称', 'ホスト名', 'IP アドレス', 'メーカー', '型番', '設置場所', '備考'],
+    widths: [20, 16, 14, 12, 14, 12, 16],
+    rows: list.map((d) => [unitsOf(d).name, d.host ?? '', d.ip ?? '', d.maker, d.model, frameOf(doc, d)?.text ?? '', d.note]),
+    refs: list.map((d) => [d.id]),
   };
 }
 

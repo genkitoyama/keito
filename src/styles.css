@@ -604,8 +604,15 @@ code {
 }
 .grid2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 6px;
+}
+.grid2 > * {
+  min-width: 0;
+}
+.grid2 input,
+.grid2 select {
+  width: 100%;
 }
 
 .lists {
@@ -1066,4 +1073,14 @@ td a {
   border-radius: 6px;
   color: var(--sub);
   background: #f8fafc;
+}
+
+.checks > span {
+  display: block;
+  margin: 6px 0 4px;
+  font-size: 12px;
+  color: var(--sub);
+}
+.checks .check {
+  margin: 2px 0;
 }

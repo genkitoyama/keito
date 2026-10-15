@@ -79,6 +79,13 @@ export interface DeviceNode extends Base {
   url?: string;
   /** Tint for colour-coding devices (who supplies it, which system it belongs to …). */
   color?: ColorKey;
+  /** How many units this box stands for; unset reads a trailing "x2" in the name, else one. */
+  qty?: number;
+  /** Who supplies or looks after it; shown as the device's group in the equipment list. */
+  vendor?: string;
+  /** Network settings, listed in the network table. */
+  ip?: string;
+  host?: string;
 }
 /** `text` is the sequence source. Size is derived from the parsed diagram. */
 export interface SequenceNode extends Base {
