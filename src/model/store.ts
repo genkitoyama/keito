@@ -379,7 +379,9 @@ window.addEventListener('focus', () => void run(async (b) => {
   const fresh = await b.load(s.doc.id);
   if (fresh && useStore.getState().doc === s.doc && JSON.stringify(fresh) !== JSON.stringify(s.doc)) {
     stored = fresh;
-    useStore.setState({ doc: fresh, selection: [] });
+    // The history was made on the version just replaced: undoing into it would write that old
+    // version back over what the other tab saved. It starts over from the version read in.
+    useStore.setState({ doc: fresh, selection: [], past: [], future: [] });
   }
 }));
 
