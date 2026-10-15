@@ -96,10 +96,18 @@ export function keitoBoards(root = process.env.KEITO_BOARDS ?? path.resolve('boa
       const [, , id, sub, name] = parts;
       if (!id) {
         if (req.method !== 'GET') return send(405);
-        const list = dirs().map((d) => {
+        // One unreadable board (a merge conflict, a bad hand edit) must not hide all the others:
+        // failing the whole list would send the app quietly off to browser storage.
+        const list = dirs().flatMap((d) => {
           const file = path.join(root, d, 'board.json');
-          const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
-          return { id: doc.id as string, title: (doc.meta?.title as string) ?? d, updated: fs.statSync(file).mtimeMs };
+          try {
+            const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
+            if (typeof doc?.id !== 'string') throw new Error('no id');
+            return [{ id: doc.id as string, title: (doc.meta?.title as string) ?? d, updated: fs.statSync(file).mtimeMs }];
+          } catch (e) {
+            console.warn(`[keito] skipped ${path.join(d, 'board.json')}: ${e instanceof Error ? e.message : e}`);
+            return [];
+          }
         });
         return send(200, list.sort((a, b) => b.updated - a.updated));
       }
