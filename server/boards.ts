@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { ServerResponse } from 'node:http';
 import type { Connect, Plugin } from 'vite';
 
 /**
@@ -49,9 +50,17 @@ export function keitoBoards(root = process.env.KEITO_BOARDS ?? path.resolve('boa
     return hit ? path.join(root, hit) : null;
   };
 
-  const handler: Connect.NextHandleFunction = async (req, res, next) => {
+  const handle = async (req: Connect.IncomingMessage, res: ServerResponse, next: Connect.NextFunction): Promise<void> => {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    const parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    let parts: string[];
+    try {
+      parts = url.pathname.split('/').filter(Boolean).map(decodeURIComponent);
+    } catch {
+      // A broken escape such as "/%" is not ours to judge unless it is aimed at the API.
+      if (!url.pathname.startsWith('/api/')) return next();
+      res.statusCode = 400;
+      return void res.end();
+    }
     // The user's own device presets, shared by every board: boards/presets.json.
     if (parts[0] === 'api' && parts[1] === 'presets' && parts.length === 2) {
       const file = path.join(root, 'presets.json');
@@ -171,6 +180,15 @@ export function keitoBoards(root = process.env.KEITO_BOARDS ?? path.resolve('boa
     } catch (e) {
       return send(500, { error: e instanceof Error ? e.message : String(e) });
     }
+  };
+  // Connect never awaits a handler: anything thrown outside the try blocks above must still be
+  // answered here, or it becomes an unhandled rejection that takes the whole server down.
+  const handler: Connect.NextHandleFunction = (req, res, next) => {
+    handle(req, res, next).catch((e: unknown) => {
+      if (res.headersSent) return res.end();
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+    });
   };
 
   return {
