@@ -48,9 +48,13 @@ export interface Table {
 
 const devices = (doc: Doc): DeviceNode[] => doc.nodes.filter((n): n is DeviceNode => n.type === 'device');
 
+/** Text as one line: line breaks become spaces. */
+const oneLine = (text: string): string => text.split('\n').map((l) => l.trim()).filter(Boolean).join(' ');
+
 /** "Speaker x2" on the board is two speakers in the list: the name without its multiplier, and the count. */
 export function quantityOf(name: string): { name: string; count: number } {
-  const first = name.split('\n')[0];
+  // A name broken over several lines on the board reads as one line in a list.
+  const first = oneLine(name);
   const m = /^(.*?)\s*[x×✕]\s*(\d{1,3})$/i.exec(first.trim());
   return m && m[1] ? { name: m[1].trim(), count: Math.max(1, Number(m[2])) } : { name: first.trim(), count: 1 };
 }
@@ -147,7 +151,7 @@ function endOf(doc: Doc, end: EdgeEnd): { name: string; port: string; place: str
   const n = doc.nodes.find((x) => x.id === end.node);
   if (!n) return { name: '?', port: '', place: '' };
   // Junction dots all carry the same word: their id tells them apart.
-  const name = n.type === 'junction' ? `分岐点 ${n.id}` : n.text.split('\n')[0] || n.id;
+  const name = n.type === 'junction' ? `分岐点 ${n.id}` : oneLine(n.text) || n.id;
   const port = n.type === 'device' && end.port ? (n.ports.find((p) => p.id === end.port)?.name ?? '') : '';
   return { name, port, place: frameOf(doc, n)?.text ?? '' };
 }
@@ -287,7 +291,7 @@ export function powerLoads(doc: Doc): Map<string, PowerLoad> {
 /** Power distribution: one row per fed device, with a total per source. */
 export function powerTable(doc: Doc): Table {
   const byId = new Map(doc.nodes.map((n) => [n.id, n]));
-  const name = (id: string): string => byId.get(id)?.text.split('\n')[0] ?? id;
+  const name = (id: string): string => oneLine(byId.get(id)?.text ?? '') || id;
   const rows: string[][] = [];
   const refs: string[][] = [];
   for (const [id, load] of powerLoads(doc)) {

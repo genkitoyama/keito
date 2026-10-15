@@ -1,9 +1,18 @@
+import { UI_FONT, wrapText } from './text';
 import { CLEAR, type Run, chip, collides, lanes, routeAround } from './router';
 import { parseSequence } from './sequence';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node, Port, PortSide, Pt, Rect } from './types';
 
 export const GRID = 10;
 export const DEV = { head: 44, row: 22, pad: 8 };
+/** The bold name in a device's header; every extra line of it makes the header taller. */
+export const DEVICE_NAME = { size: 13, line: 13 * 1.4 };
+
+/** Height of a device's header: one line of name (and the maker / model line), plus any further lines of name. */
+export function deviceHead(d: DeviceNode): number {
+  const lines = wrapText(d.text, d.w - 12, `700 ${DEVICE_NAME.size}px ${UI_FONT}`).length;
+  return DEV.head + (Math.max(1, lines) - 1) * DEVICE_NAME.line;
+}
 export const snap = (v: number): number => Math.round(v / GRID) * GRID;
 
 export type Dir = 'left' | 'right' | 'top' | 'bottom';
@@ -17,7 +26,7 @@ export const portsOn = (d: DeviceNode, side: PortSide): Port[] => d.ports.filter
 export function nodeSize(n: Node): { w: number; h: number } {
   if (n.type === 'device') {
     const rows = Math.max(1, portsOn(n, 'left').length, portsOn(n, 'right').length);
-    return { w: n.w, h: DEV.head + rows * DEV.row + DEV.pad };
+    return { w: n.w, h: deviceHead(n) + rows * DEV.row + DEV.pad };
   }
   if (n.type === 'sequence') {
     const d = parseSequence(n.text);
@@ -38,7 +47,7 @@ export function portPos(d: DeviceNode, portId: string): (Pt & { side: PortSide }
   const i = portsOn(d, port.side).indexOf(port);
   return {
     x: port.side === 'left' ? d.x : d.x + d.w,
-    y: d.y + DEV.head + i * DEV.row + DEV.row / 2,
+    y: d.y + deviceHead(d) + i * DEV.row + DEV.row / 2,
     side: port.side,
   };
 }

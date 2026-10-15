@@ -1,11 +1,11 @@
 import type { ReactNode } from 'react';
-import { DEV, crossings, hopOrder, isTagged, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isTagged, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { LEGEND, legendRows } from '../model/legend';
 import { lineColor, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, labelStacked, lengthShown, powerLoads } from '../model/lists';
 import { SEQ, parseSequence } from '../model/sequence';
 import { PALETTE, STICKY, STRONG } from '../model/signals';
-import { measure, wrapText } from '../model/text';
+import { UI_FONT, measure, wrapText } from '../model/text';
 import { safeUrl } from '../model/url';
 import type { DeviceNode, Doc, Edge, Node, Pt, Rect, SequenceNode } from '../model/types';
 import { assetUrl } from '../platform/storage';
@@ -15,7 +15,7 @@ export interface Theme {
   font: string;
 }
 export const SCREEN: Theme = {
-  font: '-apple-system, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif',
+  font: UI_FONT,
 };
 
 /** Text metrics shared by the renderer and the in-place editor so they line up exactly. */
@@ -101,20 +101,23 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
   const sw = 1.5;
   const sub = [n.maker, n.model].filter(Boolean).join(' ');
   const link = safeUrl(n.url);
-  const head = `M${x},${y + DEV.head} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + DEV.head} Z`;
+  const top = deviceHead(n);
+  // A name that runs to several lines pushes the maker / model line and the ports down.
+  const extra = top - DEV.head;
+  const head = `M${x},${y + top} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + top} Z`;
   return (
     <g>
       <rect x={x} y={y} width={w} height={h} rx={r} fill="#fff" stroke={line} strokeWidth={sw} />
       <path d={head} fill={(tint?.fill ?? '#e8edf3')} stroke={line} strokeWidth={sw} />
-      <TextBlock x={x + w / 2} y={y + (sub ? 16 : DEV.head / 2)} w={w - 12} text={n.text.split('\n')[0]} size={13} weight={700} theme={theme} />
+      <TextBlock x={x + w / 2} y={y + (sub ? 16 : DEV.head / 2) + extra / 2} w={w - 12} text={n.text} size={DEVICE_NAME.size} weight={700} theme={theme} />
       {sub &&
         (link ? (
           // A real link in exported SVG / PDF. On the board, text never takes clicks, so the device still selects.
           <a href={link} target="_blank" rel="noopener noreferrer">
-            <TextBlock x={x + w / 2} y={y + 33} w={w - 12} text={sub} size={9.5} fill="#2563eb" underline theme={theme} />
+            <TextBlock x={x + w / 2} y={y + 33 + extra} w={w - 12} text={sub} size={9.5} fill="#2563eb" underline theme={theme} />
           </a>
         ) : (
-          <TextBlock x={x + w / 2} y={y + 33} w={w - 12} text={sub} size={9.5} fill="#64748b" theme={theme} />
+          <TextBlock x={x + w / 2} y={y + 33 + extra} w={w - 12} text={sub} size={9.5} fill="#64748b" theme={theme} />
         ))}
       {doc && <LoadBadge doc={doc} n={n} theme={theme} />}
       {n.ports.map((p) => {
@@ -473,7 +476,7 @@ export interface EdgeTag extends Rect {
 export function edgeTags(doc: Doc, e: Edge, theme: Theme): EdgeTag[] {
   const pts = routeEdges(doc).get(e.id);
   if (!pts || pts.length < 2) return [];
-  const name = (id: string): string => doc.nodes.find((n) => n.id === id)?.text.split('\n')[0] || id;
+  const name = (id: string): string => doc.nodes.find((n) => n.id === id)?.text.replace(/\s*\n\s*/g, ' ') || id;
   const id = idShown(doc, e) ? cableIds(doc).get(e.id) : undefined;
   const length = e.length != null && lengthShown(doc, e) ? ` ${e.length}m` : '';
   const power = e.signal === 'power';

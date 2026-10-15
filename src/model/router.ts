@@ -200,7 +200,7 @@ export interface Run {
 
 /** Roughly where the tag chip next to a port lands (the exact size depends on the font). */
 export function chip(at: Pt & { dir: Dir }, text: string): Rect {
-  const w = 40 + [...text.split('\n')[0]].reduce((sum, ch) => sum + (ch.charCodeAt(0) > 255 ? 10 : 6), 0);
+  const w = 40 + [...text.replace(/\s*\n\s*/g, ' ')].reduce((sum, ch) => sum + (ch.charCodeAt(0) > 255 ? 10 : 6), 0);
   if (at.dir === 'left') return { x: at.x - w, y: at.y - 8, w, h: 16 };
   if (at.dir === 'right') return { x: at.x, y: at.y - 8, w, h: 16 };
   return { x: at.x - w / 2, y: at.dir === 'top' ? at.y - 26 : at.y, w, h: 26 };

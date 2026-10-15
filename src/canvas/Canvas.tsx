@@ -3,7 +3,8 @@ import type { CSSProperties, MouseEvent as RMouseEvent, ReactNode, PointerEvent 
 import {
   edgeNear,
   hopOrder,
-  DEV,
+  DEVICE_NAME,
+  deviceHead,
   type Dir,
   center,
   contains,
@@ -941,9 +942,10 @@ function TextEditor({ id }: { id: string }) {
 
   if (!node && !edge) return null;
   const k = view.k;
-  // Names stay on one line; a line's label may wrap, but Enter still finishes it (Shift+Enter breaks the line).
-  const oneLine = !!node && (node.type === 'device' || node.type === 'frame');
-  const enterCommits = oneLine || !node;
+  // Area names stay on one line. A device name or a line's label may run to several, but Enter
+  // still finishes it (Shift+Enter breaks the line).
+  const oneLine = node?.type === 'frame';
+  const enterCommits = oneLine || !node || node.type === 'device';
   const read = (): string => {
     const text = (ref.current?.innerText ?? '').replace(/\n+$/, '');
     return oneLine ? text.replace(/\n/g, ' ') : text;
@@ -984,7 +986,7 @@ function TextEditor({ id }: { id: string }) {
     const at = labelPoint(routeEdges(doc).get(id) ?? [{ x: 0, y: 0 }], edge?.labelAt);
     style = { left: view.x + at.x * k, top: view.y + at.y * k, transform: 'translate(-50%, -50%)', minWidth: 48 * k, fontSize: 12 * k, background: '#fff', padding: `${2 * k}px ${6 * k}px`, ...outline };
   } else if (node.type === 'device') {
-    style = { left: view.x + node.x * k, top: view.y + node.y * k, width: node.w * k, height: DEV.head * k, fontSize: 13 * k, fontWeight: 700, background: '#e8edf3', borderRadius: 6 * k };
+    style = { left: view.x + node.x * k, top: view.y + node.y * k, width: node.w * k, minHeight: deviceHead(node) * k, fontSize: DEVICE_NAME.size * k, fontWeight: 700, background: '#e8edf3', borderRadius: 6 * k };
   } else if (node.type === 'frame') {
     const size = textSize(node);
     style = { left: view.x + (node.x + 8) * k, top: view.y + (node.y + 5) * k, minWidth: 80 * k, height: (size + 13) * k, fontSize: size * k, fontWeight: textWeight(node), textAlign: 'left', background: '#fff', padding: `0 ${4 * k}px`, ...outline };

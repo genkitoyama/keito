@@ -145,7 +145,7 @@ function DevicePanel({ n }: { n: DeviceNode }) {
   return (
     <>
       <h3>機材 <code>{n.id}</code></h3>
-      <Field label="名称" value={n.text} onChange={(v) => patch({ text: v })} />
+      <Field wrap label="名称（改行できます）" value={n.text} onChange={(v) => patch({ text: v })} />
       <div className="grid2">
         <Field label="数量" type="number" placeholder={`${quantityOf(n.text).count}（名前から）`} value={n.qty == null ? '' : String(n.qty)} onChange={(v) => patch({ qty: num(v) && num(v)! >= 1 ? Math.round(num(v)!) : undefined })} />
         <Field label="カテゴリ" list="keito-categories" value={n.category} onChange={(v) => patch({ category: v })} />
