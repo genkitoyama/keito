@@ -1091,3 +1091,21 @@ td a {
   border-style: dashed;
   color: var(--sub);
 }
+
+.library-blank {
+  width: 100%;
+  border-style: dashed;
+  color: var(--accent);
+}
+.library-more {
+  width: 100%;
+  margin-top: 8px;
+  border-color: transparent;
+  color: var(--accent);
+  font-size: 12px;
+}
+.library-note {
+  margin: 10px 4px 4px;
+  color: var(--sub);
+  font-size: 11px;
+}

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { insertImages, insertNode, viewCenter } from '../canvas/Canvas';
 import { snap } from '../model/geometry';
-import { PRESETS, type Preset, allIds, freshId, makeDevice, makeLegend } from '../model/presets';
+import { COMMON, PRESETS, type Preset, allIds, freshId, makeDevice, makeLegend } from '../model/presets';
 import type { DeviceNode, UserPreset } from '../model/types';
 import { type Tool, useStore } from '../model/store';
 import { getSetting, setSetting } from '../platform/storage';
@@ -76,8 +76,15 @@ function Library() {
     setOpened(next);
     setSetting('libraryOpen', JSON.stringify(next));
   };
+  // The common gear only, unless asked for everything; a search always looks through everything.
+  const [every, setEvery] = useState(() => getSetting('libraryAll') === '1');
+  const showAll = (on: boolean) => {
+    setEvery(on);
+    setSetting('libraryAll', on ? '1' : '');
+  };
   const hit = (text: string) => !q || text.toLowerCase().includes(q.toLowerCase());
-  const list = PRESETS.filter((p) => hit(`${p.name}${p.category}${p.key}`));
+  const list = PRESETS.filter((p) => p.key !== 'blank' && (q || every || COMMON.has(p.key)) && hit(`${p.name}${p.category}${p.key}`));
+  const blank = PRESETS.find((p) => p.key === 'blank')!;
   const cats = [...new Set(list.map((p) => p.category || 'その他'))];
   const mine = useStore((s) => s.presets).filter((p) => hit(`${p.name}${p.category}${p.maker}${p.model}`));
   const all = [...(mine.length ? [MINE] : []), ...cats];
@@ -113,6 +120,9 @@ function Library() {
           {allClosed ? '開く' : 'しまう'}
         </button>
       </div>
+      <button className="library-blank" data-tip="名前もポートも自分で決める、まっさらな機材を置きます" onClick={() => addDevice(blank)}>
+        ＋ 空の機材を置く
+      </button>
       <div className="library-list">
         {mine.length > 0 &&
           section(MINE, mine.length, () =>
@@ -153,6 +163,13 @@ function Library() {
           );
         })}
         {all.length === 0 && <p className="library-empty">該当する機材がありません</p>}
+        {q ? (
+          <p className="library-note">検索はすべての機材（{PRESETS.length - 1} 種）から探します</p>
+        ) : (
+          <button className="library-more" onClick={() => showAll(!every)}>
+            {every ? 'よく使う機材だけ表示する' : `すべての機材を表示する（${PRESETS.length - 1} 種）`}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -173,8 +173,28 @@ export const PRESETS: Preset[] = [
   { key: 'thermal', name: 'サーマルプリンター', category: '出力機器', in: ['USB:usb', 'LAN:lan', 'DC:power'], out: [] },
   { key: 'photoprt', name: '昇華型フォトプリンター', category: '出力機器', in: ['USB:usb', 'AC:power'], out: [] },
   { key: 'mobileprt', name: 'モバイルプリンター', category: '出力機器', in: ['Bluetooth:wireless', 'USB:usb'], out: [] },
-  { key: 'blank', name: '機材', category: '', in: ['IN:other'], out: ['OUT:other'] },
+  { key: 'blank', name: '新しい機材', category: '', in: ['IN:other'], out: ['OUT:other'] },
 ];
+
+/**
+ * The presets the library shows by default: the gear that turns up on most installation jobs.
+ * Everything else stays one search (or one "show all") away.
+ */
+export const COMMON = new Set([
+  'pc', 'mac', 'macmini', 'laptop', 'raspi',
+  'player', 'mediaserver',
+  'pj', 'display', 'previewmon', 'touch', 'ledproc', 'led',
+  'switcher', 'matrix', 'hdmisplit', 'scaler', 'conv', 'capture',
+  'tx', 'rx', 'fibertx', 'fiberrx', 'usbext', 'usbhub',
+  'cam', 'webcam', 'depth', 'lidar', 'sensor', 'qr',
+  'mcu', 'relay',
+  'sw', 'poesw', 'router', 'mobilert', 'ap',
+  'tablet', 'streamdeck',
+  'audioif', 'mixer', 'dsp', 'amp', 'speaker', 'mic',
+  'dmxnode', 'light',
+  'tap', 'ups',
+  'printer',
+]);
 
 export const presetOf = (key: string): Preset | undefined => PRESETS.find((p) => p.key === key);
 
