@@ -1084,3 +1084,10 @@ td a {
 .checks .check {
   margin: 2px 0;
 }
+
+.add-field {
+  align-self: flex-start;
+  margin: 0 0 8px;
+  border-style: dashed;
+  color: var(--sub);
+}

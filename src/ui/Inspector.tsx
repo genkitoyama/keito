@@ -133,6 +133,10 @@ function DevicePanel({ n }: { n: DeviceNode }) {
       edges: d.edges.filter((e) => !((e.from.node === n.id && e.from.port === id) || (e.to.node === n.id && e.to.port === id))),
     }));
   const supplies = n.ports.some((p) => p.side === 'right' && p.signal === 'power');
+  // Network settings only matter for things on the network: shown for a device with a LAN port or
+  // settings already typed in, and one click away for the rest (a Wi-Fi device, say).
+  const [asked, setNetworked] = useState(false);
+  const networked = asked || !!n.ip || !!n.host || n.ports.some((p) => p.signal === 'lan');
   const group = useStore((s) => colourKey(s.doc).get(n.color ?? 'gray') ?? '');
   const categories = useStore(useShallow((s) => [...new Set([...PRESETS.map((p) => p.category), ...s.doc.nodes.map((x) => (x.type === 'device' ? x.category : ''))].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja'))));
   const move = (id: string, dir: -1 | 1) => {
@@ -183,10 +187,16 @@ function DevicePanel({ n }: { n: DeviceNode }) {
         <span>色分け</span>
         <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />
       </label>
-      <div className="grid2">
-        <Field label="IP アドレス" placeholder="192.168.0.10" value={n.ip ?? ''} onChange={(v) => patch({ ip: v || undefined })} />
-        <Field label="ホスト名" value={n.host ?? ''} onChange={(v) => patch({ host: v || undefined })} />
-      </div>
+      {networked ? (
+        <div className="grid2">
+          <Field label="IP アドレス" placeholder="192.168.0.10" value={n.ip ?? ''} onChange={(v) => patch({ ip: v || undefined })} />
+          <Field label="ホスト名" value={n.host ?? ''} onChange={(v) => patch({ host: v || undefined })} />
+        </div>
+      ) : (
+        <button className="mini add-field" onClick={() => setNetworked(true)}>
+          ＋IP アドレス・ホスト名
+        </button>
+      )}
       <div className="grid2">
         <Field label="消費電力 (W)" type="number" value={n.watts == null ? '' : String(n.watts)} onChange={(v) => patch({ watts: num(v) })} />
         {/* Only something with outlets of its own can supply power. */}
@@ -240,7 +250,7 @@ function PortName({ value, onChange }: { value: string; onChange: (v: string) =>
 
 function NodePanel({ n }: { n: Node }) {
   const patch = (p: Partial<Node>, record = false) => useStore.getState().updateNode(n.id, p, record);
-  if (n.type === 'device') return <DevicePanel n={n} />;
+  if (n.type === 'device') return <DevicePanel key={n.id} n={n} />;
   if (n.type === 'sequence') {
     return (
       <>
