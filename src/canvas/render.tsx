@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
-import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isCanvasShape, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { LEGEND, shownRows } from '../model/legend';
 import { lineColor, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, ipIssues, labelStacked, lengthShown, powerLoads } from '../model/lists';
-import { SEQ, SEQ_TEXT, parseSequence, seqLayout, seqScale } from '../model/sequence';
+import { SEQ, SEQ_TEXT, parseSequence, seqLayout, seqRows, seqScale } from '../model/sequence';
 import { PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { MONO_FONT, UI_FONT, measure, wrapText } from '../model/text';
 import { overlaps, regionOf } from '../model/screens';
@@ -261,8 +261,9 @@ function Sequence({ n, theme }: { n: SequenceNode; theme: Theme }) {
       </g>,
     );
   });
+  const rows = seqRows(d);
   d.items.forEach((it, i) => {
-    const y = lifeTop + (i + 1) * step;
+    const y = lifeTop + rows.at[i] * step;
     if (it.kind === 'section') {
       // A block's start (loop, alt …) is a dashed rule with its label; its end a fainter one.
       const x0 = n.x + 8 * k;
