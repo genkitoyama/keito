@@ -2,10 +2,10 @@ import type { ReactNode } from 'react';
 import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isTagged, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { LEGEND, shownRows } from '../model/legend';
 import { lineColor, mix, signalColor } from '../model/lineColor';
-import { cableIds, idShown, labelStacked, lengthShown, powerLoads } from '../model/lists';
+import { cableIds, idShown, ipIssues, labelStacked, lengthShown, powerLoads } from '../model/lists';
 import { SEQ, SEQ_TEXT, parseSequence, seqLayout, seqScale } from '../model/sequence';
 import { PALETTE, STICKY, STRONG } from '../model/signals';
-import { UI_FONT, measure, wrapText } from '../model/text';
+import { MONO_FONT, UI_FONT, measure, wrapText } from '../model/text';
 import { safeUrl } from '../model/url';
 import type { DeviceNode, Doc, Edge, Node, Pt, Rect, SequenceNode } from '../model/types';
 import { assetUrl } from '../platform/storage';
@@ -120,6 +120,7 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
           <TextBlock x={x + w / 2} y={y + 33 + extra} w={w - 12} text={sub} size={9.5} fill="#64748b" theme={theme} />
         ))}
       {doc && <LoadBadge doc={doc} n={n} theme={theme} />}
+      <IpBadge n={n} doc={doc} />
       {n.ports.map((p) => {
         const pos = portPos(n, p.id)!;
         const left = p.side === 'left';
@@ -139,13 +140,62 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
   );
 }
 
+const IP_SIZE = 10.5;
+
+/**
+ * The device's address on a tag above its top-left corner, in the device's own colour, so the
+ * network reads straight off the drawing: the IP in bold, the host name after it. An address
+ * given to two devices, or one that cannot be an IPv4 address, shows as a red outline instead, so
+ * it never passes for a device that is simply coloured red.
+ */
+function IpBadge({ n, doc }: { n: DeviceNode; doc?: Doc }) {
+  const ip = n.ip?.trim();
+  const host = n.host?.trim();
+  if (!ip && !host) return null;
+  const issue = doc ? ipIssues(doc).get(n.id) : undefined;
+  const gap = ip && host ? IP_SIZE * 0.8 : 0;
+  const ipW = ip ? measure(ip, `700 ${IP_SIZE}px ${MONO_FONT}`) : 0;
+  const hostW = host ? measure(host, `400 ${IP_SIZE}px ${MONO_FONT}`) : 0;
+  const bw = ipW + gap + hostW + 12;
+  // Clear of the power tag on the same edge: a narrow device takes this one a row higher.
+  const load = doc ? loadBadgeWidth(doc, n) : 0;
+  const by = n.y - 20 - (load && bw + load + 4 > n.w ? 18 : 0);
+  const solid = issue ? { fill: '#ffffff', text: '#dc2626' } : STRONG[n.color ?? 'gray'];
+  return (
+    <g>
+      {issue && <title>{issue === 'dup' ? 'この IP アドレスはほかの機材と重複しています' : 'IPv4 アドレスとして読めません'}</title>}
+      <rect x={n.x} y={by} width={bw} height={16} rx={4} fill={solid.fill} stroke={issue ? '#dc2626' : 'none'} strokeWidth={1.2} strokeDasharray={issue ? '3 2' : undefined} />
+      <text x={n.x + 6} y={mid(by + 8, IP_SIZE)} fontFamily={MONO_FONT} fontSize={IP_SIZE} fill={solid.text}>
+        {ip && <tspan fontWeight={700}>{ip}</tspan>}
+        {/* SVG folds runs of spaces, so the gap before the host name is an offset. */}
+        {host && (
+          <tspan dx={gap || undefined} opacity={ip ? 0.8 : 1}>
+            {host}
+          </tspan>
+        )}
+      </text>
+    </g>
+  );
+}
+
 /** Load summary above a power source: how many devices it feeds and how many watts they draw. */
+function loadBadgeText(doc: Doc, n: DeviceNode): string {
+  const load = powerLoads(doc).get(n.id);
+  if (!load) return '';
+  const watts = load.capacity != null ? `${load.watts} / ${load.capacity}W` : load.watts ? `${load.watts}W` : '';
+  return [`⚡ ${load.ids.length}台`, watts, load.over ? '容量超過' : ''].filter(Boolean).join(' · ');
+}
+const LOAD_SIZE = 10.5;
+const loadBadgeWidth = (doc: Doc, n: DeviceNode): number => {
+  const text = loadBadgeText(doc, n);
+  return text ? measure(text, `600 ${LOAD_SIZE}px ${UI_FONT}`) + 12 : 0;
+};
+
 function LoadBadge({ doc, n, theme }: { doc: Doc; n: DeviceNode; theme: Theme }) {
   const load = powerLoads(doc).get(n.id);
   if (!load) return null;
-  const watts = load.capacity != null ? `${load.watts} / ${load.capacity}W` : load.watts ? `${load.watts}W` : '';
-  const text = [`⚡ ${load.ids.length}台`, watts, load.over ? '容量超過' : ''].filter(Boolean).join(' · ');
-  const size = 10.5;
+  const text = loadBadgeText(doc, n);
+  const size = LOAD_SIZE;
   const bw = measure(text, `600 ${size}px ${theme.font}`) + 12;
   const bx = n.x + n.w - bw;
   const by = n.y - 20;

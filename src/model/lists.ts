@@ -61,6 +61,35 @@ const devices = (doc: Doc): DeviceNode[] => doc.nodes.filter((n): n is DeviceNod
 const oneLine = (text: string): string => text.split('\n').map((l) => l.trim()).filter(Boolean).join(' ');
 
 /** "Speaker x2" on the board is two speakers in the list: the name without its multiplier, and the count. */
+const issueCache = new WeakMap<Doc, Map<string, 'dup' | 'bad'>>();
+/**
+ * IP addresses worth a second look: one given to two devices on the board, or something typed as
+ * an IPv4 address that cannot be one (192.168.0.256, a missing part). Anything else typed there
+ * (an IPv6 address, "DHCP") is taken as it stands.
+ */
+export function ipIssues(doc: Doc): Map<string, 'dup' | 'bad'> {
+  const hit = issueCache.get(doc);
+  if (hit) return hit;
+  const out = new Map<string, 'dup' | 'bad'>();
+  const owners = new Map<string, string[]>();
+  for (const n of (doc.whole ?? doc).nodes) {
+    const ip = n.type === 'device' ? n.ip?.trim() : '';
+    if (!ip) continue;
+    const v4 = /^(\d+(?:\.\d+)*)(?:\/(\d+))?$/.exec(ip);
+    if (v4) {
+      const parts = v4[1].split('.');
+      const ok = parts.length === 4 && parts.every((p) => Number(p) <= 255 && p.length <= 3) && (v4[2] == null || Number(v4[2]) <= 32);
+      if (!ok) out.set(n.id, 'bad');
+    }
+    // A prefix length does not make it another address: 10.0.0.5/24 and 10.0.0.5 clash.
+    const key = ip.replace(/\/\d+$/, '').toLowerCase();
+    owners.set(key, [...(owners.get(key) ?? []), n.id]);
+  }
+  for (const ids of owners.values()) if (ids.length > 1) for (const id of ids) if (!out.has(id)) out.set(id, 'dup');
+  issueCache.set(doc, out);
+  return out;
+}
+
 export function quantityOf(name: string): { name: string; count: number } {
   // A name broken over several lines on the board reads as one line in a list.
   const first = oneLine(name);

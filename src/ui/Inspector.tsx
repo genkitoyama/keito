@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { isTagged } from '../model/geometry';
 import { safeUrl } from '../model/url';
 import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
-import { cableIds, colourKey, idShown, labelStacked, lengthShown, quantityOf } from '../model/lists';
+import { cableIds, colourKey, idShown, ipIssues, labelStacked, lengthShown, quantityOf } from '../model/lists';
 import { PRESETS, freshId } from '../model/presets';
 import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
@@ -144,6 +144,13 @@ function DevicePanel({ n }: { n: DeviceNode }) {
   const [asked, setNetworked] = useState(false);
   const networked = asked || !!n.ip || !!n.host || n.ports.some((p) => p.signal === 'lan');
   const group = useStore((s) => colourKey(s.doc).get(n.color ?? 'gray') ?? '');
+  const ipIssue = useStore((s) => ipIssues(s.doc).get(n.id));
+  // The first other device holding the same address, by name, so the clash can be found.
+  const clash = useStore((s) => {
+    const ip = n.ip?.trim().replace(/\/\d+$/, '').toLowerCase();
+    const other = ip && s.doc.nodes.find((x) => x.id !== n.id && x.type === 'device' && x.ip?.trim().replace(/\/\d+$/, '').toLowerCase() === ip);
+    return other ? other.text.split('\n')[0] : '';
+  });
   const categories = useStore(useShallow((s) => [...new Set([...PRESETS.map((p) => p.category), ...s.doc.nodes.map((x) => (x.type === 'device' ? x.category : ''))].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja'))));
   const move = (id: string, dir: -1 | 1) => {
     const port = n.ports.find((p) => p.id === id)!;
@@ -193,12 +200,15 @@ function DevicePanel({ n }: { n: DeviceNode }) {
         <span>色分け</span>
         <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />
       </label>
-      {networked ? (
+      {networked && (
         <div className="grid2">
           <Field label="IP アドレス" placeholder="192.168.0.10" value={n.ip ?? ''} onChange={(v) => patch({ ip: v || undefined })} />
           <Field label="ホスト名" value={n.host ?? ''} onChange={(v) => patch({ host: v || undefined })} />
         </div>
-      ) : (
+      )}
+      {networked && ipIssue === 'bad' && <p className="error">IPv4 アドレス（192.168.0.10 の形）として読めません。</p>}
+      {networked && ipIssue === 'dup' && <p className="error">{clash ? `「${clash}」と` : 'ほかの機材と'}同じ IP アドレスです。</p>}
+      {!networked && (
         <button className="mini add-field" onClick={() => setNetworked(true)}>
           ＋IP アドレス・ホスト名
         </button>

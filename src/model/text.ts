@@ -2,6 +2,8 @@ let ctx: CanvasRenderingContext2D | null | undefined;
 
 /** The typeface the board is drawn in, on screen and in every export. */
 export const UI_FONT = '-apple-system, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif';
+/** Fixed-width type for addresses, so the digits of one IP line up under another's. */
+export const MONO_FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
 /** Text width in px for a CSS font shorthand. Falls back to an estimate outside the browser. */
 export function measure(text: string, font: string): number {
