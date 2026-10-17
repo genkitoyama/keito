@@ -44,6 +44,13 @@ export interface ShapeNode extends Base {
    * is where the shape sits (by the board's pixel ratio); `native` is the output's own resolution.
    */
   screen?: ScreenSpec;
+  /** On an experience flow board: what part of the flow this is (see flow.ts). */
+  flow?: FlowSpec;
+}
+export interface FlowSpec {
+  role: 'start' | 'state' | 'branch' | 'end';
+  /** What happens on entering this state ("待機ループ映像を再生"). */
+  action?: string;
 }
 export interface ScreenSpec {
   role: 'canvas' | 'display' | 'projector' | 'led';
@@ -234,7 +241,7 @@ export interface Doc {
   version: 1;
   id: string;
   /** What the board is (system, software, sequence, free; see kinds.ts); unset is a system board. */
-  kind?: 'system' | 'software' | 'sequence' | 'free' | 'layout' | 'screen';
+  kind?: 'system' | 'software' | 'sequence' | 'free' | 'layout' | 'screen' | 'flow';
   /** Layout boards: how many px of the board make one metre (default 100: a grid step is 10 cm). */
   scale?: number;
   /** Screen layout boards: content pixels per pixel of the board (default 4). */

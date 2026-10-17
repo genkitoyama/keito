@@ -510,9 +510,17 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
           : `${region.x}, ${region.y}　${region.w} × ${region.h}${n.screen!.native ? `（機器 ${n.screen!.native[0]}×${n.screen!.native[1]}）` : ''}`
         : n.dims && doc
           ? `${mm(doc, w)} × ${mm(doc, h)}`
-          : '';
+          : n.flow?.action ?? '';
       const named = n.text.trim() !== '';
       const caption = Math.min(10.5, textSize(n) * 0.8);
+      // The end of a flow is a ring around a dot.
+      if (n.flow?.role === 'end')
+        return (
+          <g>
+            <circle cx={cx} cy={cy} r={Math.min(w, h) / 2} fill="#fff" stroke={STRONG.gray.fill} strokeWidth={2} />
+            <circle cx={cx} cy={cy} r={Math.min(w, h) / 2 - 6} fill={STRONG.gray.fill} />
+          </g>
+        );
       // A canvas lies under its outputs: its name and size go above its top-left corner instead.
       if (n.screen?.role === 'canvas')
         return (

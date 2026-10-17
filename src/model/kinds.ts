@@ -11,7 +11,7 @@ import type { Doc } from './types';
 export type BoardKind = NonNullable<Doc['kind']>;
 
 /** The lists a board can have, by key (see lists.ts). */
-export type ListKey = 'equipment' | 'cables' | 'summary' | 'power' | 'network' | 'comms' | 'fixtures' | 'outputs' | 'check';
+export type ListKey = 'equipment' | 'cables' | 'summary' | 'power' | 'network' | 'comms' | 'fixtures' | 'outputs' | 'transitions' | 'check';
 
 export interface KindSpec {
   id: BoardKind;
@@ -20,7 +20,7 @@ export interface KindSpec {
   hint: string;
   tools: Tool[];
   /** The library at the side, and what its items are called; none on a board without one. */
-  library: { label: string; search: string; set: 'equipment' | 'software' | 'furniture' | 'screens' } | null;
+  library: { label: string; search: string; set: 'equipment' | 'software' | 'furniture' | 'screens' | 'flow' } | null;
   /** The types a line (or a port) can take on this board. */
   lines: (s: Signal) => boolean;
   /** Lists in the order shown; none, no lists button. */
@@ -89,6 +89,17 @@ export const KINDS: Record<BoardKind, KindSpec> = {
     listsLabel: '出力一覧',
     cableOptions: false,
   },
+  flow: {
+    id: 'flow',
+    label: '体験フロー',
+    hint: 'インスタレーションの状態と切り替わり（待機 → 検知 → 再生 → 終了）、そのきっかけ',
+    tools: ['select', 'pan', 'cloud', 'sticky', 'text', 'frame'],
+    library: { label: '状態', search: '', set: 'flow' },
+    lines: (s) => s.id === 'flow',
+    lists: ['transitions', 'check'],
+    listsLabel: '状態遷移表',
+    cableOptions: false,
+  },
   free: {
     id: 'free',
     label: '自由ボード',
@@ -102,6 +113,6 @@ export const KINDS: Record<BoardKind, KindSpec> = {
   },
 };
 
-export const KIND_ORDER: BoardKind[] = ['system', 'software', 'sequence', 'layout', 'screen', 'free'];
+export const KIND_ORDER: BoardKind[] = ['system', 'software', 'sequence', 'flow', 'layout', 'screen', 'free'];
 
 export const kindOf = (doc: Pick<Doc, 'kind'>): KindSpec => KINDS[doc.kind ?? 'system'] ?? KINDS.system;

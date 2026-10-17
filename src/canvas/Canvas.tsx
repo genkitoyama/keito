@@ -30,6 +30,7 @@ import { copySelection, pasteClipboard, storeImage, useStore } from '../model/st
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
 import { canvasOf, isOutput, isScreen } from '../model/screens';
+import { FLOW_PARTS, makeFlowPart } from '../model/flow';
 import { EdgeView, HopCaps, INK, NodeView, SCREEN, ScreenOverlaps, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 
@@ -150,6 +151,19 @@ export function spawnFrom(id: string, side: Dir): void {
   const src = s.doc.nodes.find((n) => n.id === id);
   if (!src || !canConnect(src)) return;
   const taken = allIds(s.doc);
+  // In an experience flow the next step is always a state (never another start), at a state's size,
+  // laid out as if it grew from a state centred where this part is.
+  if (src.type === 'shape' && src.flow) {
+    const part = FLOW_PARTS.find((p) => p.key === 'state')!;
+    const made = makeFlowPart(part, 0, 0, taken);
+    const like = { ...src, x: src.x + src.w / 2 - made.w / 2, y: src.y + src.h / 2 - made.h / 2, w: made.w, h: made.h };
+    const n = { ...made, ...spawnRect(s.doc, like, side) };
+    const edge = makeEdge(taken, { node: src.id }, { node: n.id }, 'flow');
+    s.mutate((d) => ({ ...d, nodes: [...d.nodes, n], edges: [...d.edges, edge] }));
+    s.select([n.id]);
+    s.setEditing(n.id);
+    return;
+  }
   const kind: CreateKind = src.type === 'shape' ? src.shape : src.type;
   // The next step inherits the look of the one it grows from.
   const look = src.type === 'shape' ? { fill: src.fill, dash: src.dash } : {};

@@ -4,6 +4,7 @@ import { safeUrl } from './url';
 import { cableKind } from './standards';
 import type { ListKey } from './kinds';
 import { ROLE_LABEL, isOutput, overlaps, regionOf } from './screens';
+import { FLOW_LABEL, flowIssues, flowName, isFlow, transitions } from './flow';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node } from './types';
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
@@ -602,6 +603,8 @@ export function checkTable(doc: Doc): Table {
     const list = unmeasured.map((e) => ids.get(e.id) ?? '').sort(natural);
     found.push({ level: 1, what: '長さが未入力', target: `${unmeasured.length} 本`, detail: list.length > 8 ? `${list.slice(0, 8).join('、')} ほか ${list.length - 8} 本` : list.join('、'), ref: unmeasured.map((e) => e.id) });
   }
+  // An experience flow's own gaps (no start, unreachable states, dead ends …).
+  found.push(...flowIssues(doc));
   found.sort((a, b) => a.level - b.level);
   return {
     title: 'チェック',
@@ -717,6 +720,36 @@ export function outputsTable(doc: Doc): Table {
   };
 }
 
+/** An experience flow as a table: each transition from a state, its trigger, and what the next state does. */
+export function transitionsTable(doc: Doc): Table {
+  const moves = transitions(doc);
+  const states = doc.nodes.filter(isFlow);
+  // States in the order of the board's hand order, else top to bottom, left to right.
+  const order = [...states].sort(byHand(doc, 'transitions', (n) => [n.id], (a, b) => a.y - b.y || a.x - b.x));
+  const rows: string[][] = [];
+  const refs: string[][] = [];
+  for (const n of order) {
+    const out = moves.filter((m) => m.from.id === n.id);
+    if (!out.length) {
+      rows.push([flowName(n), FLOW_LABEL[n.flow.role], n.flow.action ?? '', '', '']);
+      refs.push([n.id]);
+    }
+    for (const m of out) {
+      rows.push([flowName(n), FLOW_LABEL[n.flow.role], n.flow.action ?? '', m.trigger, flowName(m.to)]);
+      refs.push([m.id]);
+    }
+  }
+  return {
+    title: '状態遷移表',
+    head: ['状態', '種類', '入ったときにすること', 'きっかけ', '次の状態'],
+    widths: [16, 8, 28, 22, 16],
+    rows,
+    refs,
+    reorder: undefined,
+    empty: '左の「状態」から開始・状態・終了を置き、矢印でつないでラベルにきっかけを書くと、ここに並びます。',
+  };
+}
+
 /** Every list there is, by the key boards name them by (see kinds.ts). */
 export const TABLES: Record<ListKey, { label: string; make: (doc: Doc) => Table }> = {
   equipment: { label: '機材リスト', make: (doc) => equipmentTable(doc) },
@@ -727,5 +760,6 @@ export const TABLES: Record<ListKey, { label: string; make: (doc: Doc) => Table 
   comms: { label: '通信一覧', make: commsTable },
   fixtures: { label: '配置物一覧', make: fixturesTable },
   outputs: { label: '出力一覧', make: outputsTable },
+  transitions: { label: '状態遷移表', make: transitionsTable },
   check: { label: 'チェック', make: checkTable },
 };

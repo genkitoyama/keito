@@ -5,6 +5,7 @@ import { intersects, isUnderlay, nodeRect, snap } from '../model/geometry';
 import { COMMON, FURNITURE, type Furniture, PRESETS, type Preset, SOFTWARE, allIds, freshId, makeDevice, makeFurniture, makeLegend } from '../model/presets';
 import { kindOf } from '../model/kinds';
 import { SCREENS, type ScreenPreset, isOutput, isScreen, makeScreen, pxRatio } from '../model/screens';
+import { FLOW_PARTS, type FlowPart, makeFlowPart } from '../model/flow';
 import type { DeviceNode, UserPreset } from '../model/types';
 import { type Tool, useStore } from '../model/store';
 import { getSetting, setSetting } from '../platform/storage';
@@ -103,6 +104,40 @@ function addScreen(p: ScreenPreset) {
   s.mutate((doc) => ({ ...doc, nodes: p.role === 'canvas' ? [{ ...n, x, y }, ...doc.nodes] : [...doc.nodes, { ...n, x, y }] }));
   s.select([n.id]);
   s.setTool('select');
+}
+
+function addFlowPart(p: FlowPart) {
+  const s = useStore.getState();
+  const c = viewCenter();
+  const n = makeFlowPart(p, 0, 0, allIds(s.doc));
+  let x = snap(c.x - n.w / 2);
+  const y = snap(c.y - n.h / 2);
+  const placed = s.doc.nodes.filter((o) => o.type !== 'frame').map(nodeRect);
+  for (let i = 0; i < 40 && placed.some((r) => intersects(r, { x, y, w: n.w, h: n.h })); i++) x += 200;
+  s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, { ...n, x, y }] }));
+  s.select([n.id]);
+  s.setTool('select');
+}
+
+/** The parts of an experience flow. */
+function FlowLibrary() {
+  return (
+    <div className="library">
+      <div className="library-list">
+        <div className="library-cat">
+          {FLOW_PARTS.map((p) => (
+            <button key={p.key} className="item" onClick={() => addFlowPart(p)}>
+              <span className="label">
+                <span>{p.name}</span>
+                <small>{p.hint}</small>
+              </span>
+            </button>
+          ))}
+        </div>
+        <p className="library-note">状態の辺の ● をドラッグすると次の状態を作れます。矢印のラベルに、切り替わるきっかけ（「人を検知」「60 秒経過」など）を書きます。</p>
+      </div>
+    </div>
+  );
 }
 
 /** Canvases and outputs for screen layout boards, in content pixels. */
@@ -324,7 +359,7 @@ export function Toolbar() {
           </>
         )}
       </nav>
-      {panel === 'library' && kind.library && (kind.library.set === 'furniture' ? <FurnitureLibrary /> : kind.library.set === 'screens' ? <ScreenLibrary /> : <Library />)}
+      {panel === 'library' && kind.library && (kind.library.set === 'furniture' ? <FurnitureLibrary /> : kind.library.set === 'screens' ? <ScreenLibrary /> : kind.library.set === 'flow' ? <FlowLibrary /> : <Library />)}
     </>
   );
 }

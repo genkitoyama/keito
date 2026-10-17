@@ -7,10 +7,11 @@ import { cableIds, colourKey, idShown, ipIssues, labelStacked, lengthShown, quan
 import { PRESETS, SOFTWARE, freshId } from '../model/presets';
 import { type BoardKind, KINDS, KIND_ORDER, kindOf } from '../model/kinds';
 import { ROLE_LABEL, placeRegion, regionOf } from '../model/screens';
+import { FLOW_LABEL } from '../model/flow';
 import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
-import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type Rect, type ScreenSpec, type ShapeKind } from '../model/types';
+import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type FlowSpec, type Rect, type ScreenSpec, type ShapeKind } from '../model/types';
 import { FILLS, FillPreview, SHAPES, sizesFor } from './icons';
 import { textHeightFor, textWeight } from '../canvas/render';
 import { useShallow } from 'zustand/react/shallow';
@@ -680,6 +681,23 @@ function NodePanel({ n }: { n: Node }) {
       <h3>{n.type === 'shape' ? '図形' : n.type === 'sticky' ? '付箋' : n.type === 'frame' ? 'エリア枠' : 'テキスト'} <code>{n.id}</code></h3>
       <Field label={n.type === 'frame' ? 'エリア名（機材リストの設置場所になります）' : 'テキスト'} value={n.text} onChange={(v) => patch({ text: v })} multiline={n.type !== 'frame'} />
       {n.type === 'shape' && n.screen && <ScreenFields n={n} screen={n.screen} />}
+      {n.type === 'shape' && n.flow && (
+        <>
+          <label className="field">
+            <span>フローでの役割</span>
+            <select value={n.flow.role} onChange={(e) => patch({ flow: { ...n.flow!, role: e.target.value as FlowSpec['role'] } }, true)}>
+              {(Object.keys(FLOW_LABEL) as FlowSpec['role'][]).map((k) => (
+                <option key={k} value={k}>
+                  {FLOW_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </label>
+          {n.flow.role !== 'start' && n.flow.role !== 'end' && (
+            <Field wrap label="入ったときにすること" placeholder="例: 待機ループ映像を再生、照明を暗く" value={n.flow.action ?? ''} onChange={(v) => patch({ flow: { ...n.flow!, action: v || undefined } })} />
+          )}
+        </>
+      )}
       {n.type === 'shape' && !n.screen && (layout || n.dims) && <RealSize n={n} />}
       {n.type === 'shape' && (
         <label className="field">
