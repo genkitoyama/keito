@@ -135,6 +135,17 @@ function save(before: Doc, next: Doc, serial: number, extra: Partial<Revision> =
   return done.serial;
 }
 
+/** The other boards of a board's project, as stored. */
+function projectBoards(doc: Doc): Doc[] {
+  const project = doc.meta.project?.trim();
+  if (!project) return [];
+  return boards
+    .list()
+    .filter((info) => info.id !== doc.id && (info.project ?? '').trim() === project)
+    .map((info) => readBoard(boards.read(info.id)))
+    .filter((d): d is Doc => !!d);
+}
+
 /** Write the shared things of a board through to the other boards of its project (as the app does). */
 function shareOut(doc: Doc): void {
   const project = doc.meta.project?.trim();
@@ -253,8 +264,11 @@ async function main(): Promise<void> {
       }
       // The title (and the kind and project) asked for win over those in the YAML.
       doc = { ...doc, kind: kindArg ? blank.kind : doc.kind, meta: { ...doc.meta, title, ...(projectArg !== undefined ? { project: projectArg } : {}) } };
+      // Shared things take what the project's other boards have, and give them what only they have.
+      doc = pull(doc, catalog(projectBoards(doc)));
       const done = boards.write(doc as never, undefined);
       process.stderr.write(`作成しました: ${done.folder}\n`);
+      shareOut(doc);
       return void console.log(doc.id);
     }
 

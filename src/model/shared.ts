@@ -46,10 +46,24 @@ export function catalog(boards: Doc[]): Entry[] {
   return boards.flatMap((d) => d.nodes.filter(canShare).filter((n) => n.text.trim()).map((node) => ({ board: d.id, boardTitle: d.meta.title, kind: d.kind, node })));
 }
 
-/** The newest version of a shared thing across the project. */
+/**
+ * Which copy speaks for a shared thing when none says when it was changed (keys written by hand
+ * in YAML): gear on a system board, then gear elsewhere, then a shape standing for it.
+ */
+const weight = (n: ShareNode, kind: Doc['kind']): number => (n.type === 'device' ? ((kind ?? 'system') === 'system' ? 2 : 1) : 0);
+
+/** Whether copy `a` wins over copy `b`: the newer one, or with no time on either, the weightier. */
+function wins(a: ShareNode, aKind: Doc['kind'], b: ShareNode, bKind: Doc['kind']): boolean {
+  const ta = a.sharedAt ?? 0;
+  const tb = b.sharedAt ?? 0;
+  if (ta || tb) return ta > tb;
+  return weight(a, aKind) > weight(b, bKind);
+}
+
+/** The version of a shared thing that wins across the project (see `wins`). */
 export function newest(entries: Entry[], key: string): Entry | undefined {
   let best: Entry | undefined;
-  for (const e of entries) if (e.node.shared === key && (!best || (e.node.sharedAt ?? 0) > (best.node.sharedAt ?? 0))) best = e;
+  for (const e of entries) if (e.node.shared === key && (!best || wins(e.node, e.kind, best.node, best.kind))) best = e;
   return best;
 }
 
@@ -74,7 +88,7 @@ export function pull(doc: Doc, entries: Entry[]): Doc {
     let next: Node = n;
     if (canShare(n) && n.shared) {
       const best = newest(others, n.shared);
-      if (best && (best.node.sharedAt ?? 0) > (n.sharedAt ?? 0)) {
+      if (best && wins(best.node, best.kind, n, doc.kind)) {
         const taken = takeFrom(n, best.node);
         if (signature(taken) !== signature(n) || taken.sharedAt !== n.sharedAt) next = taken;
       }
