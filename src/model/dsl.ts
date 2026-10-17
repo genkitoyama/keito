@@ -204,6 +204,7 @@ export function toYaml(doc: Doc): string {
       if (e.color) o.color = e.color;
       if (e.dash) o.dash = true;
       if (e.labelAt != null) o.labelAt = e.labelAt;
+      if (e.route?.length) o.route = e.route.map((p) => [r(p.x), r(p.y)]);
       return o;
     });
   }
@@ -479,6 +480,9 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (HEX.test(str(v.color))) e.color = str(v.color);
     if (v.dash === true) e.dash = true;
     if (typeof v.labelAt === 'number') e.labelAt = Math.min(0.96, Math.max(0.04, v.labelAt));
+    // Hand-placed bends, as for cables (and dropped the same way by a fresh layout).
+    const bends = relayout ? [] : arr(v.route).map((p) => nums(p, 2)).filter((p): p is number[] => !!p);
+    if (bends.length >= 2) e.route = bends.map(([x, y]) => ({ x, y }));
     edges.push(e);
   });
 
