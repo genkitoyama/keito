@@ -3,7 +3,7 @@ import { allSignals, signalOf } from './signals';
 import { safeUrl } from './url';
 import { cableKind } from './standards';
 import type { ListKey } from './kinds';
-import { ROLE_LABEL, isOutput, overlaps, regionOf } from './screens';
+import { ROLE_LABEL, canvasOf, isOutput, overlaps, regionOf } from './screens';
 import { FLOW_LABEL, flowIssues, flowName, isFlow, transitions } from './flow';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node } from './types';
 
@@ -575,7 +575,9 @@ export function checkTable(doc: Doc): Table {
   for (const [cid, edges] of byId) if (edges.length > 1) found.push({ level: 0, what: 'ケーブル ID の重複', target: cid, detail: `${edges.length} 本に同じ ID が付いています`, ref: edges });
   for (const e of doc.edges) {
     if (e.signal === 'flow') continue;
-    const mismatch = [portOf(e.from), portOf(e.to)].filter((p) => p && p.signal !== e.signal);
+    // A generic "data" port (a new piece of software) takes any protocol, and any protocol line may meet it.
+    const generic = (x: string) => x === 'data' && !!signalOf(e.signal).protocol;
+    const mismatch = [portOf(e.from), portOf(e.to)].filter((p) => p && p.signal !== e.signal && !generic(p.signal) && !(e.signal === 'data' && signalOf(p.signal).protocol));
     if (mismatch.length)
       found.push({ level: 0, what: '種別の不一致', target: ids.get(e.id) ?? `${name(e.from.node)} → ${name(e.to.node)}`, detail: `${signalOf(e.signal).label} のケーブルが ${mismatch.map((p) => (p!.name === signalOf(p!.signal).label ? p!.name : `${p!.name}（${signalOf(p!.signal).label}）`)).join('・')} につながっています`, ref: [e.id] });
   }
@@ -710,6 +712,8 @@ export function outputsTable(doc: Doc): Table {
       const native = n.screen.native;
       const scale = native ? `${Math.round((native[0] / r.w) * 100)}%` : '';
       const with_ = blends.filter((o) => o.a.id === n.id || o.b.id === n.id).map((o) => `${oneLine((o.a.id === n.id ? o.b : o.a).text)} ${o.px.w}×${o.px.h}`);
+      // An output off every canvas has no region to speak of: its numbers are board positions.
+      if (!canvasOf(doc, n)) with_.unshift('キャンバスの外');
       return [oneLine(n.text), ROLE_LABEL[n.screen.role], n.screen.output ?? '', String(r.x), String(r.y), String(r.w), String(r.h), native ? `${native[0]}×${native[1]}` : '', scale, with_.join(' / ')];
     }),
     refs: outs.map((n) => [n.id]),

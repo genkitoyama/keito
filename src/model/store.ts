@@ -280,15 +280,28 @@ export const useStore = create<State>((set, get) => ({
   renameProject: (from, to) =>
     void run(async (b) => {
       const name = to.trim();
-      if (!name || name === from) return;
+      // An older state on screen is never written; the live board must be the one renamed.
+      if (!name || name === from || get().viewing) return;
       // The board on screen changes in place (one undo step); the others are read, renamed, written.
       if ((get().doc.meta.project ?? '') === from) get().mutate((d) => ({ ...d, meta: { ...d.meta, project: name } }));
-      for (const info of get().boards) {
-        if ((info.project ?? '') !== from || info.id === get().doc.id) continue;
-        const doc = await b.load(info.id);
-        if (doc && (doc.meta.project ?? '') === from) await b.save({ ...doc, meta: { ...doc.meta, project: name } });
+      const missed: string[] = [];
+      try {
+        for (const info of get().boards) {
+          if ((info.project ?? '') !== from || info.id === get().doc.id) continue;
+          // A board that cannot be written now (changed elsewhere meanwhile …) keeps its old name;
+          // it is no reason to stop, nor a conflict of the board on screen.
+          try {
+            const doc = await b.load(info.id);
+            if (doc && (doc.meta.project ?? '') === from) await b.save({ ...doc, meta: { ...doc.meta, project: name } });
+          } catch (e) {
+            console.warn(`[keito] ${info.title}: project not renamed`, e);
+            missed.push(info.title);
+          }
+        }
+      } finally {
+        set({ boards: await b.list() });
       }
-      set({ boards: await b.list() });
+      if (missed.length) alert(`次のボードは案件名を変えられませんでした（ほかで更新中など）: ${missed.join('、')}`);
     }),
   resolveConflict: (choice) =>
     void run(async (b) => {
@@ -493,6 +506,12 @@ async function flush(): Promise<void> {
 registerSignals(useStore.getState().doc.signals);
 useStore.subscribe((s, prev) => {
   if (s.doc.signals !== prev.doc.signals) registerSignals(s.doc.signals);
+});
+
+// A tool the board's kind does not offer (left armed from another board, or before the kind
+// changed) goes back to selecting: its button is not even on the toolbar.
+useStore.subscribe((s) => {
+  if (s.tool !== 'select' && s.tool !== 'pan' && !KINDS[s.doc.kind ?? 'system']?.tools.includes(s.tool)) useStore.setState({ tool: 'select' });
 });
 
 // History: the opened state is kept at the first edit, the edited one once editing pauses.

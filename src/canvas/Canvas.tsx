@@ -10,6 +10,7 @@ import {
   contains,
   intersects,
   isUnderlay,
+  isCanvasShape,
   isTagged,
   labelPoint,
   nearestT,
@@ -326,7 +327,8 @@ export function Canvas() {
       // (which keep their regions so).
       if (m.type === 'frame') {
         for (const c of now.nodes) {
-          if (c.id !== m.id && contains(m, center(nodeRect(c)))) orig.set(c.id, { x: c.x, y: c.y });
+          // ... but never the floor plan laid under the drawing.
+          if (c.id !== m.id && !isUnderlay(c) && contains(m, center(nodeRect(c)))) orig.set(c.id, { x: c.x, y: c.y });
         }
       }
       if (isScreen(m) && m.screen.role === 'canvas') {
@@ -684,7 +686,8 @@ export function Canvas() {
   // An underlay (a floor plan) lies beneath everything and lets the pointer through.
   const underlays = doc.nodes.filter(isUnderlay);
   const frames = doc.nodes.filter((n) => n.type === 'frame');
-  const others = doc.nodes.filter((n) => n.type !== 'frame' && !isUnderlay(n));
+  // Canvases of a screen board go first, so their outputs are drawn (and clicked) over them.
+  const others = doc.nodes.filter((n) => n.type !== 'frame' && !isUnderlay(n)).sort((a, b) => Number(isCanvasShape(b)) - Number(isCanvasShape(a)));
   const single = selection.length === 1 ? doc.nodes.find((n) => n.id === selection[0]) : undefined;
   const selectedEdge = selection.length === 1 ? doc.edges.find((e) => e.id === selection[0]) : undefined;
   const handleNode = doc.nodes.find((n) => n.id === hover && hasHandles(n)) ?? (single && hasHandles(single) ? single : undefined);

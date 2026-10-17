@@ -249,7 +249,7 @@ export async function updateWorkbook(doc: Doc, previous: ArrayBuffer): Promise<{
     const now = wb.getWorksheet(name);
     const before = was && layout(was);
     const after = now && layout(now);
-    if (!was || !now || !before || !after) continue;
+    if (!was || !before) continue;
     found = true;
     // Rows of the earlier sheet, by every id they stand for.
     const rows: OldRow[] = [];
@@ -262,6 +262,11 @@ export async function updateWorkbook(doc: Doc, previous: ArrayBuffer): Promise<{
       const row: OldRow = { sheet: name, values, ids, used: false };
       rows.push(row);
       for (const id of ids) if (!byId.has(id)) byId.set(id, row);
+    }
+    // A list the board no longer has (its kind changed): every row of it is kept aside, status and all.
+    if (!now || !after) {
+      leftover.push(...rows);
+      continue;
     }
     // Columns made in the sheet by hand go after the board's, beyond the hidden key.
     const extra = [...before.cols.keys()].filter((h) => h !== KEY && !after.cols.has(h));

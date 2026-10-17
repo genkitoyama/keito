@@ -60,9 +60,11 @@ export function overlaps(doc: Doc): Overlap[] {
       const y0 = Math.max(a.y, b.y);
       const x1 = Math.min(a.x + a.w, b.x + b.w);
       const y1 = Math.min(a.y + a.h, b.y + b.h);
-      if (x1 - x0 < 0.5 || y1 - y0 < 0.5 || canvasOf(doc, a)?.id !== canvasOf(doc, b)?.id) continue;
+      // Only outputs on the same canvas share content; two left off any canvas share nothing.
+      const c = canvasOf(doc, a);
+      if (x1 - x0 < 0.5 || y1 - y0 < 0.5 || !c || c.id !== canvasOf(doc, b)?.id) continue;
       const board = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-      out.push({ a, b, board, px: { x: Math.round(x0 * k), y: Math.round(y0 * k), w: Math.round(board.w * k), h: Math.round(board.h * k) } });
+      out.push({ a, b, board, px: { x: Math.round((x0 - c.x) * k), y: Math.round((y0 - c.y) * k), w: Math.round(board.w * k), h: Math.round(board.h * k) } });
     }
   return out;
 }

@@ -59,7 +59,10 @@ export function transitions(doc: Doc): Transition[] {
   return doc.edges.flatMap((e) => {
     const from = byId.get(e.from.node);
     const to = byId.get(e.to.node);
-    return from && to ? [{ from, to, trigger: e.label.replace(/\n/g, ' ').trim(), id: e.id }] : [];
+    if (!from || !to) return [];
+    const trigger = e.label.replace(/\n/g, ' ').trim();
+    // An arrow with heads at both ends goes both ways.
+    return e.arrow === 'both' ? [{ from, to, trigger, id: e.id }, { from: to, to: from, trigger, id: e.id }] : [{ from, to, trigger, id: e.id }];
   });
 }
 

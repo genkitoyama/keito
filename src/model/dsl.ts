@@ -117,6 +117,8 @@ function refOf(doc: Doc, end: EdgeEnd): string {
 export function toYaml(doc: Doc): string {
   const out: Obj = { title: doc.meta.title };
   if (doc.kind) out.kind = doc.kind;
+  if (doc.scale) out.scale = doc.scale;
+  if (doc.pxScale) out.pxScale = doc.pxScale;
   put(out, 'project', doc.meta.project);
 
   if (doc.powerTags === false) out.powerTags = false;
@@ -572,5 +574,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   // Revision history is not part of the text form; it stays with the board.
   const KIND_IDS = ['system', 'software', 'sequence', 'flow', 'layout', 'screen', 'free'];
   const kind = typeof root.kind === 'string' && KIND_IDS.includes(root.kind) ? (root.kind === 'system' ? undefined : (root.kind as Doc['kind'])) : prev.kind;
-  return { version: 1, id: prev.id, kind, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
+  const scale = typeof root.scale === 'number' && root.scale > 0 ? root.scale : prev.scale;
+  const pxScale = typeof root.pxScale === 'number' && root.pxScale > 0 ? root.pxScale : prev.pxScale;
+  return { version: 1, id: prev.id, kind, scale, pxScale, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
 }

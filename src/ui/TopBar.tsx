@@ -2,7 +2,7 @@ import { fromYaml } from '../model/dsl';
 import { randomId } from '../model/presets';
 import { type Panel, emptyDoc, useStore } from '../model/store';
 import { tidy } from '../model/tidy';
-import { KINDS, kindOf } from '../model/kinds';
+import { kindOf } from '../model/kinds';
 import { openBoards } from './Boards';
 import type { Doc } from '../model/types';
 import { download, inlineImages, pickTextFile, safeName } from '../platform/storage';
@@ -50,7 +50,7 @@ export function TopBar() {
       {/* The project and board on screen; the list of all of them opens from here. */}
       <button className="board-switch" onClick={() => openBoards()} data-tip="ボード一覧（案件ごと）">
         {doc.meta.project && <small>{doc.meta.project} ／</small>}
-        <b className={`kind-badge ${doc.kind ?? 'system'}`}>{KINDS[doc.kind ?? 'system'].label}</b>
+        <b className={`kind-badge ${kind.id}`}>{kind.label}</b>
         <span>{doc.meta.title}</span>
         <i>▾</i>
       </button>

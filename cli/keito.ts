@@ -256,6 +256,7 @@ async function main(): Promise<void> {
       const out = option('-o', '--out');
       const previous = option('--update');
       const { doc } = load(args[0]);
+      if (!kindOf(doc).lists.length) fail(`${kindOf(doc).label}には表がないので、Excel には書き出せません`);
       if (previous) {
         const { blob, report } = await updateWorkbook(doc, bytes(previous));
         const file = path.resolve(out ?? previous);

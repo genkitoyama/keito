@@ -267,7 +267,8 @@ function CellEditor({ t, row, edit, shown, done }: { t: Table; row: number; edit
     return (
       <select autoFocus defaultValue={e?.signal} onChange={(ev) => done(ev.target.value)} onBlur={() => done(null)} onKeyDown={(ev) => ev.key === 'Escape' && done(null)}>
         {allSignals()
-          .filter((s) => s.id !== 'flow' && kindOf(doc).lines(s))
+          // A cable list offers cable types; a communication list, protocols.
+          .filter((s) => s.id !== 'flow' && kindOf(doc).lines(s) && (s.cable || !!s.protocol))
           .map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}

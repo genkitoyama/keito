@@ -1,4 +1,5 @@
 import { upgradeHistory } from './history';
+import { KINDS } from './kinds';
 import { upgradeOrder } from './lists';
 import type { Doc } from './types';
 import { upgradeDoc } from './video';
@@ -13,5 +14,7 @@ export function readBoard(v: unknown): Doc | null {
   if (!d || d.version !== 1 || !Array.isArray(d.nodes) || !Array.isArray(d.edges)) return null;
   d.nodes = d.nodes.filter((n) => n.type !== 'text' || (n.text ?? '').trim() !== '');
   d.revisions = upgradeHistory(d.revisions);
+  // A kind this version does not know (a board from a newer keito, a hand edit) is read as a system board.
+  if (d.kind !== undefined && !(d.kind in KINDS)) d.kind = undefined;
   return upgradeOrder(upgradeDoc(d));
 }

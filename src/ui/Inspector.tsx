@@ -443,10 +443,12 @@ function PortName({ value, onChange }: { value: string; onChange: (v: string) =>
  * A length in millimetres, taken when typing is done (Enter or leaving the field): the board keeps
  * whole pixels, so applying each keystroke would round the number under the cursor.
  */
-function MmField({ label, value, onCommit }: { label: string; value: string; onCommit: (v: string) => void }) {
+function MmField({ label, value, onCommit, position }: { label: string; value: string; onCommit: (v: string) => void; position?: boolean }) {
   const [draft, setDraft] = useState<string | null>(null);
   const commit = () => {
-    if (draft !== null && Number(draft.normalize('NFKC')) > 0 && draft !== value) onCommit(draft);
+    // A size must be positive; a position (X, Y) may be 0 or even negative.
+    const v = Number((draft ?? '').normalize('NFKC'));
+    if (draft !== null && draft.trim() !== '' && (position ? Number.isFinite(v) : v > 0) && draft !== value) onCommit(draft);
     setDraft(null);
   };
   return (
@@ -485,8 +487,8 @@ function ScreenFields({ n, screen }: { n: Extract<Node, { type: 'shape' }>; scre
       </label>
       {!canvas && (
         <div className="grid2">
-          <MmField label="X (px)" value={String(r.x)} onCommit={(v) => place({ x: num(v) })} />
-          <MmField label="Y (px)" value={String(r.y)} onCommit={(v) => place({ y: num(v) })} />
+          <MmField position label="X (px)" value={String(r.x)} onCommit={(v) => place({ x: num(v) })} />
+          <MmField position label="Y (px)" value={String(r.y)} onCommit={(v) => place({ y: num(v) })} />
         </div>
       )}
       <div className="grid2">

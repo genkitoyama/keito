@@ -14,6 +14,7 @@ import { TextPanel } from './ui/TextPanel';
 import { TOOL_KEYS, Toolbar } from './ui/Toolbar';
 import { TopBar, saveFile } from './ui/TopBar';
 import { kindOf } from './model/kinds';
+import { isUnderlay } from './model/geometry';
 
 /** Copy on the board, and clear any picture left on the system clipboard so the next paste is this copy. */
 function copyOut() {
@@ -53,7 +54,7 @@ function useHotkeys() {
       else if (mod && key === 'd') {
         copySelection();
         pasteClipboard();
-      } else if (mod && key === 'a') s.select(s.doc.nodes.map((n) => n.id));
+      } else if (mod && key === 'a') s.select(s.doc.nodes.filter((n) => !isUnderlay(n)).map((n) => n.id));
       else if (mod && key === 's') void saveFile();
       else if (mod && (key === '=' || key === '+')) zoomBy(1.25);
       else if (mod && key === '-') zoomBy(0.8);

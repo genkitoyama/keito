@@ -60,9 +60,17 @@ export function registerSignals(list: CustomSignal[] | undefined): void {
 export const customSignals = (): CustomSignal[] => [...custom.values()].map(({ id, label, prefix, color }) => ({ id, label, prefix, color }));
 export const signalOf = (id: SignalId): Signal => custom.get(id) ?? byId.get(currentSignal(id)) ?? byId.get('other')!;
 export const isSignal = (id: string): boolean => custom.has(id) || byId.has(currentSignal(id));
-export const isBuiltInSignal = (id: string): boolean => byId.has(currentSignal(id));
-/** Every type on offer: the built-in ones, then the board's own. */
-export const allSignals = (): Signal[] => [...SIGNALS, ...custom.values()];
+/**
+ * Whether an id is taken by a built-in type a board may not redefine. The protocols of software
+ * boards came later than boards' own types: a board that already had a type called "ndi" or "osc"
+ * keeps its own, so they do not count here.
+ */
+export const isBuiltInSignal = (id: string): boolean => {
+  const s = byId.get(currentSignal(id));
+  return !!s && !s.protocol;
+};
+/** Every type on offer: the built-in ones (less any a board has redefined), then the board's own. */
+export const allSignals = (): Signal[] => [...SIGNALS.filter((s) => !custom.has(s.id)), ...custom.values()];
 
 export const PALETTE: Record<ColorKey, { fill: string; stroke: string }> = {
   white: { fill: '#ffffff', stroke: '#b4bfcc' },

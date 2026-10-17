@@ -304,6 +304,9 @@ export function docBounds(doc: Doc, ids?: Set<string>): Rect | null {
 }
 
 /** Topmost node under a point; frames only when nothing else is hit. */
+/** A screen layout board's content canvas: it lies under its outputs. */
+export const isCanvasShape = (n: Node): boolean => n.type === 'shape' && n.screen?.role === 'canvas';
+
 /** An underlay (a floor plan beneath the drawing) is never what the pointer is on. */
 export const isUnderlay = (n: Node): boolean => n.type === 'image' && !!n.under;
 
@@ -312,7 +315,8 @@ export function nodeAt(doc: Doc, p: Pt): Node | null {
   for (let i = doc.nodes.length - 1; i >= 0; i--) {
     const n = doc.nodes[i];
     if (isUnderlay(n) || !contains(nodeRect(n), p)) continue;
-    if (n.type !== 'frame') return n;
+    // An area, and a screen board's canvas, are only hit where nothing on them is.
+    if (n.type !== 'frame' && !isCanvasShape(n)) return n;
     frame ??= n;
   }
   return frame;

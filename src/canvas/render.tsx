@@ -785,7 +785,12 @@ export function DocView({ doc, theme }: { doc: Doc; theme: Theme }) {
       {doc.nodes.filter((n) => n.type === 'frame').map((n) => <NodeView key={n.id} n={n} theme={theme} />)}
       {(doc.hops ? hopOrder(doc) : doc.edges).map((e) => <EdgeView key={e.id} doc={doc} e={e} theme={theme} />)}
       <HopCaps doc={doc} theme={theme} />
-      {doc.nodes.filter((n) => n.type !== 'frame' && !isUnderlay(n)).map((n) => <NodeView key={n.id} n={n} theme={theme} doc={doc} />)}
+      {doc.nodes
+        .filter((n) => n.type !== 'frame' && !isUnderlay(n))
+        .sort((a, b) => Number(isCanvasShape(b)) - Number(isCanvasShape(a)))
+        .map((n) => (
+          <NodeView key={n.id} n={n} theme={theme} doc={doc} />
+        ))}
       <ScreenOverlaps doc={doc} theme={theme} />
     </g>
   );
