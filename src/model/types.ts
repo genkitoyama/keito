@@ -86,7 +86,7 @@ export interface DeviceNode extends Base {
   /** Network settings, listed in the network table. */
   ip?: string;
   host?: string;
-  /** Place in the equipment list, as arranged by hand; unset keeps the list's own order. */
+  /** Read from boards saved before `Doc.listOrder`: the device's place in the equipment list. */
   listOrder?: number;
 }
 /** `text` is the sequence source. Size is derived from the parsed diagram. */
@@ -217,6 +217,11 @@ export interface Doc {
   stackedLabels?: boolean;
   /** Draw a small hop where one line crosses another on screen (default off; drawings always hop). */
   hops?: boolean;
+  /**
+   * Lists put in order by hand: for each (equipment, cables, summary, network), the ids of the
+   * devices or cables in that order. Anything not named follows in the list's own order.
+   */
+  listOrder?: Record<string, string[]>;
   /** Signal types added on this board. */
   signals?: CustomSignal[];
   /** Recorded revisions, oldest first. */

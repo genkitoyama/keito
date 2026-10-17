@@ -55,26 +55,53 @@ export interface Table {
   rowClass?: (string | undefined)[];
   /** Columns that can be edited in place, by heading, and what each writes to on the board. */
   edit?: Record<string, CellEdit>;
-  /** Rows can be put in order by hand (see `moveRow`). */
-  reorder?: boolean;
+  /** Rows can be put in order by hand, kept under this name in `Doc.listOrder` (see `moveRow`). */
+  reorder?: string;
 }
 
 /**
- * The board with one list row moved: every row's devices are numbered in the new order, so the
- * list keeps it (and so do its CSV and PDF). Devices placed later go to the end.
+ * The board with one list row moved: the ids behind every row are stored in the new order, so the
+ * list keeps it (and so do its CSV and PDF). Things added later go to the end.
  */
 export function moveRow(doc: Doc, t: Table, from: number, to: number): Doc {
   const body = t.total ? t.refs.slice(0, -1) : t.refs;
-  if (from === to || from < 0 || to < 0 || from >= body.length || to >= body.length) return doc;
+  if (!t.reorder || from === to || from < 0 || to < 0 || from >= body.length || to >= body.length) return doc;
   const order = body.map((_, i) => i);
   order.splice(to, 0, ...order.splice(from, 1));
-  const rank = new Map<string, number>();
-  order.forEach((row, i) => body[row].forEach((id) => rank.set(id, i + 1)));
-  return { ...doc, nodes: doc.nodes.map((n) => (n.type === 'device' && rank.has(n.id) ? { ...n, listOrder: rank.get(n.id) } : n)) };
+  return { ...doc, listOrder: { ...doc.listOrder, [t.reorder]: order.flatMap((row) => body[row]) } };
 }
 
-/** The board with the hand-made order of the equipment list dropped. */
-export const clearOrder = (doc: Doc): Doc => ({ ...doc, nodes: doc.nodes.map((n) => (n.type === 'device' && n.listOrder != null ? { ...n, listOrder: undefined } : n)) });
+/** The board with one list's hand-made order dropped. */
+export function clearOrder(doc: Doc, list: string): Doc {
+  const { [list]: _, ...rest } = doc.listOrder ?? {};
+  return { ...doc, listOrder: Object.keys(rest).length ? rest : undefined };
+}
+
+/**
+ * Sorting by a list's hand-made order: a row stands where the first of its ids does; rows the
+ * order does not name come after, in the list's own order (`fallback`).
+ */
+function byHand<T>(doc: Doc, list: string, idsOf: (row: T) => string[], fallback: (a: T, b: T) => number): (a: T, b: T) => number {
+  const at = new Map((boardOf(doc).listOrder?.[list] ?? []).map((id, i) => [id, i]));
+  const rank = (row: T): number => Math.min(...idsOf(row).map((id) => at.get(id) ?? Infinity));
+  return (a, b) => {
+    const ra = rank(a);
+    const rb = rank(b);
+    return ra !== rb ? (ra < rb ? -1 : 1) : fallback(a, b);
+  };
+}
+
+/** A board saved when the equipment order was kept on each device, with it moved to `listOrder`. */
+export function upgradeOrder(doc: Doc): Doc {
+  const ranked = doc.nodes.filter((n): n is DeviceNode => n.type === 'device' && n.listOrder != null);
+  if (!ranked.length) return doc;
+  const equipment = doc.listOrder?.equipment ?? [...ranked].sort((a, b) => a.listOrder! - b.listOrder!).map((n) => n.id);
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => (n.type === 'device' && n.listOrder != null ? { ...n, listOrder: undefined } : n)),
+    listOrder: { ...doc.listOrder, equipment },
+  };
+}
 
 /**
  * How a list cell writes back: the field of the devices or cables behind its row. A row that
@@ -236,14 +263,14 @@ export function equipmentTable(doc: Doc, withUrl = true): Table {
     groups.set(id, g);
   }
   // Rows put in order by hand come first, in that order; the rest by category and name.
-  const byId = new Map(doc.nodes.map((n) => [n.id, n]));
-  const rank = (ids: string[]): number => Math.min(...ids.map((id) => (byId.get(id) as DeviceNode | undefined)?.listOrder ?? Infinity));
-  const list = [...groups.values()].sort((a, b) => {
-    const ra = rank(a.ids);
-    const rb = rank(b.ids);
-    if (ra !== rb) return ra < rb ? -1 : 1;
-    return a.d.category.localeCompare(b.d.category, 'ja') || [...a.names][0].localeCompare([...b.names][0], 'ja') || groupOf(a.d).localeCompare(groupOf(b.d), 'ja');
-  });
+  const list = [...groups.values()].sort(
+    byHand(
+      doc,
+      'equipment',
+      (g) => g.ids,
+      (a, b) => a.d.category.localeCompare(b.d.category, 'ja') || [...a.names][0].localeCompare([...b.names][0], 'ja') || groupOf(a.d).localeCompare(groupOf(b.d), 'ja'),
+    ),
+  );
   // The link of a model is whichever of its devices carries one.
   const urlOf = (ids: string[]): string => {
     for (const id of ids) {
@@ -280,7 +307,7 @@ export function equipmentTable(doc: Doc, withUrl = true): Table {
     refs: [...list.map((g) => g.ids), ...(list.length ? [[]] : [])],
     numeric: ['No', '数量', '消費電力(W)'],
     total: list.length > 0,
-    reorder: true,
+    reorder: 'equipment',
     edit: {
       区分: { on: 'node', field: 'vendor' },
       カテゴリ: { on: 'node', field: 'category' },
@@ -313,7 +340,7 @@ const natural = (a: string, b: string): number => a.localeCompare(b, 'ja', { num
 export function cableTable(doc: Doc, withUrl = true): Table {
   const ids = cableIds(doc);
   const order = allSignals().map((s) => s.id);
-  const list = [...cables(doc)].sort((a, b) => order.indexOf(a.signal) - order.indexOf(b.signal) || natural(ids.get(a.id) ?? '', ids.get(b.id) ?? ''));
+  const list = [...cables(doc)].sort(byHand(doc, 'cables', (e) => [e.id], (a, b) => order.indexOf(a.signal) - order.indexOf(b.signal) || natural(ids.get(a.id) ?? '', ids.get(b.id) ?? '')));
   const total = list.reduce((sum, e) => sum + (e.length ?? 0), 0);
   const cols = ['ケーブルID', '種別', '品名・規格', 'From 機材', 'From ポート', 'To 機材', 'To ポート', '経路', '長さ(m)', 'ラベル', 'メーカー', '型番', '備考', ...(withUrl ? ['URL'] : [])];
   return {
@@ -347,6 +374,7 @@ export function cableTable(doc: Doc, withUrl = true): Table {
     refs: [...list.map((e) => [e.id]), ...(list.length ? [[]] : [])],
     numeric: ['長さ(m)'],
     total: list.length > 0,
+    reorder: 'cables',
     edit: {
       ケーブルID: { on: 'edge', field: 'cableId' },
       種別: { on: 'edge', field: 'signal', kind: 'signal' },
@@ -365,13 +393,14 @@ export function cableTable(doc: Doc, withUrl = true): Table {
 export function networkTable(doc: Doc): Table {
   const list = devices(doc)
     .filter((d) => d.ip?.trim() || d.host?.trim())
-    .sort((a, b) => (a.ip ?? '\uffff').localeCompare(b.ip ?? '\uffff', 'en', { numeric: true }) || a.text.localeCompare(b.text, 'ja'));
+    .sort(byHand(doc, 'network', (d) => [d.id], (a, b) => (a.ip ?? '\uffff').localeCompare(b.ip ?? '\uffff', 'en', { numeric: true }) || a.text.localeCompare(b.text, 'ja')));
   return {
     title: 'ネットワーク',
     head: ['名称', 'ホスト名', 'IP アドレス', 'メーカー', '型番', '設置場所', '備考'],
     widths: [20, 16, 14, 12, 14, 12, 16],
     rows: list.map((d) => [unitsOf(d).name, d.host ?? '', d.ip ?? '', d.maker, d.model, placeOf(doc, d), d.note]),
     refs: list.map((d) => [d.id]),
+    reorder: 'network',
     edit: {
       名称: { on: 'node', field: 'text' },
       ホスト名: { on: 'node', field: 'host' },
@@ -393,7 +422,12 @@ export function cableSummaryTable(doc: Doc): Table {
     else groups.set(key, { e, ids: [e.id] });
   }
   const list = [...groups.values()].sort(
-    (a, b) => a.e.signal.localeCompare(b.e.signal) || (a.e.spec ?? '').localeCompare(b.e.spec ?? '', 'ja') || (a.e.length ?? Infinity) - (b.e.length ?? Infinity),
+    byHand(
+      doc,
+      'summary',
+      (g) => g.ids,
+      (a, b) => a.e.signal.localeCompare(b.e.signal) || (a.e.spec ?? '').localeCompare(b.e.spec ?? '', 'ja') || (a.e.length ?? Infinity) - (b.e.length ?? Infinity),
+    ),
   );
   return {
     title: 'ケーブル集計',
@@ -414,6 +448,7 @@ export function cableSummaryTable(doc: Doc): Table {
     refs: [...list.map((g) => g.ids), ...(list.length ? [[]] : [])],
     numeric: ['長さ(m)', '本数', '合計長(m)'],
     total: list.length > 0,
+    reorder: 'summary',
     edit: {
       '品名・規格': { on: 'edge', field: 'spec' },
       メーカー: { on: 'edge', field: 'maker' },
@@ -507,7 +542,8 @@ export function compact(t: Table): Table {
 export function wiringTable(doc: Doc): Table {
   const ids = cableIds(doc);
   const wired = doc.edges.filter((e) => e.signal !== 'flow');
-  const list = [...devices(doc)].sort((a, b) => placeOf(doc, a).localeCompare(placeOf(doc, b), 'ja') || unitsOf(a).name.localeCompare(unitsOf(b).name, 'ja'));
+  // Devices come in the equipment list's hand-made order when it has one.
+  const list = [...devices(doc)].sort(byHand(doc, 'equipment', (d) => [d.id], (a, b) => placeOf(doc, a).localeCompare(placeOf(doc, b), 'ja') || unitsOf(a).name.localeCompare(unitsOf(b).name, 'ja')));
   const rows: string[][] = [];
   const refs: string[][] = [];
   const rowClass: (string | undefined)[] = [];

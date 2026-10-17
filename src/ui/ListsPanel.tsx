@@ -15,7 +15,6 @@ export function ListsPanel() {
   const [editing, setEditing] = useState<{ row: number; col: number } | null>(null);
   // A row being dragged by its handle, and the place it would take if let go now.
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
-  const ordered = doc.nodes.some((n) => n.type === 'device' && n.listOrder != null);
   const tables = useMemo<Table[]>(() => [equipmentTable(doc), cableTable(doc), cableSummaryTable(doc), wiringTable(doc), powerTable(doc), networkTable(doc), checkTable(doc)], [doc]);
   const t = tables[tab];
   // The rows in the order they are shown: while a row is dragged, already where it would go.
@@ -152,8 +151,8 @@ export function ListsPanel() {
           </button>
         ))}
         <span className="grow" />
-        {t.reorder && ordered && (
-          <button title="ドラッグで決めた並びをやめ、カテゴリ・名称順に戻します" onClick={() => useStore.getState().setDoc(clearOrder(useStore.getState().doc))}>
+        {t.reorder && doc.listOrder?.[t.reorder] && (
+          <button title="ドラッグで決めた並びをやめ、この表のいつもの順に戻します" onClick={() => useStore.getState().setDoc(clearOrder(useStore.getState().doc, t.reorder!))}>
             並びを元に戻す
           </button>
         )}
@@ -204,7 +203,7 @@ export function ListsPanel() {
                 {row.map((c, j) => {
                   const edit = editable(t, i, j);
                   // The row number is a handle too: a wider target than the grip alone.
-                  const handle = !!t.reorder && j === 0 && !(t.total && i === t.rows.length - 1);
+                  const handle = !!t.reorder && t.head[j] === 'No' && !(t.total && i === t.rows.length - 1);
                   const cls = [t.numeric?.includes(t.head[j]) ? 'num' : '', edit ? 'editable' : '', handle ? 'handle' : ''].filter(Boolean).join(' ');
                   if (edit && editing?.row === i && editing.col === j)
                     return (

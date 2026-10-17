@@ -4,6 +4,7 @@ import { autoLayout } from './layout';
 import { JUNCTION, freshId, makeEdge, parsePort, presetOf, presetPorts } from './presets';
 import { VIDEO_STANDARDS, currentSignal, customSignals, isBuiltInSignal, isSignal, registerSignals } from './signals';
 import { cableKind } from './standards';
+import { upgradeOrder } from './lists';
 import { upgradeDoc } from './video';
 import type { ColorKey, CustomSignal, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FrameNode, Node, ShapeKind } from './types';
 import { PALETTE } from './signals';
@@ -14,6 +15,8 @@ title: 図のタイトル
 project: 案件名            # 任意
 signals:                   # 任意。このボードだけの信号種別
   - { id: hdbt, label: HDBaseT, prefix: HDB, color: "#0d9488" }
+listOrder:                 # 任意。表の並びを手で決めたとき（equipment / cables / summary / network ごとに id の順）
+  equipment: [pc1, sw1]
 areas:                     # 設置場所の枠（任意）
   - name: 制御室
     rect: [x, y, w, h]     # 省略すると所属機材から自動計算
@@ -114,6 +117,7 @@ export function toYaml(doc: Doc): string {
   if (doc.lengthLabels === false) out.lengthLabels = false;
   if (doc.stackedLabels) out.stackedLabels = true;
   if (doc.hops) out.hops = true;
+  if (doc.listOrder && Object.keys(doc.listOrder).length) out.listOrder = doc.listOrder;
   if (doc.signals?.length) out.signals = doc.signals.map((s) => ({ ...s }));
   if (doc.signalColors) out.colors = doc.signalColors;
 
@@ -136,7 +140,6 @@ export function toYaml(doc: Doc): string {
       put(o, 'vendor', d.vendor);
       put(o, 'ip', d.ip);
       put(o, 'host', d.host);
-      put(o, 'order', d.listOrder);
       put(o, 'watts', d.watts);
       put(o, 'capacity', d.capacity);
       if (d.color && d.color !== 'gray') o.color = d.color;
@@ -250,6 +253,13 @@ const DEFAULT_SIZE: Record<string, [number, number]> = {
  * Build a doc from YAML. Nodes without `pos` keep their position from `prev`
  * (matched by id) unless `relayout`; anything still unplaced is auto-laid-out.
  */
+/** `listOrder: { equipment: [pc1, sw1], … }`: the hand-made order of each list, as ids. */
+function readOrder(v: unknown): Record<string, string[]> | undefined {
+  if (!isObj(v)) return undefined;
+  const out = Object.fromEntries(Object.entries(v).filter(([, ids]) => Array.isArray(ids)).map(([k, ids]) => [k, (ids as unknown[]).map((id) => str(id)).filter(Boolean)]));
+  return Object.keys(out).length ? out : undefined;
+}
+
 export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
   // Reading the YAML registers its own signal types so cables can use them. The registry is
   // global, so it goes back to what it was afterwards, whether or not the YAML was valid: the
@@ -257,7 +267,7 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
   const before = customSignals();
   try {
     // Old type names (hdmi, sdi, dp) anywhere else in it, colours included, come out as 映像.
-    return upgradeDoc(readYaml(src, prev, relayout));
+    return upgradeOrder(upgradeDoc(readYaml(src, prev, relayout)));
   } finally {
     registerSignals(before);
   }
@@ -529,5 +539,5 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   const picked = isObj(root.colors) ? Object.entries(root.colors).filter(([k, v]) => isSignal(k) && HEX.test(str(v))) : null;
   const signalColors = !picked ? prev.signalColors : picked.length ? Object.fromEntries(picked.map(([k, v]) => [k, str(v)])) : undefined;
   // Revision history is not part of the text form; it stays with the board.
-  return { version: 1, id: prev.id, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, revisions: prev.revisions };
+  return { version: 1, id: prev.id, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
 }
