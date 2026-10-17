@@ -424,6 +424,10 @@ function NodePanel({ n }: { n: Node }) {
           <code>participant A as 表示名</code>
           <br />
           <code>note over A: メモ</code>　／　<code>title: 題名</code>
+          <br />
+          <code>loop 3回</code> … <code>end</code>　／　<code>alt 条件</code> … <code>else</code> … <code>end</code>　区切り線
+          <br />
+          Mermaid（<code>sequenceDiagram</code>）や PlantUML（<code>@startuml</code>）のシーケンス図をそのまま貼っても読めます。
         </p>
         <TextStyle n={n} />
         <p className="hint">角をドラッグで大きさを変えられます（列と行の間隔が広がります）。文字を大きくすると、図全体がそれに合わせて大きくなります。</p>

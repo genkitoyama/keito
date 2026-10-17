@@ -262,12 +262,42 @@ function Sequence({ n, theme }: { n: SequenceNode; theme: Theme }) {
   });
   d.items.forEach((it, i) => {
     const y = lifeTop + (i + 1) * step;
-    if (it.kind === 'note') {
-      const w = Math.min(col - 12, measure(it.text, `${text}px ${theme.font}`) + 18 * k);
+    if (it.kind === 'section') {
+      // A block's start (loop, alt …) is a dashed rule with its label; its end a fainter one.
+      const x0 = n.x + 8 * k;
+      const x1 = n.x + dw - 8 * k;
+      if (it.end) {
+        out.push(<line key={`i${i}`} x1={x0} y1={y} x2={x1} y2={y} stroke={'#cbd5e1'} strokeWidth={1} strokeDasharray="2 3" />);
+        return;
+      }
+      const tw = it.text ? measure(it.text, `600 ${text}px ${theme.font}`) + 12 * k : 0;
       out.push(
         <g key={`i${i}`}>
-          <rect x={cx(it.over) - w / 2} y={y - 13 * k} width={w} height={26 * k} fill={'#fef3c7'} stroke={'#eab308'} strokeWidth={1} />
-          <TextBlock x={cx(it.over)} y={y} w={w - 8} text={it.text} size={text} theme={theme} />
+          <line x1={x0} y1={y} x2={x1} y2={y} stroke={'#94a3b8'} strokeWidth={1} strokeDasharray="6 3" />
+          {it.text && (
+            <>
+              <rect x={x0} y={y - 9 * k} width={tw} height={18 * k} rx={3} fill={'#f1f5f9'} stroke={'#94a3b8'} strokeWidth={0.8} />
+              <text x={x0 + 6 * k} y={mid(y, text)} fontFamily={theme.font} fontSize={text} fontWeight={600} fill={'#475569'}>
+                {it.text}
+              </text>
+            </>
+          )}
+        </g>,
+      );
+      return;
+    }
+    if (it.kind === 'note') {
+      // A note over two participants spans them both.
+      const a = cx(it.over);
+      const b = cx(it.to ?? it.over);
+      const span = Math.abs(b - a);
+      const lines = it.text.split('\n').length;
+      const w = Math.max(Math.min(col - 12, measure(it.text, `${text}px ${theme.font}`) + 18 * k), span + col * 0.6 - 12);
+      const h = Math.max(26 * k, lines * text * 1.4 + 10 * k);
+      out.push(
+        <g key={`i${i}`}>
+          <rect x={(a + b) / 2 - w / 2} y={y - h / 2} width={w} height={h} fill={'#fef3c7'} stroke={'#eab308'} strokeWidth={1} />
+          <TextBlock x={(a + b) / 2} y={y} w={w - 8} text={it.text} size={text} theme={theme} />
         </g>,
       );
       return;
@@ -290,10 +320,13 @@ function Sequence({ n, theme }: { n: SequenceNode; theme: Theme }) {
     }
     const a = { x: cx(it.from), y };
     const b = { x: cx(it.to), y };
+    // A lost message ("-x") ends in a cross instead of an arrowhead.
+    const c = 5 * k;
+    const tip = b.x - Math.sign(b.x - a.x) * c;
     out.push(
       <g key={`i${i}`}>
         <line x1={a.x} y1={y} x2={b.x} y2={y} stroke={line} strokeWidth={sw} strokeDasharray={dash} />
-        <polygon points={arrowHead(b, a, 8)} fill={line} />
+        {it.cross ? <path d={`M${tip - c},${y - c} L${tip + c},${y + c} M${tip - c},${y + c} L${tip + c},${y - c}`} stroke={line} strokeWidth={sw * 1.2} /> : <polygon points={arrowHead(b, a, 8)} fill={line} />}
         <TextBlock x={(a.x + b.x) / 2} y={y - 10 * k} w={Math.abs(b.x - a.x) - 12} text={it.text} size={text} theme={theme} />
       </g>,
     );
