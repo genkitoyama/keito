@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type Paper, boardImage, copyPng, pdfHtml, printHtml, toPng } from '../export/exporters';
-import { type Table, cableSummaryTable, cableTable, compact, equipmentTable, networkTable, powerTable, wiringTable } from '../model/lists';
+import { type Table, cableSummaryTable, cableTable, compact, equipmentTable, networkTable, powerTable } from '../model/lists';
 import { subset } from '../model/geometry';
 import { useStore } from '../model/store';
 import { type Doc, latestRev } from '../model/types';
@@ -10,7 +10,6 @@ const LISTS = [
   { key: 'equipment', label: '機材リスト', make: equipmentTable },
   { key: 'cables', label: 'ケーブルリスト', make: cableTable },
   { key: 'summary', label: 'ケーブル集計', make: cableSummaryTable },
-  { key: 'wiring', label: '結線表', make: wiringTable },
   { key: 'power', label: '電源系統', make: powerTable },
   { key: 'network', label: 'ネットワーク', make: networkTable },
 ] as const;

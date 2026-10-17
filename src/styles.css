@@ -1173,16 +1173,6 @@ td a {
   color: var(--sub);
   font-weight: 400;
 }
-/* Wiring list: a line between devices, their names muted on the rows that only repeat them. */
-.lists tr.group-start td {
-  border-top: 2px solid #cbd5e1;
-}
-.lists tr.cont td:nth-child(-n + 2) {
-  color: #b4bfcc;
-}
-.lists tr.free td:nth-child(n + 5) {
-  color: var(--sub);
-}
 /* Check list: what must be fixed in red, what is worth a look in amber. */
 .lists tr.warn td:first-child {
   color: #dc2626;

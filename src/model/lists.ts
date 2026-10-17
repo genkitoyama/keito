@@ -535,54 +535,6 @@ export function compact(t: Table): Table {
   return { ...t, head: pick(t.head), widths: pick(t.widths), rows: t.rows.map(pick) };
 }
 
-/**
- * Wiring by device, as a crew checks it at the back of the rack: every port of every device with
- * the cable on it and where that cable goes, free ports included so spare inputs show.
- */
-export function wiringTable(doc: Doc): Table {
-  const ids = cableIds(doc);
-  const wired = doc.edges.filter((e) => e.signal !== 'flow');
-  // Devices come in the equipment list's hand-made order when it has one.
-  const list = [...devices(doc)].sort(byHand(doc, 'equipment', (d) => [d.id], (a, b) => placeOf(doc, a).localeCompare(placeOf(doc, b), 'ja') || unitsOf(a).name.localeCompare(unitsOf(b).name, 'ja')));
-  const rows: string[][] = [];
-  const refs: string[][] = [];
-  const rowClass: (string | undefined)[] = [];
-  for (const d of list) {
-    const place = placeOf(doc, d);
-    const start = rows.length;
-    const push = (side: string, port: string, signal: string, e: Edge | null, far: { name: string; port: string } | null) => {
-      rows.push([unitsOf(d).name, place, side, port, signalOf(signal).label, e ? (ids.get(e.id) ?? '') : '', far ? far.name : '（空き）', far?.port ?? '', e?.length == null ? '' : String(e.length)]);
-      refs.push(e ? [e.id] : [d.id]);
-      rowClass.push(e ? undefined : 'free');
-    };
-    for (const side of ['left', 'right'] as const) {
-      for (const p of d.ports.filter((q) => q.side === side)) {
-        const io = side === 'left' ? '入力' : '出力';
-        // One row per cable on the port (an outlet may chain on), or one marked free.
-        const on = wired.filter((e) => (e.from.node === d.id && e.from.port === p.id) || (e.to.node === d.id && e.to.port === p.id));
-        if (!on.length) push(io, p.name, p.signal, null, null);
-        for (const e of on) push(io, p.name, e.signal, e, endOf(doc, e.from.node === d.id && e.from.port === p.id ? e.to : e.from));
-      }
-    }
-    // Lines drawn to the device itself rather than to one of its ports.
-    for (const e of wired.filter((x) => (x.from.node === d.id && !x.from.port) || (x.to.node === d.id && !x.to.port))) {
-      push('', '（ポートなし）', e.signal, e, endOf(doc, e.from.node === d.id && !e.from.port ? e.to : e.from));
-    }
-    // The first row of each device draws the line that separates it from the one before; the
-    // rows after it mute the device's name, which they only repeat for the CSV.
-    for (let i = start; i < rows.length; i++) rowClass[i] = [rowClass[i], i === start ? 'group-start' : 'cont'].filter(Boolean).join(' ');
-  }
-  return {
-    title: '結線表',
-    head: ['機材', '設置場所', '入出力', 'ポート', '種別', 'ケーブルID', '接続先', '接続先ポート', '長さ(m)'],
-    widths: [18, 12, 6, 12, 9, 10, 18, 12, 7],
-    rows,
-    refs,
-    rowClass,
-    numeric: ['長さ(m)'],
-  };
-}
-
 /** Problems worth fixing before the drawing goes out, most serious first; each row selects what it is about. */
 export function checkTable(doc: Doc): Table {
   const found: { level: 0 | 1; what: string; target: string; detail: string; ref: string[] }[] = [];
