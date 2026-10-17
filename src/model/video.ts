@@ -1,24 +1,6 @@
 import { VIDEO_STANDARDS } from './signals';
-import type { Doc, Edge, EdgeEnd, Node, Port, UserPreset } from './types';
-
-const STANDARD = /(?:^|[^a-z0-9])((?:\d+g-?)?sdi|hdmi|displayport|dp|dvi|vga)(?![a-z0-9])/i;
-
-/** The video standard named in a piece of text, as its cable IDs are headed: HDMI, SDI, DP … */
-export function standardIn(text: string | undefined): string | null {
-  const m = text ? STANDARD.exec(text) : null;
-  if (!m) return null;
-  const s = m[1].toUpperCase();
-  return s.endsWith('SDI') ? 'SDI' : s === 'DISPLAYPORT' ? 'DP' : s;
-}
-
-const portName = (nodes: Node[], end: EdgeEnd): string | undefined => {
-  const n = nodes.find((x) => x.id === end.node);
-  return n?.type === 'device' ? n.ports.find((p) => p.id === end.port)?.name : undefined;
-};
-
-/** What standard a video cable is: its spec says, else the ports at its ends do ("HDMI OUT"). */
-export const videoStandard = (nodes: Node[], e: Edge): string | null =>
-  standardIn(e.spec) ?? standardIn(portName(nodes, e.from)) ?? standardIn(portName(nodes, e.to));
+import { cableKind } from './standards';
+import type { Doc, Edge, Node, Port, UserPreset } from './types';
 
 const legacy = (id: string): boolean => Object.prototype.hasOwnProperty.call(VIDEO_STANDARDS, id);
 
@@ -31,7 +13,7 @@ const upgradePorts = (ports: Port[]): Port[] => (ports.some((p) => legacy(p.sign
  */
 export function upgradeEdge(nodes: Node[], e: Edge): Edge {
   if (!legacy(e.signal)) return e;
-  const told = !!e.spec?.trim() || !!videoStandard(nodes, e);
+  const told = !!e.spec?.trim() || !!cableKind(nodes, { ...e, signal: 'video' });
   return { ...e, signal: 'video', spec: told ? e.spec : VIDEO_STANDARDS[e.signal] };
 }
 

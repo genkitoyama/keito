@@ -3,7 +3,8 @@ import { docBounds, frameOf } from './geometry';
 import { autoLayout } from './layout';
 import { JUNCTION, freshId, makeEdge, parsePort, presetOf, presetPorts } from './presets';
 import { VIDEO_STANDARDS, currentSignal, customSignals, isBuiltInSignal, isSignal, registerSignals } from './signals';
-import { upgradeDoc, videoStandard } from './video';
+import { cableKind } from './standards';
+import { upgradeDoc } from './video';
 import type { ColorKey, CustomSignal, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FrameNode, Node, ShapeKind } from './types';
 import { PALETTE } from './signals';
 
@@ -40,7 +41,8 @@ cables:
   - from: pc1.HDMI 1       # 機材ID.ポート名（無いポートは自動追加。同じ名前のポートが複数あるときは IN#2 のように何番目かを付ける）
     to: pj1.HDMI
     type: video            # video(映像) lan usb audio power fiber dmx serial wireless other、または signals で足した種別。
-                           # 映像の規格(HDMI / SDI …)は spec かポート名で。ケーブルIDは HDMI-01 のように規格から付く
+                           # 映像の規格(HDMI / SDI …)や音声のコネクタ(XLR / TRS …)は spec かポート名で。
+                           # ケーブルIDは HDMI-01 / XLR-01 のようにそこから付く
     cableId: V-01          # 任意。ケーブルIDを手で決める（省略で自動採番）。showId / showLength: false でラベルから隠す。stacked: true で項目を 1 行ずつに
     spec: 光 HDMI AOC      # 任意。品名・規格（線のラベルに出る）。maker / model / url も書ける
     length: 10             # m、任意
@@ -439,7 +441,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (typeof v.showLength === 'boolean') e.showLength = v.showLength;
     if (typeof v.stacked === 'boolean') e.stacked = v.stacked;
     e.spec = str(v.spec) || undefined;
-    if (named && !e.spec && !videoStandard(nodes, e)) e.spec = named;
+    if (named && !e.spec && !cableKind(nodes, e)) e.spec = named;
     e.maker = str(v.maker) || undefined;
     e.model = str(v.model) || undefined;
     e.url = str(v.url) || undefined;

@@ -1,7 +1,7 @@
 import { frameOf } from './geometry';
 import { allSignals, signalOf } from './signals';
 import { safeUrl } from './url';
-import { videoStandard } from './video';
+import { cableKind } from './standards';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node } from './types';
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
@@ -26,8 +26,8 @@ export function cableIds(doc: Doc): Map<string, string> {
   for (const e of doc.edges) {
     const s = signalOf(e.signal);
     if (!s.cable) continue;
-    // Video cables are numbered by their standard (HDMI-01, SDI-01), VID-01 when none is told.
-    const prefix = (s.id === 'video' && videoStandard(doc.nodes, e)) || s.prefix;
+    // Video and audio cables are numbered by their kind (HDMI-01, XLR-01), VID / AUD when none is told.
+    const prefix = cableKind(doc.nodes, e) ?? s.prefix;
     const n = (counters.get(prefix) ?? 0) + 1;
     counters.set(prefix, n);
     // A hand-typed ID replaces the automatic one; the numbering of the others is unaffected.
