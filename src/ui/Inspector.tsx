@@ -6,10 +6,11 @@ import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
 import { cableIds, colourKey, idShown, ipIssues, labelStacked, lengthShown, quantityOf, unitsOf } from '../model/lists';
 import { PRESETS, SOFTWARE, freshId } from '../model/presets';
 import { type BoardKind, KINDS, KIND_ORDER, kindOf } from '../model/kinds';
+import { ROLE_LABEL, placeRegion, regionOf } from '../model/screens';
 import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
-import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type ShapeKind } from '../model/types';
+import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type Rect, type ScreenSpec, type ShapeKind } from '../model/types';
 import { FILLS, FillPreview, SHAPES, sizesFor } from './icons';
 import { textHeightFor, textWeight } from '../canvas/render';
 import { useShallow } from 'zustand/react/shallow';
@@ -455,6 +456,67 @@ function MmField({ label, value, onCommit }: { label: string; value: string; onC
   );
 }
 
+/**
+ * A canvas or an output on a screen layout board: its region in content pixels (where it sits on
+ * its canvas), the output's own resolution, and what feeds it.
+ */
+function ScreenFields({ n, screen }: { n: Extract<Node, { type: 'shape' }>; screen: ScreenSpec }) {
+  const doc = useStore((s) => s.doc);
+  const r = regionOf(doc, n);
+  const st = useStore.getState;
+  const place = (part: Partial<Rect>) => st().updateNode(n.id, placeRegion(st().doc, n, part), true);
+  const set = (p: Partial<ScreenSpec>) => st().updateNode(n.id, { screen: { ...screen, ...p } }, true);
+  const num = (v: string) => Math.round(Number(v.normalize('NFKC')));
+  const canvas = screen.role === 'canvas';
+  const [native, setNative] = useState<string | null>(null);
+  const shownNative = screen.native ? `${screen.native[0]}×${screen.native[1]}` : '';
+  return (
+    <>
+      <label className="field">
+        <span>種類</span>
+        <select value={screen.role} onChange={(e) => set({ role: e.target.value as ScreenSpec['role'] })}>
+          {(Object.keys(ROLE_LABEL) as ScreenSpec['role'][]).map((k) => (
+            <option key={k} value={k}>
+              {ROLE_LABEL[k]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {!canvas && (
+        <div className="grid2">
+          <MmField label="X (px)" value={String(r.x)} onCommit={(v) => place({ x: num(v) })} />
+          <MmField label="Y (px)" value={String(r.y)} onCommit={(v) => place({ y: num(v) })} />
+        </div>
+      )}
+      <div className="grid2">
+        <MmField label="幅 (px)" value={String(r.w)} onCommit={(v) => place({ w: num(v) })} />
+        <MmField label="高さ (px)" value={String(r.h)} onCommit={(v) => place({ h: num(v) })} />
+      </div>
+      {!canvas && (
+        <>
+          <label className="field">
+            <span>機器の解像度（領域と違うとき。例: 1920x1080）</span>
+            <input
+              value={native ?? shownNative}
+              placeholder={`${r.w}×${r.h}（領域どおり）`}
+              onFocus={() => setNative(shownNative)}
+              onChange={(e) => setNative(e.target.value)}
+              onBlur={() => {
+                const m = /^(\d+)\s*[x×*]\s*(\d+)$/i.exec((native ?? '').normalize('NFKC').trim());
+                if (native !== null && native !== shownNative) set({ native: m ? [Number(m[1]), Number(m[2])] : undefined });
+                setNative(null);
+              }}
+            />
+          </label>
+          {screen.native && <p className="hint">拡大率 {Math.round((screen.native[0] / r.w) * 100)}%（領域 {r.w}px → 機器 {screen.native[0]}px）</p>}
+          <Field label="送出元（PC・出力端子）" placeholder="例: PC1 HDMI 1" value={screen.output ?? ''} onChange={(v) => st().updateNode(n.id, { screen: { ...screen, output: v || undefined } })} />
+        </>
+      )}
+      {canvas && <p className="hint">この上に出力を並べると、出力の位置がこのキャンバス上の座標（左上が 0, 0）になります。</p>}
+    </>
+  );
+}
+
 /** Width and depth of a shape in millimetres, by the board's scale; and turning it a quarter round. */
 function RealSize({ n }: { n: Extract<Node, { type: 'shape' }> }) {
   const scale = useStore((s) => s.doc.scale || 100);
@@ -617,7 +679,8 @@ function NodePanel({ n }: { n: Node }) {
     <>
       <h3>{n.type === 'shape' ? '図形' : n.type === 'sticky' ? '付箋' : n.type === 'frame' ? 'エリア枠' : 'テキスト'} <code>{n.id}</code></h3>
       <Field label={n.type === 'frame' ? 'エリア名（機材リストの設置場所になります）' : 'テキスト'} value={n.text} onChange={(v) => patch({ text: v })} multiline={n.type !== 'frame'} />
-      {n.type === 'shape' && (layout || n.dims) && <RealSize n={n} />}
+      {n.type === 'shape' && n.screen && <ScreenFields n={n} screen={n.screen} />}
+      {n.type === 'shape' && !n.screen && (layout || n.dims) && <RealSize n={n} />}
       {n.type === 'shape' && (
         <label className="field">
           <span>形</span>

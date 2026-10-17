@@ -29,7 +29,8 @@ import { STRONG } from '../model/signals';
 import { copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
-import { EdgeView, HopCaps, INK, NodeView, SCREEN, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
+import { canvasOf, isOutput, isScreen } from '../model/screens';
+import { EdgeView, HopCaps, INK, NodeView, SCREEN, ScreenOverlaps, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
@@ -307,11 +308,15 @@ export function Canvas() {
     for (const m of now.nodes) {
       if (!ids.has(m.id)) continue;
       orig.set(m.id, { x: m.x, y: m.y });
-      // A frame carries along whatever sits inside it.
+      // A frame carries along whatever sits inside it, and a screen board's canvas its outputs
+      // (which keep their regions so).
       if (m.type === 'frame') {
         for (const c of now.nodes) {
           if (c.id !== m.id && contains(m, center(nodeRect(c)))) orig.set(c.id, { x: c.x, y: c.y });
         }
+      }
+      if (isScreen(m) && m.screen.role === 'canvas') {
+        for (const c of now.nodes) if (isOutput(c) && canvasOf(now, c)?.id === m.id) orig.set(c.id, { x: c.x, y: c.y });
       }
     }
     // Hand-placed bends travel with a cable when both of its ends are being moved.
@@ -738,6 +743,7 @@ export function Canvas() {
           })}
           <HopCaps doc={doc} theme={SCREEN} />
           {others.map(nodeGroup)}
+          <ScreenOverlaps doc={doc} theme={SCREEN} />
 
           {preview && handleNode && hoverSide && (
             <g pointerEvents="none" opacity={0.55}>

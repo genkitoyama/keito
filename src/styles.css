@@ -1507,6 +1507,9 @@ body.row-dragging .lists td.editable:hover {
 .kind-badge.layout {
   background: #c2410c;
 }
+.kind-badge.screen {
+  background: #db2777;
+}
 .kind-badge.free {
   background: #64748b;
 }

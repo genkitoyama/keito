@@ -4,6 +4,7 @@ import { insertImages, insertNode, viewCenter } from '../canvas/Canvas';
 import { intersects, isUnderlay, nodeRect, snap } from '../model/geometry';
 import { COMMON, FURNITURE, type Furniture, PRESETS, type Preset, SOFTWARE, allIds, freshId, makeDevice, makeFurniture, makeLegend } from '../model/presets';
 import { kindOf } from '../model/kinds';
+import { SCREENS, type ScreenPreset, isOutput, isScreen, makeScreen, pxRatio } from '../model/screens';
 import type { DeviceNode, UserPreset } from '../model/types';
 import { type Tool, useStore } from '../model/store';
 import { getSetting, setSetting } from '../platform/storage';
@@ -75,6 +76,60 @@ function addFurniture(f: Furniture) {
   s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, { ...n, x, y }] }));
   s.select([n.id]);
   s.setTool('select');
+}
+
+function addScreen(p: ScreenPreset) {
+  const s = useStore.getState();
+  const c = viewCenter();
+  const n = makeScreen(p, 0, 0, allIds(s.doc), pxRatio(s.doc));
+  // An output goes on the canvas under the view's centre if there is one, at its top-left free spot.
+  let x = snap(c.x - n.w / 2);
+  let y = snap(c.y - n.h / 2);
+  const canvas = p.role !== 'canvas' ? s.doc.nodes.find((o) => isScreen(o) && o.screen.role === 'canvas' && c.x >= o.x && c.x <= o.x + o.w && c.y >= o.y && c.y <= o.y + o.h) : undefined;
+  if (canvas) {
+    x = canvas.x;
+    y = canvas.y;
+    const outs = s.doc.nodes.filter(isOutput).map(nodeRect);
+    // Next to the outputs already there, left to right, then a row down.
+    for (let i = 0; i < 60 && outs.some((r) => intersects(r, { x: x + 0.5, y: y + 0.5, w: n.w - 1, h: n.h - 1 })); i++) {
+      x += n.w;
+      if (x + n.w > canvas.x + canvas.w + 0.5) {
+        x = canvas.x;
+        y += n.h;
+      }
+    }
+  }
+  // A canvas goes beneath everything, so it never takes the clicks meant for the outputs on it.
+  s.mutate((doc) => ({ ...doc, nodes: p.role === 'canvas' ? [{ ...n, x, y }, ...doc.nodes] : [...doc.nodes, { ...n, x, y }] }));
+  s.select([n.id]);
+  s.setTool('select');
+}
+
+/** Canvases and outputs for screen layout boards, in content pixels. */
+function ScreenLibrary() {
+  const cats = [...new Set(SCREENS.map((p) => p.category))];
+  return (
+    <div className="library">
+      <div className="library-list">
+        {cats.map((c) => (
+          <div key={c} className="library-cat">
+            <div className="library-head static">
+              <span className="name">{c}</span>
+            </div>
+            {SCREENS.filter((p) => p.category === c).map((p) => (
+              <button key={p.key} className="item" onClick={() => addScreen(p)}>
+                <span className="label">{p.name}</span>
+                <small>
+                  {p.w} × {p.h}
+                </small>
+              </button>
+            ))}
+          </div>
+        ))}
+        <p className="library-note">まずキャンバス（コンテンツ全体）を置き、その上に出力を並べます。出力はキャンバスの左上から順に詰めて置かれます。数値は px。</p>
+      </div>
+    </div>
+  );
 }
 
 /** Furniture for layout boards, by category, each in its real size. */
@@ -269,7 +324,7 @@ export function Toolbar() {
           </>
         )}
       </nav>
-      {panel === 'library' && kind.library && (kind.library.set === 'furniture' ? <FurnitureLibrary /> : <Library />)}
+      {panel === 'library' && kind.library && (kind.library.set === 'furniture' ? <FurnitureLibrary /> : kind.library.set === 'screens' ? <ScreenLibrary /> : <Library />)}
     </>
   );
 }

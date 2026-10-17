@@ -6,14 +6,15 @@ import { VIDEO_STANDARDS, currentSignal, customSignals, isBuiltInSignal, isSigna
 import { cableKind } from './standards';
 import { upgradeOrder } from './lists';
 import { upgradeDoc } from './video';
-import type { ColorKey, CustomSignal, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FrameNode, Node, ShapeKind } from './types';
+import type { ColorKey, CustomSignal, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FrameNode, Node, ScreenSpec, ShapeKind } from './types';
 import { PALETTE } from './signals';
 
 /** Schema reference shown in the editor and given to the AI. */
 export const DSL_GUIDE = `# keito YAML 書式
 title: 図のタイトル
-kind: system               # 任意。ボードの種類 system（システム図）/ software（ソフトウェア構成図）/ sequence / layout（配置図）/ free
+kind: system               # 任意。ボードの種類 system（システム図）/ software（ソフトウェア構成図）/ sequence / layout（配置図）/ screen（画面レイアウト図）/ free
                            # 配置図は 1 m = 100（pos・size の単位）。shapes の dims: true で寸法を表示、images の under: true で下敷き
+                           # 画面レイアウト図は pos・size × 4 = コンテンツの px。shapes に screen: { role: canvas|display|projector|led, native: [1920, 1080], output: PC1 HDMI 1 }
 project: 案件名            # 任意
 signals:                   # 任意。このボードだけの信号種別
   - { id: hdbt, label: HDBaseT, prefix: HDB, color: "#0d9488" }
@@ -193,6 +194,7 @@ export function toYaml(doc: Doc): string {
         if (s.fill && s.fill !== 'tint') o.fill = s.fill;
         if (s.dash) o.dash = true;
         if (s.dims) o.dims = true;
+        if (s.screen) o.screen = { ...s.screen };
       }
       o.pos = [r(s.x), r(s.y)];
       o.size = [r(s.w), r(s.h)];
@@ -261,6 +263,14 @@ const DEFAULT_SIZE: Record<string, [number, number]> = {
  * Build a doc from YAML. Nodes without `pos` keep their position from `prev`
  * (matched by id) unless `relayout`; anything still unplaced is auto-laid-out.
  */
+/** `screen: { role, native, output }` on a shape of a screen layout board. */
+function readScreen(v: unknown): ScreenSpec | undefined {
+  if (!isObj(v)) return undefined;
+  const role = ['canvas', 'display', 'projector', 'led'].includes(str(v.role)) ? (str(v.role) as ScreenSpec['role']) : 'display';
+  const native = nums(v.native, 2);
+  return { role, ...(native ? { native: [native[0], native[1]] as [number, number] } : {}), ...(str(v.output) ? { output: str(v.output) } : {}) };
+}
+
 /** `listOrder: { equipment: [pc1, sw1], … }`: the hand-made order of each list, as ids. */
 function readOrder(v: unknown): Record<string, string[]> | undefined {
   if (!isObj(v)) return undefined;
@@ -371,7 +381,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     else if (kind === 'text') nodes.push({ ...base, type: 'text', fontSize, bold });
     else {
       const fill = ['solid', 'outline', 'none'].includes(str(v.fill)) ? (str(v.fill) as FillStyle) : undefined;
-      nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined, dims: v.dims === true || undefined, fontSize, bold });
+      nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined, dims: v.dims === true || undefined, screen: readScreen(v.screen), fontSize, bold });
     }
     if (v.area) areaHint.set(id, str(v.area));
   });
@@ -551,7 +561,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   const picked = isObj(root.colors) ? Object.entries(root.colors).filter(([k, v]) => isSignal(k) && HEX.test(str(v))) : null;
   const signalColors = !picked ? prev.signalColors : picked.length ? Object.fromEntries(picked.map(([k, v]) => [k, str(v)])) : undefined;
   // Revision history is not part of the text form; it stays with the board.
-  const KIND_IDS = ['system', 'software', 'sequence', 'layout', 'free'];
+  const KIND_IDS = ['system', 'software', 'sequence', 'layout', 'screen', 'free'];
   const kind = typeof root.kind === 'string' && KIND_IDS.includes(root.kind) ? (root.kind === 'system' ? undefined : (root.kind as Doc['kind'])) : prev.kind;
   return { version: 1, id: prev.id, kind, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
 }

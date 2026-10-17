@@ -11,7 +11,7 @@ import type { Doc } from './types';
 export type BoardKind = NonNullable<Doc['kind']>;
 
 /** The lists a board can have, by key (see lists.ts). */
-export type ListKey = 'equipment' | 'cables' | 'summary' | 'power' | 'network' | 'comms' | 'fixtures' | 'check';
+export type ListKey = 'equipment' | 'cables' | 'summary' | 'power' | 'network' | 'comms' | 'fixtures' | 'outputs' | 'check';
 
 export interface KindSpec {
   id: BoardKind;
@@ -20,7 +20,7 @@ export interface KindSpec {
   hint: string;
   tools: Tool[];
   /** The library at the side, and what its items are called; none on a board without one. */
-  library: { label: string; search: string; set: 'equipment' | 'software' | 'furniture' } | null;
+  library: { label: string; search: string; set: 'equipment' | 'software' | 'furniture' | 'screens' } | null;
   /** The types a line (or a port) can take on this board. */
   lines: (s: Signal) => boolean;
   /** Lists in the order shown; none, no lists button. */
@@ -78,6 +78,17 @@ export const KINDS: Record<BoardKind, KindSpec> = {
     listsLabel: '配置物一覧',
     cableOptions: false,
   },
+  screen: {
+    id: 'screen',
+    label: '画面レイアウト図',
+    hint: 'LED・モニター・プロジェクターの解像度と並び、コンテンツのどの領域をどの出力に送るか',
+    tools: ['select', 'pan', 'rect', 'sticky', 'text', 'frame'],
+    library: { label: '画面', search: '画面を検索…', set: 'screens' },
+    lines: (s) => s.id === 'flow',
+    lists: ['outputs'],
+    listsLabel: '出力一覧',
+    cableOptions: false,
+  },
   free: {
     id: 'free',
     label: '自由ボード',
@@ -91,6 +102,6 @@ export const KINDS: Record<BoardKind, KindSpec> = {
   },
 };
 
-export const KIND_ORDER: BoardKind[] = ['system', 'software', 'sequence', 'layout', 'free'];
+export const KIND_ORDER: BoardKind[] = ['system', 'software', 'sequence', 'layout', 'screen', 'free'];
 
 export const kindOf = (doc: Pick<Doc, 'kind'>): KindSpec => KINDS[doc.kind ?? 'system'] ?? KINDS.system;

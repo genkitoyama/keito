@@ -39,6 +39,18 @@ export interface ShapeNode extends Base {
   dash?: boolean;
   /** Drawn to scale (furniture on a layout board): shows its real size, by the board's scale. */
   dims?: boolean;
+  /**
+   * On a screen layout board: the content canvas, or an output showing a region of it. The region
+   * is where the shape sits (by the board's pixel ratio); `native` is the output's own resolution.
+   */
+  screen?: ScreenSpec;
+}
+export interface ScreenSpec {
+  role: 'canvas' | 'display' | 'projector' | 'led';
+  /** The output's own resolution in px, when it differs from the region it shows (scaled). */
+  native?: [number, number];
+  /** What feeds it: "PC1 HDMI 1", "LED プロセッサ 出力 1". */
+  output?: string;
 }
 export interface StickyNode extends Base {
   type: 'sticky';
@@ -222,9 +234,11 @@ export interface Doc {
   version: 1;
   id: string;
   /** What the board is (system, software, sequence, free; see kinds.ts); unset is a system board. */
-  kind?: 'system' | 'software' | 'sequence' | 'free' | 'layout';
+  kind?: 'system' | 'software' | 'sequence' | 'free' | 'layout' | 'screen';
   /** Layout boards: how many px of the board make one metre (default 100: a grid step is 10 cm). */
   scale?: number;
+  /** Screen layout boards: content pixels per pixel of the board (default 4). */
+  pxScale?: number;
   meta: DocMeta;
   nodes: Node[];
   edges: Edge[];

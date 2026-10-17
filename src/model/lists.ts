@@ -3,6 +3,7 @@ import { allSignals, signalOf } from './signals';
 import { safeUrl } from './url';
 import { cableKind } from './standards';
 import type { ListKey } from './kinds';
+import { ROLE_LABEL, isOutput, overlaps, regionOf } from './screens';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node } from './types';
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
@@ -690,6 +691,32 @@ export function fixturesTable(doc: Doc): Table {
   };
 }
 
+/**
+ * Outputs of a screen layout board: each output's region of the canvas in content pixels, its own
+ * resolution and how much the region is scaled to fit it, what feeds it, and what it overlaps.
+ */
+export function outputsTable(doc: Doc): Table {
+  const blends = overlaps(doc);
+  const outs = doc.nodes.filter(isOutput).sort(byHand(doc, 'outputs', (n) => [n.id], (a, b) => a.y - b.y || a.x - b.x));
+  return {
+    title: '出力一覧',
+    head: ['名称', '種類', '送出元', 'X', 'Y', '幅', '高さ', '機器の解像度', '拡大率', '重なり'],
+    widths: [16, 9, 16, 6, 6, 6, 6, 11, 7, 18],
+    rows: outs.map((n) => {
+      const r = regionOf(doc, n);
+      const native = n.screen.native;
+      const scale = native ? `${Math.round((native[0] / r.w) * 100)}%` : '';
+      const with_ = blends.filter((o) => o.a.id === n.id || o.b.id === n.id).map((o) => `${oneLine((o.a.id === n.id ? o.b : o.a).text)} ${o.px.w}×${o.px.h}`);
+      return [oneLine(n.text), ROLE_LABEL[n.screen.role], n.screen.output ?? '', String(r.x), String(r.y), String(r.w), String(r.h), native ? `${native[0]}×${native[1]}` : '', scale, with_.join(' / ')];
+    }),
+    refs: outs.map((n) => [n.id]),
+    numeric: ['X', 'Y', '幅', '高さ', '拡大率'],
+    reorder: 'outputs',
+    empty: '画面ライブラリからキャンバスを置き、その上にディスプレイやプロジェクターを並べると、ここに出力ごとの領域が並びます。',
+    edit: { 名称: { on: 'node', field: 'text' } },
+  };
+}
+
 /** Every list there is, by the key boards name them by (see kinds.ts). */
 export const TABLES: Record<ListKey, { label: string; make: (doc: Doc) => Table }> = {
   equipment: { label: '機材リスト', make: (doc) => equipmentTable(doc) },
@@ -699,5 +726,6 @@ export const TABLES: Record<ListKey, { label: string; make: (doc: Doc) => Table 
   network: { label: 'ネットワーク', make: networkTable },
   comms: { label: '通信一覧', make: commsTable },
   fixtures: { label: '配置物一覧', make: fixturesTable },
+  outputs: { label: '出力一覧', make: outputsTable },
   check: { label: 'チェック', make: checkTable },
 };

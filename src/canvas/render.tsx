@@ -6,6 +6,7 @@ import { cableIds, idShown, ipIssues, labelStacked, lengthShown, powerLoads } fr
 import { SEQ, SEQ_TEXT, parseSequence, seqLayout, seqScale } from '../model/sequence';
 import { PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { MONO_FONT, UI_FONT, measure, wrapText } from '../model/text';
+import { overlaps, regionOf } from '../model/screens';
 import { safeUrl } from '../model/url';
 import type { DeviceNode, Doc, Edge, Node, Pt, Rect, SequenceNode } from '../model/types';
 import { assetUrl } from '../platform/storage';
@@ -500,10 +501,31 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
         const rx = n.shape === 'round' ? h / 2 : 4;
         body = <rect x={x} y={y} width={w} height={h} rx={rx} {...paint} />;
       }
-      // Furniture drawn to scale says how big it really is, under its name.
-      const dims = n.dims && doc ? `${mm(doc, w)} × ${mm(doc, h)}` : '';
+      // Furniture drawn to scale says how big it really is, under its name; a screen, its region
+      // of the canvas in content pixels (and its own resolution when that differs).
+      const region = n.screen && doc ? regionOf(doc, n) : null;
+      const dims = region
+        ? n.screen!.role === 'canvas'
+          ? `${region.w} × ${region.h}`
+          : `${region.x}, ${region.y}　${region.w} × ${region.h}${n.screen!.native ? `（機器 ${n.screen!.native[0]}×${n.screen!.native[1]}）` : ''}`
+        : n.dims && doc
+          ? `${mm(doc, w)} × ${mm(doc, h)}`
+          : '';
       const named = n.text.trim() !== '';
       const caption = Math.min(10.5, textSize(n) * 0.8);
+      // A canvas lies under its outputs: its name and size go above its top-left corner instead.
+      if (n.screen?.role === 'canvas')
+        return (
+          <g>
+            {body}
+            <text x={x} y={y - 6} fontFamily={theme.font} fontSize={textSize(n)} fontWeight={600} fill={'#475569'}>
+              {n.text}
+              <tspan fontWeight={400} fill={'#64748b'} dx={8}>
+                {dims}
+              </tspan>
+            </text>
+          </g>
+        );
       return (
         <g>
           {body}
@@ -723,6 +745,30 @@ export function HopCaps({ doc, theme }: { doc: Doc; theme: Theme }) {
   );
 }
 
+/** Where outputs cover the same content (a projector blend, or a mistake): hatched, with its size in px. */
+export function ScreenOverlaps({ doc, theme }: { doc: Doc; theme: Theme }) {
+  if (doc.kind !== 'screen') return null;
+  const list = overlaps(doc);
+  if (!list.length) return null;
+  return (
+    <g pointerEvents="none">
+      <defs>
+        <pattern id="blend-hatch" width={8} height={8} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+          <line x1={0} y1={0} x2={0} y2={8} stroke="#dc2626" strokeWidth={2} strokeOpacity={0.45} />
+        </pattern>
+      </defs>
+      {list.map((o) => (
+        <g key={`${o.a.id}-${o.b.id}`}>
+          <rect x={o.board.x} y={o.board.y} width={o.board.w} height={o.board.h} fill="url(#blend-hatch)" stroke="#dc2626" strokeWidth={1} strokeDasharray="4 3" />
+          <text x={o.board.x + o.board.w / 2} y={o.board.y + o.board.h - 6} textAnchor="middle" fontFamily={theme.font} fontSize={10} fontWeight={600} fill="#b91c1c">
+            {`重なり ${o.px.w}×${o.px.h}`}
+          </text>
+        </g>
+      ))}
+    </g>
+  );
+}
+
 export function DocView({ doc, theme }: { doc: Doc; theme: Theme }) {
   return (
     <g>
@@ -731,6 +777,7 @@ export function DocView({ doc, theme }: { doc: Doc; theme: Theme }) {
       {(doc.hops ? hopOrder(doc) : doc.edges).map((e) => <EdgeView key={e.id} doc={doc} e={e} theme={theme} />)}
       <HopCaps doc={doc} theme={theme} />
       {doc.nodes.filter((n) => n.type !== 'frame' && !isUnderlay(n)).map((n) => <NodeView key={n.id} n={n} theme={theme} doc={doc} />)}
+      <ScreenOverlaps doc={doc} theme={theme} />
     </g>
   );
 }
