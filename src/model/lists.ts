@@ -196,7 +196,7 @@ export function colourKey(doc: Doc): Map<string, string> {
   return [...out.keys()].filter((c) => used.has(c as never)).length >= 2 ? out : new Map();
 }
 
-/** One row per distinct model (or name, for devices without one) and group, with a quantity. */
+/** One row per distinct device (same name, maker and model) and group, with a quantity. */
 export function equipmentTable(doc: Doc, withUrl = true): Table {
   const key = colourKey(boardOf(doc));
   // A supplier typed on the device wins over what its colour stands for.
@@ -204,7 +204,9 @@ export function equipmentTable(doc: Doc, withUrl = true): Table {
   const groups = new Map<string, { d: DeviceNode; ids: string[]; names: Set<string>; places: Set<string>; count: number; watts: number | null }>();
   for (const d of devices(doc)) {
     const q = unitsOf(d);
-    const id = `${groupOf(d)}|${d.category}|${d.model ? `${d.maker}|${d.model}` : `|${q.name}`}`;
+    // Devices share a row only when they are the same thing under the same name: PC1 and PC2 of
+    // one model stay apart, so each can be edited (and counted) on its own row.
+    const id = `${groupOf(d)}|${d.category}|${q.name}|${d.maker}|${d.model}`;
     const place = placeOf(doc, d);
     const g = groups.get(id) ?? { d, ids: [], names: new Set<string>(), places: new Set<string>(), count: 0, watts: null };
     g.ids.push(d.id);
