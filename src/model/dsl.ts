@@ -32,6 +32,7 @@ devices:
     note: 備考             # 任意
     watts: 120             # 任意。消費電力(W)
     capacity: 900          # 任意。UPS・電源タップが給電できる容量(W)
+    price: 120000          # 任意。単価（円）。機材リストで数量を掛けて金額になる
     qty: 2                 # 任意。この 1 枠が表す台数（省略時は名前末尾の「x2」、なければ 1）
     vendor: 手配先          # 任意。手配先・担当（機材リストの「区分」になる）
     ip: 192.168.0.10       # 任意。IP アドレス / host でホスト名（ネットワーク表に出る）
@@ -140,6 +141,7 @@ export function toYaml(doc: Doc): string {
       put(o, 'vendor', d.vendor);
       put(o, 'ip', d.ip);
       put(o, 'host', d.host);
+      put(o, 'price', d.price);
       put(o, 'watts', d.watts);
       put(o, 'capacity', d.capacity);
       if (d.color && d.color !== 'gray') o.color = d.color;
@@ -343,6 +345,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
       vendor: str(v.vendor) || undefined,
       ip: str(v.ip) || undefined,
       host: str(v.host) || undefined,
+      price: typeof v.price === 'number' ? v.price : undefined,
       listOrder: typeof v.order === 'number' ? v.order : undefined,
     });
     if (v.area) areaHint.set(id, str(v.area));

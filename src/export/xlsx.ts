@@ -29,14 +29,33 @@ function choices(doc: Doc): Record<string, string[]> {
       .map((s) => s.label),
     カテゴリ: [...uniq([...devices.map((d) => d.category), ...PRESETS.map((p) => p.category)]).filter((c) => c !== 'その他').sort((a, b) => a.localeCompare(b, 'ja')), 'その他'],
     区分: uniq([...colourKey(doc).values(), ...devices.map((d) => d.vendor ?? '')]),
+    [STATUS]: STATUSES,
   };
 }
 
 /** Which columns of which list take a dropdown. */
 const DROPDOWNS: Record<string, string[]> = {
-  機材リスト: ['区分', 'カテゴリ'],
+  機材リスト: ['区分', 'カテゴリ', '購入ステータス'],
   ケーブルリスト: ['種別'],
 };
+
+/**
+ * Purchase status is kept in the spreadsheet, not on the board: it changes daily while the gear
+ * is ordered, and two places to keep it would drift apart. The column comes empty, with a list.
+ */
+const STATUS = '購入ステータス';
+const STATUSES = ['未定', '見積中', '発注済', '納品済', '既存', 'レンタル'];
+
+/** Columns summed in a total row with a formula, so totals follow edits made in the sheet. */
+const SUMMED = ['数量', '金額(円)', '消費電力(W)', '長さ(m)', '本数', '合計長(m)'];
+const YEN = ['単価(円)', '金額(円)'];
+
+/** The list with an empty column put in after another one. */
+function withColumn(t: Table, after: string, head: string): Table {
+  const at = t.head.indexOf(after) + 1;
+  const put = <T,>(xs: T[], x: T): T[] => [...xs.slice(0, at), x, ...xs.slice(at)];
+  return { ...t, head: put(t.head, head), widths: put(t.widths, 10), rows: t.rows.map((r) => put(r, '')) };
+}
 
 function writeSheet(ws: Worksheet, t: Table, doc: Doc, lists: Map<string, string>): void {
   const cols = t.head.length;
@@ -58,6 +77,11 @@ function writeSheet(ws: Worksheet, t: Table, doc: Doc, lists: Map<string, string
   head.height = 20;
 
   const urlCol = t.head.indexOf('URL');
+  const col = (h: string): string => (t.head.includes(h) ? ws.getColumn(t.head.indexOf(h) + 1).letter : '');
+  const qty = col('数量');
+  const unit = col('単価(円)');
+  const first = HEAD_ROW + 1;
+  const body = t.rows.length - (t.total ? 1 : 0);
   t.rows.forEach((row, r) => {
     const line = ws.getRow(HEAD_ROW + 1 + r);
     const total = t.total && r === t.rows.length - 1;
@@ -65,8 +89,13 @@ function writeSheet(ws: Worksheet, t: Table, doc: Doc, lists: Map<string, string
     row.forEach((v, j) => {
       const c = line.getCell(j + 1);
       const numeric = t.numeric?.includes(t.head[j]) && v !== '' && Number.isFinite(Number(v));
+      const at = HEAD_ROW + 1 + r;
       if (j === urlCol && /^https?:\/\//.test(v)) c.value = { text: v.replace(/^https?:\/\/(www\.)?/, ''), hyperlink: v };
+      // Amounts and totals as formulas, so a price or quantity changed in the sheet carries through.
+      else if (!total && t.head[j] === '金額(円)' && qty && unit && row[t.head.indexOf('単価(円)')] !== '') c.value = { formula: `${qty}${at}*${unit}${at}`, result: Number(v) };
+      else if (total && SUMMED.includes(t.head[j]) && v !== '' && body > 0) c.value = { formula: `SUM(${col(t.head[j])}${first}:${col(t.head[j])}${first + body - 1})`, result: Number(v) };
       else c.value = numeric ? Number(v) : v;
+      if (YEN.includes(t.head[j])) c.numFmt = '#,##0';
       if (j === urlCol && v) c.font = { color: { argb: 'FF2563EB' }, underline: true };
       if (t.numeric?.includes(t.head[j])) c.alignment = { horizontal: 'right' };
       c.border = { bottom: thin };
@@ -91,7 +120,6 @@ function writeSheet(ws: Worksheet, t: Table, doc: Doc, lists: Map<string, string
 
   // Dropdowns on the data rows of the columns that take a fixed set of words. Other words may
   // still be typed (a new supplier, a type of its own): the list only offers.
-  const body = t.rows.length - (t.total ? 1 : 0);
   for (const h of DROPDOWNS[t.title] ?? []) {
     const j = t.head.indexOf(h);
     const range = lists.get(h);
@@ -107,6 +135,11 @@ function writeSheet(ws: Worksheet, t: Table, doc: Doc, lists: Map<string, string
     const longest = Math.max(textWidth(h), ...t.rows.map((row) => textWidth(row[j] ?? '')));
     ws.getColumn(j + 1).width = Math.min(48, Math.max(6, longest + 2));
   });
+  // What each row stands for on the board, out of sight: the key for bringing a sheet up to date.
+  const key = ws.getColumn(cols + 1);
+  key.hidden = true;
+  ws.getCell(HEAD_ROW, cols + 1).value = 'keito ID';
+  t.refs.forEach((ids, r) => ids.length && (ws.getCell(HEAD_ROW + 1 + r, cols + 1).value = ids.join(' ')));
   ws.views = [{ state: 'frozen', ySplit: HEAD_ROW, showGridLines: false }];
   if (body > 0) ws.autoFilter = { from: { row: HEAD_ROW, column: 1 }, to: { row: HEAD_ROW + body, column: cols } };
   ws.pageSetup = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: `${HEAD_ROW}:${HEAD_ROW}`, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } };
@@ -117,7 +150,7 @@ export async function workbook(doc: Doc): Promise<Blob> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'keito';
   wb.created = new Date();
-  const tables = [equipmentTable(doc), cableTable(doc), cableSummaryTable(doc), powerTable(doc), networkTable(doc), checkTable(doc)];
+  const tables = [withColumn(equipmentTable(doc), '金額(円)', STATUS), cableTable(doc), cableSummaryTable(doc), powerTable(doc), networkTable(doc), checkTable(doc)];
   // The dropdowns' words live on a hidden last sheet, one column per list: too many for a formula.
   const words = Object.entries(choices(doc)).filter(([, w]) => w.length);
   const letter = (k: number): string => String.fromCharCode(65 + k);

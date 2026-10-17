@@ -1277,6 +1277,12 @@ body.row-dragging .lists td.editable:hover {
   box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
+.readout-inline {
+  align-self: end;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--sub);
+}
 .field .readout {
   display: block;
   padding: 5px 7px;

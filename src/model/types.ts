@@ -81,6 +81,8 @@ export interface DeviceNode extends Base {
   color?: ColorKey;
   /** How many units this box stands for; unset reads a trailing "x2" in the name, else one. */
   qty?: number;
+  /** Price of one unit, in yen; the equipment list multiplies it by the quantity. */
+  price?: number;
   /** Who supplies or looks after it; shown as the device's group in the equipment list. */
   vendor?: string;
   /** Network settings, listed in the network table. */

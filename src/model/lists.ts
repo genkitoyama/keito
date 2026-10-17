@@ -116,7 +116,7 @@ export interface CellEdit {
 }
 
 /** Fields left out of the board when emptied, rather than kept as an empty string. */
-const OPTIONAL = new Set(['vendor', 'url', 'ip', 'host', 'spec', 'cableId', 'qty', 'watts']);
+const OPTIONAL = new Set(['vendor', 'url', 'ip', 'host', 'spec', 'cableId', 'qty', 'watts', 'price']);
 
 /** Whether a cell of this table can be edited: never in a total row, and `single` columns on one-item rows only. */
 export function editable(t: Table, row: number, col: number): CellEdit | null {
@@ -247,19 +247,21 @@ export function equipmentTable(doc: Doc, withUrl = true): Table {
   const key = colourKey(boardOf(doc));
   // A supplier typed on the device wins over what its colour stands for.
   const groupOf = (d: DeviceNode): string => d.vendor?.trim() || key.get(d.color ?? 'gray') || '';
-  const groups = new Map<string, { d: DeviceNode; ids: string[]; names: Set<string>; places: Set<string>; count: number; watts: number | null }>();
+  const groups = new Map<string, { d: DeviceNode; ids: string[]; names: Set<string>; places: Set<string>; count: number; watts: number | null; prices: Set<number | null>; amount: number | null }>();
   for (const d of devices(doc)) {
     const q = unitsOf(d);
     // Devices share a row only when they are the same thing under the same name: PC1 and PC2 of
     // one model stay apart, so each can be edited (and counted) on its own row.
     const id = `${groupOf(d)}|${d.category}|${q.name}|${d.maker}|${d.model}`;
     const place = placeOf(doc, d);
-    const g = groups.get(id) ?? { d, ids: [], names: new Set<string>(), places: new Set<string>(), count: 0, watts: null };
+    const g = groups.get(id) ?? { d, ids: [], names: new Set<string>(), places: new Set<string>(), count: 0, watts: null, prices: new Set<number | null>(), amount: null };
     g.ids.push(d.id);
     g.names.add(q.name);
     if (place) g.places.add(place);
     g.count += q.count;
     if (d.watts != null) g.watts = (g.watts ?? 0) + d.watts * q.count;
+    g.prices.add(d.price ?? null);
+    if (d.price != null) g.amount = (g.amount ?? 0) + d.price * q.count;
     groups.set(id, g);
   }
   // Rows put in order by hand come first, in that order; the rest by category and name.
@@ -283,11 +285,14 @@ export function equipmentTable(doc: Doc, withUrl = true): Table {
   const notes = (ids: string[]): string => [...new Set(ids.map((id) => (doc.nodes.find((n) => n.id === id) as DeviceNode).note.trim()).filter(Boolean))].join(' / ');
   const total = list.reduce((sum, g) => sum + g.count, 0);
   const watts = list.reduce((sum, g) => sum + (g.watts ?? 0), 0);
-  const cols = ['No', '区分', 'カテゴリ', '名称', 'メーカー', '型番', '数量', '設置場所', '消費電力(W)', '備考', ...(withUrl ? ['URL'] : [])];
+  const amount = list.reduce((sum, g) => sum + (g.amount ?? 0), 0);
+  // A unit price shows when every device on the row has the same one; the amount adds up what is known.
+  const unit = (g: { prices: Set<number | null> }): string => (g.prices.size === 1 && [...g.prices][0] != null ? String([...g.prices][0]) : '');
+  const cols = ['No', '区分', 'カテゴリ', '名称', 'メーカー', '型番', '数量', '単価(円)', '金額(円)', '設置場所', '消費電力(W)', '備考', ...(withUrl ? ['URL'] : [])];
   return {
     title: '機材リスト',
     head: cols,
-    widths: [4, 11, 10, 20, 12, 16, 5, 13, 8, 18, ...(withUrl ? [20] : [])],
+    widths: [4, 10, 9, 18, 11, 14, 5, 9, 10, 12, 8, 16, ...(withUrl ? [18] : [])],
     rows: [
       ...list.map((g, i) => [
         String(i + 1),
@@ -297,15 +302,17 @@ export function equipmentTable(doc: Doc, withUrl = true): Table {
         g.d.maker,
         g.d.model,
         String(g.count),
+        unit(g),
+        g.amount == null ? '' : String(g.amount),
         [...g.places].join(' / '),
         g.watts == null ? '' : String(g.watts),
         notes(g.ids),
         ...(withUrl ? [urlOf(g.ids)] : []),
       ]),
-      ...(list.length ? [cols.map((c) => (c === '名称' ? '合計' : c === '数量' ? String(total) : c === '消費電力(W)' && watts ? String(watts) : ''))] : []),
+      ...(list.length ? [cols.map((c) => (c === '名称' ? '合計' : c === '数量' ? String(total) : c === '金額(円)' && amount ? String(amount) : c === '消費電力(W)' && watts ? String(watts) : ''))] : []),
     ],
     refs: [...list.map((g) => g.ids), ...(list.length ? [[]] : [])],
-    numeric: ['No', '数量', '消費電力(W)'],
+    numeric: ['No', '数量', '単価(円)', '金額(円)', '消費電力(W)'],
     total: list.length > 0,
     reorder: 'equipment',
     edit: {
@@ -315,6 +322,7 @@ export function equipmentTable(doc: Doc, withUrl = true): Table {
       メーカー: { on: 'node', field: 'maker' },
       型番: { on: 'node', field: 'model' },
       数量: { on: 'node', field: 'qty', kind: 'number', single: true },
+      '単価(円)': { on: 'node', field: 'price', kind: 'number' },
       '消費電力(W)': { on: 'node', field: 'watts', kind: 'number', single: true },
       備考: { on: 'node', field: 'note' },
       URL: { on: 'node', field: 'url' },
@@ -576,6 +584,13 @@ export function checkTable(doc: Doc): Table {
   }
   for (const [id, load] of powerLoads(doc)) {
     if (load.capacity == null) found.push({ level: 1, what: '給電容量が未入力', target: name(id), detail: `${load.ids.length} 台に給電していますが、容量がわからないため超過を判定できません`, ref: [id] });
+  }
+  // Once prices are being entered, the devices still without one, in one row.
+  const all = devices(doc);
+  const unpriced = all.filter((d) => d.price == null);
+  if (unpriced.length && unpriced.length < all.length) {
+    const names = [...new Set(unpriced.map((d) => unitsOf(d).name))];
+    found.push({ level: 1, what: '単価が未入力', target: `${unpriced.length} 台`, detail: names.length > 6 ? `${names.slice(0, 6).join('、')} ほか ${names.length - 6} 件` : names.join('、'), ref: unpriced.map((d) => d.id) });
   }
   // Lengths are often filled in late, so the cables without one make a single row, not dozens.
   const unmeasured = cables(doc).filter((e) => e.length == null);

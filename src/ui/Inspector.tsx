@@ -3,7 +3,7 @@ import { useRef, useState } from 'react';
 import { isTagged } from '../model/geometry';
 import { safeUrl } from '../model/url';
 import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
-import { cableIds, colourKey, idShown, ipIssues, labelStacked, lengthShown, quantityOf } from '../model/lists';
+import { cableIds, colourKey, idShown, ipIssues, labelStacked, lengthShown, quantityOf, unitsOf } from '../model/lists';
 import { PRESETS, freshId } from '../model/presets';
 import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
@@ -323,6 +323,10 @@ function DevicePanel({ n }: { n: DeviceNode }) {
           ＋IP アドレス・ホスト名
         </button>
       )}
+      <div className="grid2">
+        <Field label="単価 (円)" type="number" value={n.price == null ? '' : String(n.price)} onChange={(v) => patch({ price: num(v) })} />
+        {n.price != null && unitsOf(n).count > 1 && <span className="readout-inline">金額 {(n.price * unitsOf(n).count).toLocaleString('ja-JP')} 円</span>}
+      </div>
       <div className="grid2">
         <Field label="消費電力 (W)" type="number" value={n.watts == null ? '' : String(n.watts)} onChange={(v) => patch({ watts: num(v) })} />
         {(supplies || n.capacity != null) && <Field label="給電容量 (W)" type="number" placeholder="UPS・タップ" value={n.capacity == null ? '' : String(n.capacity)} onChange={(v) => patch({ capacity: num(v) })} />}
