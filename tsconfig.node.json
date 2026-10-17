@@ -1,0 +1,7 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["server", "cli", "src/model", "src/export/xlsx.ts", "vite.config.ts"]
+}

@@ -1,6 +1,6 @@
 import { fitLegends } from './legend';
 import { create } from 'zustand';
-import { type Backend, type BoardInfo, connect, externalize, localBoards } from '../platform/storage';
+import { type Backend, type BoardInfo, Conflict, connect, externalize, localBoards } from '../platform/storage';
 import { fromYaml } from './dsl';
 import { docBounds, nodeRect } from './geometry';
 import { allIds, freshId, randomId } from './presets';
@@ -63,7 +63,8 @@ interface State {
   ready: boolean;
   /** Where boards are kept: a folder on disk (server) or this browser (local). */
   mode: 'server' | 'local';
-  saving: 'saved' | 'saving' | 'error';
+  /** `conflict`: the board on disk changed elsewhere (the command line …) while it had unsaved edits here. */
+  saving: 'saved' | 'saving' | 'error' | 'conflict';
   /** Set while an old revision is on screen in place of the live board (which is not touched). */
   viewing: { entry: Revision; all: Revision[] } | null;
 
@@ -86,6 +87,8 @@ interface State {
   openBoard(id: string): void;
   newBoard(doc?: Doc): void;
   deleteBoard(id: string): void;
+  /** Settle a conflict: take the board as it is on disk, or write this page's version over it. */
+  resolveConflict(choice: 'reload' | 'overwrite'): void;
   /** Record the board as it stands as revision `rev`. */
   recordRevision(rev: string, note: string): void;
   viewRevision(id: string): void;
@@ -255,6 +258,20 @@ export const useStore = create<State>((set, get) => ({
     await b.savePresets(presets);
     set({ presets });
   }),
+  resolveConflict: (choice) =>
+    void run(async (b) => {
+      const mine = get().doc;
+      if (choice === 'overwrite') {
+        await b.save(mine, true);
+        stored = mine;
+        return set({ saving: get().doc === mine ? 'saved' : 'saving' });
+      }
+      const fresh = await b.load(mine.id);
+      if (!fresh) return;
+      stored = fresh;
+      // This page's version stays one undo away, should it be wanted after all.
+      set({ doc: fitLegends(fresh), past: [mine], future: [], selection: get().selection.filter((id) => fresh.nodes.some((n) => n.id === id) || fresh.edges.some((e) => e.id === id)), saving: 'saved' });
+    }),
   deleteBoard: (id) => void run(async (b) => {
     if (id === get().doc.id) clearTimeout(timer);
     await b.remove(id);
@@ -276,6 +293,8 @@ async function run(fn: (b: Backend) => Promise<void>): Promise<void> {
   try {
     await fn(backend);
   } catch (e) {
+    // Written elsewhere since it was read here: the user settles it (see resolveConflict).
+    if (e instanceof Conflict) return void useStore.setState({ saving: 'conflict' });
     console.error(e);
     useStore.setState({ saving: 'error' });
   }
@@ -314,6 +333,8 @@ async function persist(doc: Doc): Promise<void> {
     const info: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now() };
     useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], saving: s.doc === doc ? 'saved' : 'saving' }));
   } catch (e) {
+    // Written elsewhere since it was read here: the user settles it (see resolveConflict).
+    if (e instanceof Conflict) return void useStore.setState({ saving: 'conflict' });
     console.error(e);
     useStore.setState({ saving: 'error' });
   }
@@ -322,9 +343,9 @@ async function persist(doc: Doc): Promise<void> {
 /** Write any pending change now (before switching boards or leaving the page). */
 async function flush(): Promise<void> {
   clearTimeout(timer);
-  const { doc, ready, viewing } = useStore.getState();
-  // An old revision on screen is never written over the live board.
-  if (ready && !viewing && doc !== stored) await persist(doc);
+  const { doc, ready, viewing, saving } = useStore.getState();
+  // An old revision on screen is never written over the live board, nor a conflict settled unasked.
+  if (ready && !viewing && saving !== 'conflict' && doc !== stored) await persist(doc);
 }
 
 // Keep the signal-type registry in step with the board on screen.
@@ -335,7 +356,7 @@ useStore.subscribe((s, prev) => {
 
 // Autosave shortly after every change.
 useStore.subscribe((s, prev) => {
-  if (!s.ready || s.viewing || s.doc === prev.doc || s.doc === stored) return;
+  if (!s.ready || s.viewing || s.doc === prev.doc || s.doc === stored || s.saving === 'conflict') return;
   clearTimeout(timer);
   useStore.setState({ saving: 'saving' });
   timer = window.setTimeout(() => void persist(useStore.getState().doc), 500);
@@ -378,6 +399,7 @@ export async function boot(): Promise<void> {
       boards = await backend.list();
     }
     useStore.setState({ boards, mode: backend.mode, ready: true, presets: await backend.loadPresets().catch(() => []) });
+    listen(backend);
     show(doc);
   } catch (e) {
     console.error(e);
@@ -392,17 +414,48 @@ window.addEventListener('hashchange', () => {
 });
 
 // Coming back to the tab: pick up what another tab (or an edit to the file) saved meanwhile.
-window.addEventListener('focus', () => void run(async (b) => {
+/** Take in the board as another writer left it, if nothing here is waiting to be saved. */
+async function pickUp(b: Backend): Promise<void> {
   const s = useStore.getState();
-  if (!s.ready || s.viewing || s.editing || s.doc !== stored) return;
+  if (!s.ready || s.viewing) return;
+  // Unsaved edits here (or text being typed) and a change on disk: the user decides which stays.
+  if (s.editing || s.doc !== stored) return void useStore.setState({ saving: 'conflict' });
   const fresh = await b.load(s.doc.id);
-  if (fresh && useStore.getState().doc === s.doc && JSON.stringify(fresh) !== JSON.stringify(s.doc)) {
-    stored = fresh;
-    // The history was made on the version just replaced: undoing into it would write that old
-    // version back over what the other tab saved. It starts over from the version read in.
-    useStore.setState({ doc: fresh, selection: [], past: [], future: [] });
-  }
-}));
+  if (!fresh || useStore.getState().doc !== s.doc) return;
+  if (JSON.stringify(fresh) === JSON.stringify(s.doc)) return;
+  stored = fresh;
+  // The history was made on the version just replaced: undoing into it would write that old
+  // version back over what was saved elsewhere. It starts over from the version read in.
+  const keep = (id: string) => fresh.nodes.some((n) => n.id === id) || fresh.edges.some((e) => e.id === id);
+  useStore.setState({ doc: fitLegends(fresh), selection: s.selection.filter(keep), past: [], future: [] });
+}
+
+window.addEventListener('focus', () => {
+  const s = useStore.getState();
+  // Coming back with nothing unsaved: just look. A conflict is only claimed when something changed.
+  if (s.ready && !s.viewing && !s.editing && s.doc === stored) void run(pickUp);
+});
+
+/**
+ * Hear about boards written elsewhere (the command line, an edit to the file) as it happens: the
+ * open board is read in again, and the list of boards follows new ones and new titles.
+ */
+function listen(b: Backend): void {
+  if (b.mode !== 'server' || typeof EventSource === 'undefined') return;
+  const events = new EventSource('/api/events');
+  events.onmessage = (m) => {
+    let news: { id?: string; serial?: number };
+    try {
+      news = JSON.parse(m.data);
+    } catch {
+      return;
+    }
+    const s = useStore.getState();
+    if (news.id === s.doc.id) {
+      if (b.serialOf?.(news.id) !== news.serial) void run(pickUp);
+    } else void b.list().then((boards) => useStore.setState({ boards }), () => {});
+  };
+}
 
 /** Browsers drop a keepalive request whose body is over 64KB. */
 const KEEPALIVE_LIMIT = 60_000;
@@ -429,7 +482,10 @@ window.addEventListener('pagehide', () => {
   if (backend.mode === 'local') return void backend.save(doc);
   // Last-moment save: keepalive lets the request outlive the page (small boards only, see above).
   const body = JSON.stringify(doc);
-  if (body.length <= KEEPALIVE_LIMIT) void fetch(`/api/boards/${doc.id}`, { method: 'PUT', keepalive: true, headers: { 'Content-Type': 'application/json' }, body }).catch(() => {});
+  // Made on the version this page read: never over a change made elsewhere meanwhile.
+  const serial = backend.serialOf?.(doc.id);
+  const headers = { 'Content-Type': 'application/json', 'If-Match': serial === undefined ? '*' : String(serial) };
+  if (body.length <= KEEPALIVE_LIMIT && useStore.getState().saving !== 'conflict') void fetch(`/api/boards/${doc.id}`, { method: 'PUT', keepalive: true, headers, body }).catch(() => {});
 });
 
 let clipboard: { nodes: Node[]; edges: Edge[] } | null = null;

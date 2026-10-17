@@ -224,6 +224,8 @@ export interface Doc {
    * devices or cables in that order. Anything not named follows in the list's own order.
    */
   listOrder?: Record<string, string[]>;
+  /** Count of writes to the board's file, kept by whoever writes it; a write on an older count is refused. */
+  serial?: number;
   /** Signal types added on this board. */
   signals?: CustomSignal[];
   /** Recorded revisions, oldest first. */

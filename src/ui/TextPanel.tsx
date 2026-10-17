@@ -92,6 +92,9 @@ export function TextPanel() {
                 プロンプトをコピー
               </button>
             </div>
+            <p className="hint">
+              Claude Code を使っているなら API キーは要りません。keito のフォルダで Claude Code に頼めば、同梱の CLI（<code>npm run keito</code>）でボードを読み書きし、この画面にもすぐ反映されます。
+            </p>
             <h4>書式</h4>
             <pre className="guide">{DSL_GUIDE}</pre>
           </div>

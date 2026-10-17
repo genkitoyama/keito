@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ServerResponse } from 'node:http';
 import type { Connect, Plugin } from 'vite';
+import { Conflict, ID, boardsRoot, store } from './store';
 
 /**
  * Board storage on disk, served by the dev / preview server:
@@ -24,10 +25,7 @@ const MIME: Record<string, string> = {
   '.svg': 'image/svg+xml',
 };
 const MAX_BODY = 64 * 1024 * 1024;
-const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const ASSET = /^[A-Za-z0-9_-]{1,80}\.(png|jpe?g|gif|webp|svg)$/;
-
-const slug = (title: string): string => title.replace(/[\\/:*?"<>|\s.]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'board';
 
 function readBody(req: Connect.IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -43,11 +41,45 @@ function readBody(req: Connect.IncomingMessage): Promise<Buffer> {
   });
 }
 
-export function keitoBoards(root = process.env.KEITO_BOARDS ?? path.resolve('boards')): Plugin {
-  const dirs = (): string[] => (fs.existsSync(root) ? fs.readdirSync(root).filter((d) => !d.startsWith('.') && fs.existsSync(path.join(root, d, 'board.json'))) : []);
-  const dirOf = (id: string): string | null => {
-    const hit = dirs().find((d) => d === id || d.endsWith(`__${id}`));
-    return hit ? path.join(root, hit) : null;
+export function keitoBoards(root = boardsRoot()): Plugin {
+  const boards = store(root);
+  const dirOf = boards.dirOf;
+
+  // Pages that want to hear when a board changes on disk (a command-line write, an edit by hand).
+  const listeners = new Set<ServerResponse>();
+  // The serial this server last wrote for each board: its own writes are not news to anyone.
+  const ours = new Map<string, number>();
+  const announce = (id: string, serial: number) => {
+    const msg = `data: ${JSON.stringify({ id, serial })}\n\n`;
+    for (const res of listeners) res.write(msg);
+  };
+  const pending = new Map<string, NodeJS.Timeout>();
+  const watch = () => {
+    fs.mkdirSync(root, { recursive: true });
+    try {
+      fs.watch(root, { recursive: true }, (_event, file) => {
+        const name = String(file ?? '');
+        if (!name.endsWith('board.json')) return;
+        const folder = name.split(/[\\/]/)[0];
+        // A write lands as several events: look once things have settled.
+        clearTimeout(pending.get(folder));
+        pending.set(
+          folder,
+          setTimeout(() => {
+            pending.delete(folder);
+            try {
+              const doc = JSON.parse(fs.readFileSync(path.join(root, folder, 'board.json'), 'utf8'));
+              const serial = Number(doc.serial) || 0;
+              if (typeof doc.id === 'string' && ours.get(doc.id) !== serial) announce(doc.id, serial);
+            } catch {
+              // Mid-write or gone: the next event will tell.
+            }
+          }, 120),
+        );
+      });
+    } catch (e) {
+      console.warn(`[keito] not watching ${root}: ${e instanceof Error ? e.message : e}`);
+    }
   };
 
   const handle = async (req: Connect.IncomingMessage, res: ServerResponse, next: Connect.NextFunction): Promise<void> => {
@@ -68,7 +100,7 @@ export function keitoBoards(root = process.env.KEITO_BOARDS ?? path.resolve('boa
         if (req.method === 'GET') {
           res.setHeader('Content-Type', 'application/json');
           res.setHeader('Cache-Control', 'no-store');
-          return res.end(fs.existsSync(file) ? fs.readFileSync(file) : '[]');
+          return void res.end(fs.existsSync(file) ? fs.readFileSync(file) : '[]');
         }
         if (req.method === 'PUT') {
           const list = JSON.parse((await readBody(req)).toString('utf8'));
@@ -76,14 +108,22 @@ export function keitoBoards(root = process.env.KEITO_BOARDS ?? path.resolve('boa
           fs.mkdirSync(root, { recursive: true });
           fs.writeFileSync(file, JSON.stringify(list, null, 2));
           res.statusCode = 204;
-          return res.end();
+          return void res.end();
         }
         res.statusCode = 405;
-        return res.end();
+        return void res.end();
       } catch (e) {
         res.statusCode = 500;
-        return res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+        return void res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
       }
+    }
+    // Changes to boards on disk, as server-sent events: {"id", "serial"} per board written elsewhere.
+    if (parts[0] === 'api' && parts[1] === 'events' && parts.length === 2) {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
+      res.write(': keito\n\n');
+      listeners.add(res);
+      req.on('close', () => listeners.delete(res));
+      return;
     }
     if (parts[0] !== 'api' || parts[1] !== 'boards') return next();
     const send = (status: number, body?: unknown, type = 'application/json') => {
@@ -98,18 +138,7 @@ export function keitoBoards(root = process.env.KEITO_BOARDS ?? path.resolve('boa
         if (req.method !== 'GET') return send(405);
         // One unreadable board (a merge conflict, a bad hand edit) must not hide all the others:
         // failing the whole list would send the app quietly off to browser storage.
-        const list = dirs().flatMap((d) => {
-          const file = path.join(root, d, 'board.json');
-          try {
-            const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
-            if (typeof doc?.id !== 'string') throw new Error('no id');
-            return [{ id: doc.id as string, title: (doc.meta?.title as string) ?? d, updated: fs.statSync(file).mtimeMs }];
-          } catch (e) {
-            console.warn(`[keito] skipped ${path.join(d, 'board.json')}: ${e instanceof Error ? e.message : e}`);
-            return [];
-          }
-        });
-        return send(200, list.sort((a, b) => b.updated - a.updated));
+        return send(200, boards.list().map(({ id, title, updated }) => ({ id, title, updated })));
       }
       if (!ID.test(id)) return send(400, { error: 'bad id' });
       const dir = dirOf(id);
@@ -123,7 +152,7 @@ export function keitoBoards(root = process.env.KEITO_BOARDS ?? path.resolve('boa
           res.setHeader('Content-Type', MIME[path.extname(name).toLowerCase()] ?? 'application/octet-stream');
           // Asset names are content hashes, so a given URL never changes.
           res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-          return res.end(fs.readFileSync(file));
+          return void res.end(fs.readFileSync(file));
         }
         if (req.method === 'PUT') {
           if (!dir) return send(404, { error: 'save the board first' });
@@ -160,28 +189,23 @@ export function keitoBoards(root = process.env.KEITO_BOARDS ?? path.resolve('boa
         return send(200, fs.readFileSync(path.join(dir, 'board.json')), 'application/json');
       }
       if (req.method === 'PUT') {
-        const text = (await readBody(req)).toString('utf8');
-        const doc = JSON.parse(text);
+        const doc = JSON.parse((await readBody(req)).toString('utf8'));
         if (doc.id !== id || !Array.isArray(doc.nodes)) return send(400, { error: 'not a board' });
-        const wanted = path.join(root, `${slug(String(doc.meta?.title ?? ''))}__${id}`);
-        let target = dir ?? wanted;
-        fs.mkdirSync(target, { recursive: true });
-        // Follow a renamed board with its folder; keep the old name if the new one is taken.
-        if (target !== wanted && !fs.existsSync(wanted)) {
-          fs.renameSync(target, wanted);
-          target = wanted;
+        // The serial the page's change was made on; a page that sends none writes regardless
+        // (and so does one asked to overwrite: "If-Match: *").
+        const match = req.headers['if-match'];
+        const base = match === undefined || match === '*' ? undefined : Number(match);
+        try {
+          const done = boards.write(doc, Number.isFinite(base) ? base : undefined);
+          ours.set(id, done.serial);
+          return send(200, { updated: Date.now(), ...done });
+        } catch (e) {
+          if (e instanceof Conflict) return send(409, { error: e.message, serial: e.serial });
+          throw e;
         }
-        const tmp = path.join(target, 'board.json.tmp');
-        fs.writeFileSync(tmp, JSON.stringify(doc, null, 2));
-        fs.renameSync(tmp, path.join(target, 'board.json'));
-        return send(200, { updated: Date.now(), folder: path.basename(target) });
       }
       if (req.method === 'DELETE') {
-        if (!dir) return send(204);
-        // Deleting moves the folder aside instead of destroying it.
-        const trash = path.join(root, '.trash');
-        fs.mkdirSync(trash, { recursive: true });
-        fs.renameSync(dir, path.join(trash, `${path.basename(dir)}-${Date.now()}`));
+        boards.remove(id);
         return send(204);
       }
       return send(405);
@@ -193,7 +217,7 @@ export function keitoBoards(root = process.env.KEITO_BOARDS ?? path.resolve('boa
   // answered here, or it becomes an unhandled rejection that takes the whole server down.
   const handler: Connect.NextHandleFunction = (req, res, next) => {
     handle(req, res, next).catch((e: unknown) => {
-      if (res.headersSent) return res.end();
+      if (res.headersSent) return void res.end();
       res.statusCode = 500;
       res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
     });
@@ -202,9 +226,11 @@ export function keitoBoards(root = process.env.KEITO_BOARDS ?? path.resolve('boa
   return {
     name: 'keito-boards',
     configureServer(server) {
+      watch();
       server.middlewares.use(handler);
     },
     configurePreviewServer(server) {
+      watch();
       server.middlewares.use(handler);
     },
   };

@@ -69,9 +69,22 @@ export function TopBar() {
       </button>
       <span className="sep" />
       <button onClick={openFile} data-tip="ファイルを開く（.keito.json / .yaml）">開く</button>
-      <span className={`save-state ${saving}`} title={mode === 'server' ? 'boards フォルダに自動保存' : 'このブラウザ内に自動保存'}>
-        {saving === 'error' ? '保存できていません' : saving === 'saving' ? '保存中…' : mode === 'server' ? 'フォルダに保存済み' : 'ブラウザに保存済み'}
-      </span>
+      {saving === 'conflict' ? (
+        // The board was written elsewhere (the command line …) while this page had changes of its own.
+        <span className="save-state conflict">
+          ほかの場所で更新されました
+          <button data-tip="ファイルの内容を読み込みます（この画面の変更は ⌘Z で戻せます）" onClick={() => st().resolveConflict('reload')}>
+            読み込む
+          </button>
+          <button data-tip="この画面の内容でファイルを上書きします" onClick={() => st().resolveConflict('overwrite')}>
+            この画面で上書き
+          </button>
+        </span>
+      ) : (
+        <span className={`save-state ${saving}`} title={mode === 'server' ? 'boards フォルダに自動保存' : 'このブラウザ内に自動保存'}>
+          {saving === 'error' ? '保存できていません' : saving === 'saving' ? '保存中…' : mode === 'server' ? 'フォルダに保存済み' : 'ブラウザに保存済み'}
+        </span>
+      )}
       <span className="grow" />
       <button className={panel === 'lists' ? 'on' : ''} onClick={() => toggle('lists')}>機材・ケーブル表</button>
       <button className={panel === 'text' ? 'on' : ''} onClick={() => toggle('text')}>テキスト / AI</button>

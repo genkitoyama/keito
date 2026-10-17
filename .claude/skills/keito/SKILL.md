@@ -1,0 +1,38 @@
+---
+name: keito
+description: keito（TD 向けの系統図ツール）のボードを読み書きする。系統図・機材構成図・配線図を作る／直す、機材リストやケーブル本数・電源容量を確かめる、Excel の機材ケーブル表を書き出す・更新するときに使う。
+---
+
+# keito ボードの扱い方
+
+keito のボードは `boards/<タイトル>__<id>/board.json` に保存されている。**board.json を直接編集しない**こと。必ず CLI（`npm run keito --` または `npx tsx cli/keito.ts`）を通す。CLI は書き込む前に控えを残し、ほかで更新されていれば書き込まずに止まる。開いている画面にはすぐ反映される。
+
+## 基本の流れ
+
+1. `npm run -s keito -- boards` でボードを探す（id・タイトル・更新日時）。
+2. `npm run -s keito -- guide` で YAML の書式を読む（初めてのときは必ず）。
+3. `npm run -s keito -- show <ボード>` で今の内容を YAML で取る。
+4. YAML を直して `npm run -s keito -- apply <ボード> <ファイル>`（または `-` で標準入力）で反映する。
+5. `npm run -s keito -- check <ボード>` で矛盾がないか確かめる（要修正があると終了コード 1）。
+
+`<ボード>` は id、フォルダ名、タイトルの一部のどれでもよい。
+
+## 直し方のこつ
+
+- `show` で取った YAML を**丸ごと**直して `apply` する。消した要素はボードからも消える。
+- 既存の要素の `pos` はそのまま残す。新しく足す要素は `pos` を省略すると空いている所に自動で置かれる。全体を並べ直したいときだけ `apply --relayout`。
+- 機材とポートは `devices`、ケーブルは `cables`（`from: 機材ID.ポート名`）。ポートを省略すると空いているポートを使い、足りなければ足す。
+- 映像の規格（HDMI / SDI …）や音声のコネクタ（XLR / TRS …）はケーブルの `spec` かポート名に書く。ケーブル ID はそこから付く。
+- 電源は `type: power`。給電元（UPS・タップ）は機材の `category: 電源` と `capacity`、機器側は `watts`。
+- 単価は機材の `price`（円）。購入ステータスは keito では持たない（Excel 側で管理）。
+
+## 表と書き出し
+
+- `lists <ボード> [equipment|cables|summary|power|network|check] [--csv|--json]`: 表を読む。
+- `xlsx <ボード> [-o ファイル]`: Excel に書き出す。`--update 前回.xlsx` で前回のファイルを図の内容に更新する（購入ステータスや Excel で足した列は引き継がれる）。
+- PDF・画像は画面のエクスポートから（CLI では出せない）。
+- `url <ボード>` で画面の URL を返す。人に確認してもらうときに添える。
+
+## 戻すとき
+
+`backups <ボード>` で控えの一覧、`restore <ボード> <控え>` でその状態に戻す（戻す前の状態も控えに残る）。

@@ -1,6 +1,6 @@
 import type { Doc, UserPreset } from '../model/types';
-import { upgradeOrder } from '../model/lists';
-import { upgradeDoc, upgradePreset } from '../model/video';
+import { readBoard } from '../model/load';
+import { upgradePreset } from '../model/video';
 
 /**
  * Persistence boundary. Boards live in a folder on disk when the keito server
@@ -19,7 +19,13 @@ export interface Backend {
   mode: 'server' | 'local';
   list(): Promise<BoardInfo[]>;
   load(id: string): Promise<Doc | null>;
-  save(doc: Doc): Promise<void>;
+  /**
+   * Store a board. On disk the write is checked against the version the board was read at, and
+   * a board changed elsewhere meanwhile throws Conflict unless `force` says to overwrite it.
+   */
+  save(doc: Doc, force?: boolean): Promise<void>;
+  /** The version of a board as last read or written here (on disk only). */
+  serialOf?(id: string): number | undefined;
   remove(id: string): Promise<void>;
   /** Store a picture for a board; resolves to the `src` to keep on the node. */
   putAsset(boardId: string, dataUrl: string): Promise<string>;
@@ -32,17 +38,18 @@ export interface Backend {
   savePresets(list: UserPreset[]): Promise<void>;
 }
 
+/** A board on disk was written by someone else (the command line, another tab) since it was read. */
+export class Conflict extends Error {
+  constructor(readonly serial: number) {
+    super('ボードはほかの場所で更新されています');
+  }
+}
+
 const INDEX = 'keito:boards';
 const key = (id: string): string => `keito:board:${id}`;
 const API = '/api/boards';
 
-/** Empty text boxes are invisible; drop any left behind by older versions. */
-function clean(v: unknown): Doc | null {
-  const d = v as Doc | null;
-  if (!d || d.version !== 1 || !Array.isArray(d.nodes) || !Array.isArray(d.edges)) return null;
-  d.nodes = d.nodes.filter((n) => n.type !== 'text' || (n.text ?? '').trim() !== '');
-  return upgradeOrder(upgradeDoc(d));
-}
+const clean = readBoard;
 
 function localList(): BoardInfo[] {
   try {
@@ -106,16 +113,32 @@ async function ok(res: Response): Promise<Response> {
   return res;
 }
 
+// The version of each board on disk as this page last read or wrote it.
+const serials = new Map<string, number>();
+
 const server: Backend = {
   mode: 'server',
   list: async () => (await ok(await fetch(API))).json(),
   load: async (id) => {
     const res = await fetch(`${API}/${id}`);
-    return res.status === 404 ? null : clean(await (await ok(res)).json());
+    if (res.status === 404) return null;
+    const raw = await (await ok(res)).json();
+    serials.set(id, Number(raw?.serial) || 0);
+    return clean(raw);
   },
-  save: async (doc) => {
-    await ok(await fetch(`${API}/${doc.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(doc) }));
+  save: async (doc, force) => {
+    const known = serials.get(doc.id);
+    const res = await fetch(`${API}/${doc.id}`, {
+      method: 'PUT',
+      // Written on the version read; a board never read here (just made) has nothing to check.
+      headers: { 'Content-Type': 'application/json', ...(force || known === undefined ? { 'If-Match': '*' } : { 'If-Match': String(known) }) },
+      body: JSON.stringify(doc),
+    });
+    if (res.status === 409) throw new Conflict(Number((await res.json()).serial) || 0);
+    const done = await (await ok(res)).json();
+    if (typeof done?.serial === 'number') serials.set(doc.id, done.serial);
   },
+  serialOf: (id) => serials.get(id),
   remove: async (id) => {
     await ok(await fetch(`${API}/${id}`, { method: 'DELETE' }));
   },

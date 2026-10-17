@@ -39,6 +39,26 @@ npm run build    # dist/ に静的ファイル（base は相対パス）
   - **データ**: 画像込みの keito ファイル（`.keito.json`、⌘S でも）と YAML。
   - **PDF** は A4 / A3 横で、1 ページ目に図、そのあとに選んだリスト（機材リスト・ケーブルリスト・ケーブル集計・電源系統・ネットワーク）が付きます。リストは本物の表なので文字を選択でき、長ければ自動で改ページされて見出し行が各ページに付きます。何も書かれていない列は出しません（印刷ダイアログ経由のベクター PDF）。何かを選択してから開くと「選択した要素だけ」を書き出せます（エリア枠を選ぶと中身も入り、両端が入っている線は分岐点ごと付きます。リストも選択範囲から作ります）。画像は PNG（1〜4x、透過可）/ SVG / クリップボードへコピー。
 
+## コマンドライン / Claude Code から使う
+
+keito のフォルダで `npm run keito -- <コマンド>` を使うと、画面を開かずにボードを読み書きできます（`npm run keito` だけで使い方が出ます）。
+
+```bash
+npm run keito -- boards                      # ボードの一覧
+npm run keito -- show サンプル > board.yaml   # YAML で取り出す（id・フォルダ名・タイトルの一部で指定）
+npm run keito -- apply サンプル board.yaml    # 直した YAML を反映
+npm run keito -- lists サンプル power         # 表を見る（equipment / cables / summary / power / network / check）
+npm run keito -- check サンプル               # チェック表（要修正があれば終了コード 1）
+npm run keito -- xlsx サンプル --update 機材ケーブル表.xlsx   # 前回の Excel を更新
+npm run keito -- backups サンプル / restore サンプル <控え>    # 書き込み前の控えから戻す
+```
+
+- 書き込みはボードのフォルダに直接行うので、画面（開発サーバー）が止まっていても使えます。画面で開いているボードはすぐ読み直されます。
+- 書き込む前に、元の状態を `<ボード>/backups/` に控えとして残します（30 件まで）。
+- `board.json` には書き込みごとに増える版番号が入っていて、読んだ後にほかで更新されていた場合は書き込みません。画面側も同じで、画面に未保存の変更があるときにほかから更新されると、上部に「ほかの場所で更新されました」と出て、読み込むか上書きするかを選べます（読み込んでも画面の変更は ⌘Z で戻せます）。
+- ボードのフォルダは `--dir`、環境変数 `KEITO_BOARDS`、`~/.config/keito/config.json` の `"boards"` の順に探し、どれもなければ keito の `boards/` です。
+- **Claude Code**: リポジトリに使い方（`.claude/skills/keito/SKILL.md`）を入れてあるので、keito のフォルダで「この系統図に PC をもう 1 台足して」のように頼めば、Claude Code が CLI で読み書きします。API キーは要りません。
+
 ## 操作
 
 | 操作 | キー |
@@ -64,7 +84,9 @@ src/canvas/    SVG 描画（画面とエクスポートで共通）とキャン�
 src/export/    PNG / SVG / PDF / Excel
 src/ui/        ツールバー・インスペクタ・各パネル
 src/platform/  保存先とファイル入出力の境界（Tauri 化のときはここを差し替える）
-server/        開発サーバーに載せるボード保存 API（boards/ フォルダの読み書き）
+server/        ボードのフォルダの読み書き（store.ts: 開発サーバーと CLI で共通）と、開発サーバーの保存 API・変更通知
+cli/           コマンドライン（npm run keito）
+.claude/       Claude Code 向けの使い方（skills/keito）
 ```
 
 ## 保存場所
