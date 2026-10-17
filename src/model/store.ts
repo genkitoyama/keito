@@ -10,6 +10,7 @@ import { docBounds, nodeRect } from './geometry';
 import { allIds, freshId, makeNode, randomId } from './presets';
 import { SAMPLE_YAML } from './sample';
 import { registerSignals } from './signals';
+import { type Entry, type ShareNode, catalog, newKey, pull, stamp, takeFrom } from './shared';
 import { type Doc, type Edge, type Node, type Revision, type UserPreset, emptyMeta } from './types';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
@@ -109,6 +110,19 @@ interface State {
   /** Save a device on the board as a preset (replacing one of the same name, maker and model). */
   savePreset(deviceId: string): void;
   deletePreset(id: string): void;
+
+  /** The other boards of the open board's project, as last read (for sharing things between them). */
+  others: Doc[];
+  /** Make a node here the same thing as one on another board of the project (whose particulars it takes). */
+  linkTo(nodeId: string, target: Entry): void;
+  /** A node here stops being shared with the other boards (they keep their own copies). */
+  unlink(nodeId: string): void;
+  /** Software runs on a device of another board (or on none). */
+  runOn(nodeId: string, host: Entry | null): void;
+  /** A screen output is fed by a port of a device of another board (or by none). */
+  feedFrom(nodeId: string, source: Entry | null, port?: string): void;
+  /** Open another board with one of its nodes selected and in view. */
+  openAt(boardId: string, nodeId: string): void;
 }
 
 let backend: Backend | null = null;
@@ -134,6 +148,7 @@ export const useStore = create<State>((set, get) => ({
   saving: 'saved',
   viewing: null,
   presets: [],
+  others: [],
 
   checkpoint: () => set((s) => ({ past: [...s.past.slice(-HISTORY), s.doc], future: [] })),
   setDoc: (doc, record = true) => {
@@ -318,6 +333,48 @@ export const useStore = create<State>((set, get) => ({
       // This page's version stays one undo away, should it be wanted after all.
       adopt(shown, () => set({ doc: shown, past: [mine], future: [], selection: get().selection.filter((id) => fresh.nodes.some((n) => n.id === id) || fresh.edges.some((e) => e.id === id)), saving: 'saved' }));
     }),
+  linkTo: (nodeId, target) =>
+    void run(async (b) => {
+      if (get().viewing) return;
+      const key = await shareKey(b, target);
+      if (!key) return;
+      const fresh = (get().others.find((d) => d.id === target.board)?.nodes.find((n) => n.id === target.node.id) as ShareNode | undefined) ?? target.node;
+      // The other board's particulars win: it is the one being linked to.
+      sharing(() => get().mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === nodeId && (n.type === 'device' || n.type === 'shape') ? { ...takeFrom(n, fresh), shared: key, sharedAt: fresh.sharedAt } : n)) })));
+    }),
+  unlink: (nodeId) => get().mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === nodeId && (n.type === 'device' || n.type === 'shape') ? { ...n, shared: undefined, sharedAt: undefined } : n)) })),
+  runOn: (nodeId, host) =>
+    void run(async (b) => {
+      if (get().viewing) return;
+      const key = host ? ((await shareKey(b, host)) ?? undefined) : undefined;
+      if (host && !key) return;
+      get().mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === nodeId && n.type === 'device' ? { ...n, runsOn: key } : n)) }));
+      pullIn();
+    }),
+  feedFrom: (nodeId, source, port = '') =>
+    void run(async (b) => {
+      if (get().viewing) return;
+      const key = source ? ((await shareKey(b, source)) ?? undefined) : undefined;
+      if (source && !key) return;
+      get().mutate((d) => ({
+        ...d,
+        nodes: d.nodes.map((n) => (n.id === nodeId && n.type === 'shape' && n.screen ? { ...n, screen: { ...n.screen, feed: key ? { shared: key, port } : undefined } } : n)),
+      }));
+      pullIn();
+    }),
+  openAt: (boardId, nodeId) =>
+    void run(async (b) => {
+      if (boardId !== get().doc.id) {
+        await quietly(() => settle(b));
+        await flush();
+        const doc = await b.load(boardId);
+        if (!doc) return;
+        show(doc);
+      }
+      set({ selection: [nodeId] });
+      // After the board has been fitted to the window: the node, in the middle.
+      requestAnimationFrame(() => requestAnimationFrame(() => centerOn(nodeId)));
+    }),
   deleteBoard: (id) => void run(async (b) => {
     if (id === get().doc.id) clearTimeout(timer);
     await b.remove(id);
@@ -473,9 +530,20 @@ function show(doc: Doc): void {
   baseKept = false;
   keeping = null;
   clearTimeout(settleTimer);
-  useStore.setState({ doc: shown, viewing: null, past: [], future: [], selection: [], editing: null });
+  useStore.setState({ doc: shown, viewing: null, past: [], future: [], selection: [], editing: null, others: [] });
   showInUrl(doc.id);
   requestAnimationFrame(useStore.getState().fit);
+  void readProject();
+}
+
+function centerOn(nodeId: string): void {
+  const { doc, view } = useStore.getState();
+  const n = doc.nodes.find((x) => x.id === nodeId);
+  const el = document.getElementById('canvas');
+  if (!n || !el) return;
+  const r = nodeRect(n);
+  const { width, height } = el.getBoundingClientRect();
+  useStore.setState({ view: { ...view, x: width / 2 - (r.x + r.w / 2) * view.k, y: height / 2 - (r.y + r.h / 2) * view.k } });
 }
 
 async function persist(doc: Doc): Promise<void> {
@@ -497,6 +565,7 @@ async function persist(doc: Doc): Promise<void> {
 /** Write any pending change now (before switching boards or leaving the page). */
 async function flush(): Promise<void> {
   clearTimeout(timer);
+  if (pushTimer !== undefined) await pushOut().catch(() => {});
   const { doc, ready, viewing, saving } = useStore.getState();
   // An old revision on screen is never written over the live board, nor a conflict settled unasked.
   if (ready && !viewing && saving !== 'conflict' && doc !== stored) await persist(doc);
@@ -521,6 +590,129 @@ useStore.subscribe((s, prev) => {
   if (!baseKept) void quietly(() => keepBase(b));
   clearTimeout(settleTimer);
   settleTimer = window.setTimeout(() => void quietly(() => settle(b)), SETTLE_MS);
+});
+
+/**
+ * Sharing between the boards of a project (see shared.ts). The other boards are read when a board
+ * is opened, and whenever one of them is written; the open board takes in newer particulars from
+ * them. A shared thing edited here is marked as the newest and written through to the others.
+ */
+let sharingNow = false;
+/** Changes made by sharing itself (taking in, linking): no edit of the shared particulars. */
+function sharing(fn: () => void): void {
+  sharingNow = true;
+  try {
+    fn();
+  } finally {
+    sharingNow = false;
+  }
+}
+
+let projectRead = 0;
+async function readProject(): Promise<void> {
+  const b = backend;
+  if (!b) return;
+  const doc = currentBoard();
+  const project = doc.meta.project?.trim();
+  const ticket = ++projectRead;
+  const others: Doc[] = [];
+  if (project)
+    for (const info of useStore.getState().boards) {
+      if (info.id === doc.id || (info.project ?? '').trim() !== project) continue;
+      const d = await b.load(info.id).catch(() => null);
+      if (d && (d.meta.project ?? '').trim() === project) others.push(d);
+    }
+  // Another board opened (or another read started) meanwhile: this one is out of date.
+  if (ticket !== projectRead || currentBoard().id !== doc.id) return;
+  useStore.setState({ others });
+  pullIn();
+}
+
+/** Take in what the other boards of the project have newer. The undo steps take it in too, so undoing never brings an old name back. */
+function pullIn(): void {
+  const s = useStore.getState();
+  if (!s.ready || s.viewing || s.editing || s.saving === 'conflict') return;
+  const entries = catalog([s.doc, ...s.others]);
+  const next = pull(s.doc, entries);
+  if (next === s.doc) return;
+  const fix = (d: Doc): Doc => (d.id === s.doc.id ? pull(d, entries) : d);
+  sharing(() => useStore.setState({ doc: fitLegends(next), past: s.past.map(fix), future: s.future.map(fix) }));
+}
+
+/** The shared key of a node of the project, given one (and written to its board) if it has none yet. */
+async function shareKey(b: Backend, target: Entry): Promise<string | null> {
+  if (target.node.shared) return target.node.shared;
+  const key = newKey();
+  const s = useStore.getState();
+  if (target.board === s.doc.id) {
+    sharing(() => s.updateNode(target.node.id, { shared: key, sharedAt: Date.now() }, false));
+    return key;
+  }
+  try {
+    const d = await b.load(target.board);
+    const n = d?.nodes.find((x) => x.id === target.node.id);
+    if (!d || !n || (n.type !== 'device' && n.type !== 'shape')) return null;
+    let next = d;
+    if (!n.shared) {
+      next = { ...d, nodes: d.nodes.map((x) => (x.id === n.id ? { ...x, shared: key, sharedAt: Date.now() } : x)) };
+      await b.save(next);
+    }
+    useStore.setState((st) => ({ others: st.others.map((o) => (o.id === next.id ? next : o)) }));
+    return (next.nodes.find((x) => x.id === n.id) as ShareNode).shared ?? null;
+  } catch (e) {
+    // The other board could not be written (changed elsewhere just now …): that is not this board's conflict.
+    console.warn('[keito] could not share with', target.boardTitle, e);
+    alert(`「${target.boardTitle}」に書き込めませんでした。少し待ってからもう一度試してください。`);
+    return null;
+  }
+}
+
+let pushTimer: number | undefined;
+function schedulePush(): void {
+  clearTimeout(pushTimer);
+  pushTimer = window.setTimeout(() => void pushOut(), 800);
+}
+
+/** Write the shared things edited here through to the other boards of the project. */
+async function pushOut(): Promise<void> {
+  clearTimeout(pushTimer);
+  pushTimer = undefined;
+  const b = backend;
+  const s = useStore.getState();
+  if (!b || s.viewing || !s.doc.meta.project?.trim()) return;
+  const doc = s.doc;
+  const mine = catalog([doc]);
+  const others = [...s.others];
+  for (const [i, d] of others.entries()) {
+    try {
+      // Read anew, so as not to write over a change made to it elsewhere meanwhile.
+      const fresh = (await b.load(d.id)) ?? d;
+      const next = pull(fresh, mine);
+      if (next !== fresh) await b.save(next);
+      others[i] = next;
+    } catch (e) {
+      // It takes the change in when it is next opened (it reads the newest from this board then).
+      console.warn(`[keito] ${d.meta.title}: shared change not written`, e);
+    }
+  }
+  if (useStore.getState().doc.id === doc.id) useStore.setState({ others });
+}
+
+// A shared thing edited here (by hand, undo, the text panel …) becomes the newest version of it.
+useStore.subscribe((s, prev) => {
+  if (!s.ready || s.viewing || adopting || sharingNow || s.doc === prev.doc || s.doc.id !== prev.doc.id) return;
+  const next = stamp(prev.doc, s.doc, Date.now());
+  if (next === s.doc) return;
+  sharing(() => useStore.setState({ doc: next }));
+  schedulePush();
+});
+
+// The board moved to another project (or into one): its fellows are others now.
+let projectTimer: number | undefined;
+useStore.subscribe((s, prev) => {
+  if (s.doc.id !== prev.doc.id || s.viewing || (s.doc.meta.project ?? '') === (prev.doc.meta.project ?? '')) return;
+  clearTimeout(projectTimer);
+  projectTimer = window.setTimeout(() => void readProject(), 600);
 });
 
 // Autosave shortly after every change.
@@ -600,13 +792,15 @@ async function pickUp(b: Backend): Promise<void> {
     // version back over what was saved elsewhere. It starts over from the version read in.
     const keep = (id: string) => fresh.nodes.some((n) => n.id === id) || fresh.edges.some((e) => e.id === id);
     useStore.setState({ doc: shown, selection: s.selection.filter(keep), past: [], future: [] });
-  });
+  });  pullIn();
 }
 
 window.addEventListener('focus', () => {
   const s = useStore.getState();
   // Coming back with nothing unsaved: just look. A conflict is only claimed when something changed.
   if (s.ready && !s.viewing && !s.editing && s.doc === stored) void run(pickUp);
+  // Other boards of the project may have changed too (another tab, browser storage has no events).
+  if (s.ready && !s.viewing) void readProject();
 });
 
 /**
@@ -626,7 +820,14 @@ function listen(b: Backend): void {
     const s = useStore.getState();
     if (news.id === s.doc.id) {
       if (b.serialOf?.(news.id) !== news.serial) void run(pickUp);
-    } else void b.list().then((boards) => useStore.setState({ boards }), () => {});
+    } else
+      void b.list().then((boards) => {
+        useStore.setState({ boards });
+        // A board of this project changed (or joined it): what is shared may have changed with it.
+        const project = currentBoard().meta.project?.trim();
+        const info = boards.find((x) => x.id === news.id);
+        if (project && (info?.project?.trim() === project || useStore.getState().others.some((d) => d.id === news.id))) void readProject();
+      }, () => {});
   };
 }
 
@@ -661,14 +862,15 @@ window.addEventListener('pagehide', () => {
   if (body.length <= KEEPALIVE_LIMIT && useStore.getState().saving !== 'conflict') void fetch(`/api/boards/${doc.id}`, { method: 'PUT', keepalive: true, headers, body }).catch(() => {});
 });
 
-let clipboard: { nodes: Node[]; edges: Edge[] } | null = null;
+/** What was copied, and from which board (and project). */
+let clipboard: { nodes: Node[]; edges: Edge[]; board: string; project: string } | null = null;
 
 export function copySelection(): void {
   const { doc, selection } = useStore.getState();
   const ids = new Set(selection);
   const nodes = doc.nodes.filter((n) => ids.has(n.id));
   if (!nodes.length) return;
-  clipboard = { nodes, edges: doc.edges.filter((e) => ids.has(e.from.node) && ids.has(e.to.node)) };
+  clipboard = { nodes, edges: doc.edges.filter((e) => ids.has(e.from.node) && ids.has(e.to.node)), board: doc.id, project: doc.meta.project?.trim() ?? '' };
 }
 
 /** Paste (or duplicate) with fresh ids, keeping the cables between the copied nodes. */
@@ -677,10 +879,16 @@ export function pasteClipboard(offset = 30): void {
   const s = useStore.getState();
   const taken = allIds(s.doc);
   const map = new Map<string, string>();
+  // Pasted onto another board of the project, a shared thing stays the same thing; a copy on its
+  // own board (or elsewhere) is another one: the second PC is not the first.
+  const project = s.doc.meta.project?.trim() ?? '';
+  const same = clipboard.board !== s.doc.id && !!project && clipboard.project === project;
+  const here = new Set(s.doc.nodes.map((n) => ('shared' in n ? n.shared : undefined)).filter(Boolean));
   const nodes = clipboard.nodes.map((n) => {
     const id = freshId(taken, n.id.replace(/\d+$/, '') || 'n');
     map.set(n.id, id);
-    return { ...n, id, x: n.x + offset, y: n.y + offset };
+    const keep = same && 'shared' in n && !!n.shared && !here.has(n.shared);
+    return { ...n, id, x: n.x + offset, y: n.y + offset, ...('shared' in n && !keep ? { shared: undefined, sharedAt: undefined } : {}) } as Node;
   });
   const edges = clipboard.edges.map((e) => ({
     ...e,
@@ -691,7 +899,7 @@ export function pasteClipboard(offset = 30): void {
   }));
   s.mutate((d) => ({ ...d, nodes: [...d.nodes, ...nodes], edges: [...d.edges, ...edges] }));
   s.select(nodes.map((n) => n.id));
-  clipboard = { nodes, edges };
+  clipboard = { ...clipboard, nodes, edges };
 }
 
 export function align(mode: 'left' | 'top' | 'hcenter' | 'vcenter' | 'hspace' | 'vspace'): void {

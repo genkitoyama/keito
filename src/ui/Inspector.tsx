@@ -16,6 +16,7 @@ import { FILLS, FillPreview, SHAPES, sizesFor } from './icons';
 import { textHeightFor, textWeight } from '../canvas/render';
 import { useShallow } from 'zustand/react/shallow';
 import { Revisions } from './Revisions';
+import { FeedFrom, RunsOn, SharedSection, sharesHere } from './Shared';
 
 /** Text input that records one undo step per editing burst instead of per keystroke. */
 function Field({ label, value, onChange, multiline, wrap, type = 'text', placeholder, onPasteText, list }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean; wrap?: boolean; type?: string; placeholder?: string; onPasteText?: (text: string) => boolean; list?: string }) {
@@ -368,7 +369,13 @@ function DevicePanel({ n }: { n: DeviceNode }) {
         <span>色分け</span>
         <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />
       </label>
-      {(networked || soft) && (
+      {soft && <RunsOn n={n} />}
+      {soft && n.runsOn && (
+        <p className="hint">
+          ホスト名 {n.host || '—'}／IP {n.ip || '—'}（動作ホストの機材から）
+        </p>
+      )}
+      {(networked || soft) && !(soft && n.runsOn) && (
         <div className="grid2">
           <Field label={soft ? '動作ホストの IP' : 'IP アドレス'} placeholder="192.168.0.10" value={n.ip ?? ''} onChange={(v) => patch({ ip: v || undefined })} />
           <Field label={soft ? '動作ホスト名' : 'ホスト名'} placeholder={soft ? '例: td-main / AWS' : undefined} value={n.host ?? ''} onChange={(v) => patch({ host: v || undefined })} />
@@ -397,6 +404,7 @@ function DevicePanel({ n }: { n: DeviceNode }) {
       <button className="wide" title="名称・メーカー・型番・ポート構成などを、機材ライブラリの「マイプリセット」に保存します" onClick={() => st().savePreset(n.id)}>
         {saved ? 'マイプリセットを上書き保存' : 'マイプリセットに保存'}
       </button>
+      <SharedSection n={n} />
       {(['left', 'right'] as const).map((side) => (
         <div key={side}>
           <h4>
@@ -512,7 +520,12 @@ function ScreenFields({ n, screen }: { n: Extract<Node, { type: 'shape' }>; scre
             />
           </label>
           {screen.native && <p className="hint">拡大率 {Math.round((screen.native[0] / r.w) * 100)}%（領域 {r.w}px → 機器 {screen.native[0]}px）</p>}
-          <Field label="送出元（PC・出力端子）" placeholder="例: PC1 HDMI 1" value={screen.output ?? ''} onChange={(v) => st().updateNode(n.id, { screen: { ...screen, output: v || undefined } })} />
+          <FeedFrom n={n} screen={screen} />
+          {screen.feed ? (
+            <p className="hint">送出元: {screen.output || '—'}（機材の名前が変わるとここも変わります）</p>
+          ) : (
+            <Field label="送出元（PC・出力端子）" placeholder="例: PC1 HDMI 1" value={screen.output ?? ''} onChange={(v) => st().updateNode(n.id, { screen: { ...screen, output: v || undefined } })} />
+          )}
         </>
       )}
       {canvas && <p className="hint">この上に出力を並べると、出力の位置がこのキャンバス上の座標（左上が 0, 0）になります。</p>}
@@ -569,6 +582,7 @@ function RealWidth({ n }: { n: Extract<Node, { type: 'image' }> }) {
 function NodePanel({ n }: { n: Node }) {
   const patch = (p: Partial<Node>, record = false) => useStore.getState().updateNode(n.id, p, record);
   const layout = useStore((s) => kindOf(s.doc).id === 'layout');
+  const kind = useStore((s) => s.doc.kind);
   if (n.type === 'device') return <DevicePanel key={n.id} n={n} />;
   if (n.type === 'sequence') {
     return (
@@ -733,6 +747,7 @@ function NodePanel({ n }: { n: Node }) {
       {(n.type === 'shape' || n.type === 'sticky' || n.type === 'text' || n.type === 'frame') && <TextStyle n={n} />}
       {n.type === 'frame' && <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />}
       {(n.type === 'shape' || n.type === 'sticky') && <Colors sticky={n.type === 'sticky'} value={n.color} onPick={(color) => patch({ color }, true)} />}
+      {n.type === 'shape' && sharesHere(n, kind) && <SharedSection n={n} />}
     </>
   );
 }

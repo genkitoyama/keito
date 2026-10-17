@@ -1696,3 +1696,41 @@ body.row-dragging .lists td.editable:hover {
   font-size: 11px;
   color: #334155;
 }
+
+/* Sharing a thing with the other boards of the project. */
+.shared {
+  margin-top: 10px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+}
+.shared-list {
+  list-style: none;
+  margin: 4px 0 8px;
+  padding: 0;
+}
+.shared-list li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+}
+.shared-list li span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shared-suggest {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  font-size: 12px;
+}
+.shared-suggest span {
+  flex: 1;
+}

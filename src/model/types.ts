@@ -26,7 +26,16 @@ interface Base extends Rect {
   id: string;
   text: string;
 }
-export interface ShapeNode extends Base {
+/**
+ * Being the same thing as nodes on other boards of the project (see shared.ts): all nodes with
+ * one `shared` key are one thing, and keep its name and particulars alike.
+ */
+interface Shareable {
+  shared?: string;
+  /** When the shared particulars were last changed here (ms), to tell which board has the newest. */
+  sharedAt?: number;
+}
+export interface ShapeNode extends Base, Shareable {
   type: 'shape';
   shape: ShapeKind;
   color: ColorKey;
@@ -58,6 +67,8 @@ export interface ScreenSpec {
   native?: [number, number];
   /** What feeds it: "PC1 HDMI 1", "LED プロセッサ 出力 1". */
   output?: string;
+  /** The device port feeding it, by the device's shared key and the port's name; `output` follows it. */
+  feed?: { shared: string; port: string };
 }
 export interface StickyNode extends Base {
   type: 'sticky';
@@ -85,8 +96,10 @@ export interface FrameNode extends Base {
   bold?: boolean;
 }
 /** `text` is the device name. Height is derived from the port count. */
-export interface DeviceNode extends Base {
+export interface DeviceNode extends Base, Shareable {
   type: 'device';
+  /** A piece of software: the shared key of the device it runs on, whose host name and IP it takes. */
+  runsOn?: string;
   maker: string;
   model: string;
   category: string;

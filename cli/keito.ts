@@ -12,6 +12,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Conflict, boardsRoot, store } from '../server/store';
 import { DSL_GUIDE, fromYaml, toYaml } from '../src/model/dsl';
+import { catalog, pull, stamp } from '../src/model/shared';
 import { fitLegends } from '../src/model/legend';
 import { TABLES, type Table, checkTable, toCsv } from '../src/model/lists';
 import { drawingOf, entryFor, fingerprint, labelOf, thin } from '../src/model/history';
@@ -134,6 +135,27 @@ function save(before: Doc, next: Doc, serial: number, extra: Partial<Revision> =
   return done.serial;
 }
 
+/** Write the shared things of a board through to the other boards of its project (as the app does). */
+function shareOut(doc: Doc): void {
+  const project = doc.meta.project?.trim();
+  if (!project) return;
+  const mine = catalog([doc]);
+  for (const info of boards.list()) {
+    if (info.id === doc.id || (info.project ?? '').trim() !== project) continue;
+    const raw = boards.read(info.id);
+    const other = readBoard(raw);
+    if (!other) continue;
+    const next = pull(other, mine);
+    if (next === other) continue;
+    try {
+      boards.write(next as never, Number(raw?.serial) || 0);
+      process.stderr.write(`共有している項目を「${other.meta.title}」にも反映しました\n`);
+    } catch (e) {
+      process.stderr.write(`「${other.meta.title}」には反映できませんでした（開いたときに取り込まれます）: ${e instanceof Error ? e.message : e}\n`);
+    }
+  }
+}
+
 /** Write the board on the version read; a board changed meanwhile is left alone, and says so. */
 function commit(doc: Doc, serial: number): { serial: number; folder: string } {
   try {
@@ -206,7 +228,10 @@ async function main(): Promise<void> {
       } catch (e) {
         fail(`YAML を反映できませんでした: ${e instanceof Error ? e.message : e}`);
       }
+      // Shared things edited in the YAML are the newest of them now, and go to the project's other boards.
+      next = stamp(doc, next, Date.now());
       save(doc, next, serial);
+      shareOut(next);
       return;
     }
 

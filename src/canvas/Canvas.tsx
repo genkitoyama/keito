@@ -761,6 +761,7 @@ export function Canvas() {
           <HopCaps doc={doc} theme={SCREEN} />
           {others.map(nodeGroup)}
           <ScreenOverlaps doc={doc} theme={SCREEN} />
+          <SharedMarks doc={doc} k={view.k} />
 
           {preview && handleNode && hoverSide && (
             <g pointerEvents="none" opacity={0.55}>
@@ -849,6 +850,35 @@ export function Canvas() {
       {/* A layout board's scale bar: a length that reads as a round number at this zoom. */}
       {doc.kind === 'layout' && <ScaleBar k={view.k} scale={doc.scale || 100} />}
     </div>
+  );
+}
+
+/**
+ * A small link mark on what is shared with other boards of the project (screen only: an export
+ * shows the drawing, not how it is kept).
+ */
+function SharedMarks({ doc, k }: { doc: Doc; k: number }) {
+  const r = 7 / Math.max(k, 0.35);
+  return (
+    <g pointerEvents="none">
+      {doc.nodes.map((n) => {
+        if ((n.type !== 'device' && n.type !== 'shape') || !n.shared) return null;
+        const b = nodeRect(n);
+        // Inside the top-right corner: clear of the resize handle on the corner itself.
+        const cx = b.x + b.w - r * 1.6;
+        const cy = b.y + r * 1.6;
+        const u = r / 7;
+        return (
+          <g key={n.id} transform={`translate(${cx},${cy}) scale(${u})`}>
+            <circle r={7} fill="#fff" stroke={ACCENT} strokeWidth={1.2} />
+            <g fill="none" stroke={ACCENT} strokeWidth={1.4} strokeLinecap="round" transform="rotate(-45)">
+              <rect x={-4.6} y={-1.8} width={5} height={3.6} rx={1.8} />
+              <rect x={-0.4} y={-1.8} width={5} height={3.6} rx={1.8} />
+            </g>
+          </g>
+        );
+      })}
+    </g>
   );
 }
 

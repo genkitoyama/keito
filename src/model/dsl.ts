@@ -15,7 +15,7 @@ title: 図のタイトル
 kind: system               # 任意。ボードの種類 system（システム図）/ software（ソフトウェア構成図）/ sequence / flow（体験フロー）/ layout（配置図）/ screen（画面レイアウト図）/ free
                            # 配置図は 1 m = 100（pos・size の単位）。shapes の dims: true で寸法を表示、images の under: true で下敷き
                            # 体験フローは shapes に flow: { role: start|state|branch|end, action: 入ったときにすること }、flows のラベルがきっかけ
-                           # 画面レイアウト図は pos・size × 4 = コンテンツの px。shapes に screen: { role: canvas|display|projector|led, native: [1920, 1080], output: PC1 HDMI 1 }
+                           # 画面レイアウト図は pos・size × 4 = コンテンツの px。shapes に screen: { role: canvas|display|projector|led, native: [1920, 1080], output: PC1 HDMI 1, feed: { shared: 機材の shared キー, port: HDMI 1 } }
 project: 案件名            # 任意
 signals:                   # 任意。このボードだけの信号種別
   - { id: hdbt, label: HDBaseT, prefix: HDB, color: "#0d9488" }
@@ -40,6 +40,8 @@ devices:
     qty: 2                 # 任意。この 1 枠が表す台数（省略時は名前末尾の「x2」、なければ 1）
     vendor: 手配先          # 任意。手配先・担当（機材リストの「区分」になる）
     ip: 192.168.0.10       # 任意。IP アドレス / host でホスト名（ネットワーク表に出る）
+    shared: sh_ab12cd34    # 任意。同じ案件のほかのボードと「同じもの」にするキー（同じキーどうしで名前・型番・IP などがそろう）。shapes にも書ける
+    runsOn: sh_ab12cd34    # 任意。ソフトウェア構成図の部品が動く機材の shared キー（ホスト名・IP がその機材に合う）
     color: blue            # 任意。機材の色分け（手配元・系統など）
     preset: pc             # 任意。in/out を省略したときの既定ポート
     in:  [LAN:lan, AC:power]          # 左側ポート "名前:種別"
@@ -149,6 +151,8 @@ export function toYaml(doc: Doc): string {
       put(o, 'vendor', d.vendor);
       put(o, 'ip', d.ip);
       put(o, 'host', d.host);
+      put(o, 'shared', d.shared);
+      put(o, 'runsOn', d.runsOn);
       put(o, 'price', d.price);
       put(o, 'watts', d.watts);
       put(o, 'capacity', d.capacity);
@@ -199,6 +203,7 @@ export function toYaml(doc: Doc): string {
         if (s.dims) o.dims = true;
         if (s.screen) o.screen = { ...s.screen };
         if (s.flow) o.flow = { ...s.flow };
+        put(o, 'shared', s.shared);
       }
       o.pos = [r(s.x), r(s.y)];
       o.size = [r(s.w), r(s.h)];
@@ -274,12 +279,23 @@ function readFlow(v: unknown): FlowSpec | undefined {
   return { role, ...(str(v.action) ? { action: str(v.action) } : {}) };
 }
 
-/** `screen: { role, native, output }` on a shape of a screen layout board. */
+/**
+ * `shared: key`: the node is one thing with the nodes of that key on the project's other boards.
+ * When it was last changed is not written out; it is kept from the node as it was.
+ */
+function sharing(v: Record<string, unknown>, old: Node | undefined): { shared?: string; sharedAt?: number } {
+  const shared = str(v.shared) || undefined;
+  const at = old && (old.type === 'device' || old.type === 'shape') && old.shared === shared ? old.sharedAt : undefined;
+  return shared ? { shared, ...(at ? { sharedAt: at } : {}) } : {};
+}
+
+/** `screen: { role, native, output, feed }` on a shape of a screen layout board. */
 function readScreen(v: unknown): ScreenSpec | undefined {
   if (!isObj(v)) return undefined;
   const role = ['canvas', 'display', 'projector', 'led'].includes(str(v.role)) ? (str(v.role) as ScreenSpec['role']) : 'display';
   const native = nums(v.native, 2);
-  return { role, ...(native ? { native: [native[0], native[1]] as [number, number] } : {}), ...(str(v.output) ? { output: str(v.output) } : {}) };
+  const feed = isObj(v.feed) && str(v.feed.shared) ? { shared: str(v.feed.shared), port: str(v.feed.port) } : undefined;
+  return { role, ...(native ? { native: [native[0], native[1]] as [number, number] } : {}), ...(str(v.output) ? { output: str(v.output) } : {}), ...(feed ? { feed } : {}) };
 }
 
 /** `listOrder: { equipment: [pc1, sw1], … }`: the hand-made order of each list, as ids. */
@@ -374,6 +390,8 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
       host: str(v.host) || undefined,
       price: typeof v.price === 'number' ? v.price : undefined,
       listOrder: typeof v.order === 'number' ? v.order : undefined,
+      ...sharing(v, old),
+      runsOn: str(v.runsOn) || undefined,
     });
     if (v.area) areaHint.set(id, str(v.area));
   });
@@ -392,7 +410,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     else if (kind === 'text') nodes.push({ ...base, type: 'text', fontSize, bold });
     else {
       const fill = ['solid', 'outline', 'none'].includes(str(v.fill)) ? (str(v.fill) as FillStyle) : undefined;
-      nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined, dims: v.dims === true || undefined, screen: readScreen(v.screen), flow: readFlow(v.flow), fontSize, bold });
+      nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined, dims: v.dims === true || undefined, screen: readScreen(v.screen), flow: readFlow(v.flow), fontSize, bold, ...sharing(v, prevById.get(id)) });
     }
     if (v.area) areaHint.set(id, str(v.area));
   });
