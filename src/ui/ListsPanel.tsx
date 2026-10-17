@@ -13,6 +13,7 @@ export function ListsPanel() {
   const [tab, setTab] = useState(0);
   // The cell being edited in place, by its row and column in the table on show.
   const [editing, setEditing] = useState<{ row: number; col: number } | null>(null);
+  const [busy, setBusy] = useState(false);
   // A row being dragged by its handle, and the place it would take if let go now.
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
   const tables = useMemo<Table[]>(() => [equipmentTable(doc), cableTable(doc), cableSummaryTable(doc), powerTable(doc), networkTable(doc), checkTable(doc)], [doc]);
@@ -157,6 +158,21 @@ export function ListsPanel() {
           </button>
         )}
         <small>総ケーブル長 {totalLength} m</small>
+        <button
+          title="すべての表を 1 つの Excel ファイルに書き出します（表ごとにシート、見出し固定・フィルター・プルダウン付き）。Google スプレッドシートでも開けます"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              const { workbook } = await import('../export/xlsx');
+              download(`${safeName(doc.meta.title)}_機材ケーブル表.xlsx`, await workbook(doc));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? '書き出し中…' : 'Excel 書き出し'}
+        </button>
         <button onClick={() => download(`${safeName(doc.meta.title)}_${t.title}.csv`, toCsv(t), 'text/csv')}>CSV 書き出し</button>
         <button onClick={() => navigator.clipboard.writeText([t.head, ...t.rows].map((r) => r.join('\t')).join('\n'))} title="表計算ソフトにそのまま貼れます">
           コピー
