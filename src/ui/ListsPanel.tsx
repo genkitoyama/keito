@@ -1,10 +1,10 @@
 import { useMemo, useRef, useState } from 'react';
-import { type CellEdit, type Table, cableSummaryTable, cableTable, editCell, editable, equipmentTable, networkTable, powerTable, toCsv } from '../model/lists';
+import { type CellEdit, type Table, cableSummaryTable, cableTable, checkTable, editCell, editable, equipmentTable, networkTable, powerTable, toCsv, wiringTable } from '../model/lists';
 import { allSignals } from '../model/signals';
 import { useStore } from '../model/store';
 import { download, safeName } from '../platform/storage';
 
-const TABS = ['機材リスト', 'ケーブルリスト', 'ケーブル集計', '電源系統', 'ネットワーク'] as const;
+const TABS = ['機材リスト', 'ケーブルリスト', 'ケーブル集計', '結線表', '電源系統', 'ネットワーク', 'チェック'] as const;
 
 export function ListsPanel() {
   const doc = useStore((s) => s.doc);
@@ -12,7 +12,7 @@ export function ListsPanel() {
   const [tab, setTab] = useState(0);
   // The cell being edited in place, by its row and column in the table on show.
   const [editing, setEditing] = useState<{ row: number; col: number } | null>(null);
-  const tables = useMemo<Table[]>(() => [equipmentTable(doc), cableTable(doc), cableSummaryTable(doc), powerTable(doc), networkTable(doc)], [doc]);
+  const tables = useMemo<Table[]>(() => [equipmentTable(doc), cableTable(doc), cableSummaryTable(doc), wiringTable(doc), powerTable(doc), networkTable(doc), checkTable(doc)], [doc]);
   const t = tables[tab];
   const sel = new Set(selection);
   const totalLength = doc.edges.reduce((a, e) => a + (e.length ?? 0), 0);
@@ -23,7 +23,8 @@ export function ListsPanel() {
         {TABS.map((name, i) => (
           <button
             key={name}
-            className={tab === i ? 'on' : ''}
+            // Problems to fix turn the check tab red while it is out of view.
+            className={[tab === i ? 'on' : '', tables[i].rowClass?.includes('warn') ? 'alert' : ''].filter(Boolean).join(' ')}
             onClick={() => {
               setTab(i);
               setEditing(null);
@@ -82,7 +83,7 @@ export function ListsPanel() {
             ))}
             {!t.rows.length && (
               <tr>
-                <td colSpan={t.head.length} className="empty">機材ライブラリから機材を置き、ポート同士をドラッグで結ぶとここに自動で一覧が出ます。</td>
+                <td colSpan={t.head.length} className="empty">{t.empty ?? '機材ライブラリから機材を置き、ポート同士をドラッグで結ぶとここに自動で一覧が出ます。'}</td>
               </tr>
             )}
           </tbody>

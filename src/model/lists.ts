@@ -49,6 +49,8 @@ export interface Table {
   numeric?: string[];
   /** The last row is a total. */
   total?: boolean;
+  /** What the panel says when the table has no rows. */
+  empty?: string;
   /** Extra look per row, as class names: `subtotal` for a group's sum, `over` for one past its limit. */
   rowClass?: (string | undefined)[];
   /** Columns that can be edited in place, by heading, and what each writes to on the board. */
@@ -468,4 +470,111 @@ export function compact(t: Table): Table {
   if (keep.every(Boolean) || !body.length) return t;
   const pick = <T,>(row: T[]): T[] => row.filter((_, i) => keep[i]);
   return { ...t, head: pick(t.head), widths: pick(t.widths), rows: t.rows.map(pick) };
+}
+
+/**
+ * Wiring by device, as a crew checks it at the back of the rack: every port of every device with
+ * the cable on it and where that cable goes, free ports included so spare inputs show.
+ */
+export function wiringTable(doc: Doc): Table {
+  const ids = cableIds(doc);
+  const wired = doc.edges.filter((e) => e.signal !== 'flow');
+  const list = [...devices(doc)].sort((a, b) => placeOf(doc, a).localeCompare(placeOf(doc, b), 'ja') || unitsOf(a).name.localeCompare(unitsOf(b).name, 'ja'));
+  const rows: string[][] = [];
+  const refs: string[][] = [];
+  const rowClass: (string | undefined)[] = [];
+  for (const d of list) {
+    const place = placeOf(doc, d);
+    const start = rows.length;
+    const push = (side: string, port: string, signal: string, e: Edge | null, far: { name: string; port: string } | null) => {
+      rows.push([unitsOf(d).name, place, side, port, signalOf(signal).label, e ? (ids.get(e.id) ?? '') : '', far ? far.name : '（空き）', far?.port ?? '', e?.length == null ? '' : String(e.length)]);
+      refs.push(e ? [e.id] : [d.id]);
+      rowClass.push(e ? undefined : 'free');
+    };
+    for (const side of ['left', 'right'] as const) {
+      for (const p of d.ports.filter((q) => q.side === side)) {
+        const io = side === 'left' ? '入力' : '出力';
+        // One row per cable on the port (an outlet may chain on), or one marked free.
+        const on = wired.filter((e) => (e.from.node === d.id && e.from.port === p.id) || (e.to.node === d.id && e.to.port === p.id));
+        if (!on.length) push(io, p.name, p.signal, null, null);
+        for (const e of on) push(io, p.name, e.signal, e, endOf(doc, e.from.node === d.id && e.from.port === p.id ? e.to : e.from));
+      }
+    }
+    // Lines drawn to the device itself rather than to one of its ports.
+    for (const e of wired.filter((x) => (x.from.node === d.id && !x.from.port) || (x.to.node === d.id && !x.to.port))) {
+      push('', '（ポートなし）', e.signal, e, endOf(doc, e.from.node === d.id && !e.from.port ? e.to : e.from));
+    }
+    // The first row of each device draws the line that separates it from the one before; the
+    // rows after it mute the device's name, which they only repeat for the CSV.
+    for (let i = start; i < rows.length; i++) rowClass[i] = [rowClass[i], i === start ? 'group-start' : 'cont'].filter(Boolean).join(' ');
+  }
+  return {
+    title: '結線表',
+    head: ['機材', '設置場所', '入出力', 'ポート', '種別', 'ケーブルID', '接続先', '接続先ポート', '長さ(m)'],
+    widths: [18, 12, 6, 12, 9, 10, 18, 12, 7],
+    rows,
+    refs,
+    rowClass,
+    numeric: ['長さ(m)'],
+  };
+}
+
+/** Problems worth fixing before the drawing goes out, most serious first; each row selects what it is about. */
+export function checkTable(doc: Doc): Table {
+  const found: { level: 0 | 1; what: string; target: string; detail: string; ref: string[] }[] = [];
+  const name = (id: string): string => {
+    const n = doc.nodes.find((x) => x.id === id);
+    return n ? (n.type === 'device' ? unitsOf(n).name : oneLine(n.text)) || id : id;
+  };
+  const ids = cableIds(doc);
+  const portOf = (end: EdgeEnd) => {
+    const n = doc.nodes.find((x) => x.id === end.node);
+    return n?.type === 'device' ? n.ports.find((p) => p.id === end.port) : undefined;
+  };
+  const touches = (d: DeviceNode) => doc.edges.filter((e) => e.from.node === d.id || e.to.node === d.id);
+
+  for (const [id, issue] of ipIssues(doc)) {
+    const n = doc.nodes.find((x) => x.id === id) as DeviceNode | undefined;
+    if (n) found.push({ level: 0, what: issue === 'dup' ? 'IP アドレスの重複' : 'IP アドレスの形式', target: name(id), detail: issue === 'dup' ? `${n.ip} がほかの機材と同じです` : `${n.ip} は IPv4 アドレスとして読めません`, ref: [id] });
+  }
+  for (const [id, load] of powerLoads(doc)) {
+    if (load.over) found.push({ level: 0, what: '給電容量の超過', target: name(id), detail: `${load.watts}W / 容量 ${load.capacity}W（${load.watts - (load.capacity ?? 0)}W 超過）`, ref: [id, ...load.ids] });
+  }
+  // The same cable ID on two cables, which can only come from IDs typed by hand.
+  const byId = new Map<string, string[]>();
+  for (const [edge, cid] of ids) byId.set(cid, [...(byId.get(cid) ?? []), edge]);
+  for (const [cid, edges] of byId) if (edges.length > 1) found.push({ level: 0, what: 'ケーブル ID の重複', target: cid, detail: `${edges.length} 本に同じ ID が付いています`, ref: edges });
+  for (const e of doc.edges) {
+    if (e.signal === 'flow') continue;
+    const mismatch = [portOf(e.from), portOf(e.to)].filter((p) => p && p.signal !== e.signal);
+    if (mismatch.length)
+      found.push({ level: 0, what: '種別の不一致', target: ids.get(e.id) ?? `${name(e.from.node)} → ${name(e.to.node)}`, detail: `${signalOf(e.signal).label} のケーブルが ${mismatch.map((p) => (p!.name === signalOf(p!.signal).label ? p!.name : `${p!.name}（${signalOf(p!.signal).label}）`)).join('・')} につながっています`, ref: [e.id] });
+  }
+  for (const d of devices(doc)) {
+    const powerIn = d.ports.filter((p) => p.side === 'left' && p.signal === 'power');
+    const fed = touches(d).some((e) => e.signal === 'power' && (e.to.node === d.id || e.from.node === d.id));
+    if (powerIn.length && !fed && touches(d).length) found.push({ level: 1, what: '電源が未接続', target: name(d.id), detail: `${powerIn.map((p) => p.name).join('・')} に電源がつながっていません`, ref: [d.id] });
+    if (!touches(d).length) found.push({ level: 1, what: '接続のない機材', target: name(d.id), detail: 'どこにもつながっていません', ref: [d.id] });
+    const feeding = [...powerLoads(doc)].find(([, l]) => l.ids.includes(d.id));
+    if (feeding && d.watts == null) found.push({ level: 1, what: '消費電力が未入力', target: name(d.id), detail: `${name(feeding[0])} の負荷の合計に入りません`, ref: [d.id] });
+  }
+  for (const [id, load] of powerLoads(doc)) {
+    if (load.capacity == null) found.push({ level: 1, what: '給電容量が未入力', target: name(id), detail: `${load.ids.length} 台に給電していますが、容量がわからないため超過を判定できません`, ref: [id] });
+  }
+  // Lengths are often filled in late, so the cables without one make a single row, not dozens.
+  const unmeasured = cables(doc).filter((e) => e.length == null);
+  if (unmeasured.length) {
+    const list = unmeasured.map((e) => ids.get(e.id) ?? '').sort(natural);
+    found.push({ level: 1, what: '長さが未入力', target: `${unmeasured.length} 本`, detail: list.length > 8 ? `${list.slice(0, 8).join('、')} ほか ${list.length - 8} 本` : list.join('、'), ref: unmeasured.map((e) => e.id) });
+  }
+  found.sort((a, b) => a.level - b.level);
+  return {
+    title: 'チェック',
+    head: ['重要度', '項目', '対象', '内容'],
+    widths: [8, 16, 20, 40],
+    rows: found.map((f) => [f.level === 0 ? '要修正' : '確認', f.what, f.target, f.detail]),
+    refs: found.map((f) => f.ref),
+    rowClass: found.map((f) => (f.level === 0 ? 'warn' : 'note')),
+    empty: '問題は見つかりませんでした。',
+  };
 }
