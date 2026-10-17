@@ -10,7 +10,7 @@ devices:
     category: PC
     area: 制御室
     in: [LAN:lan, USB:usb, AC:power]
-    out: [HDMI 1:hdmi, HDMI 2:hdmi]
+    out: [HDMI 1:video, HDMI 2:video]
   - id: sd1
     name: Stream Deck
     maker: Elgato
@@ -34,7 +34,7 @@ devices:
     watts: 5
     category: 延長器
     area: 制御室
-    in: [HDMI IN:hdmi]
+    in: [HDMI IN:video]
     out: [HDBaseT:lan]
   - id: rx1
     name: エクステンダー RX
@@ -43,7 +43,7 @@ devices:
     category: 延長器
     area: 展示室
     in: [HDBaseT:lan]
-    out: [HDMI OUT:hdmi]
+    out: [HDMI OUT:video]
   - id: pj1
     name: プロジェクター
     maker: Panasonic
@@ -51,7 +51,7 @@ devices:
     watts: 580
     category: 映像表示
     area: 展示室
-    in: [HDMI:hdmi, LAN:lan, AC:power]
+    in: [HDMI:video, LAN:lan, AC:power]
   - id: mon1
     name: 操作用モニター
     maker: EIZO
@@ -59,7 +59,7 @@ devices:
     watts: 30
     category: 映像表示
     area: 制御室
-    in: [HDMI:hdmi]
+    in: [HDMI:video]
   - id: lidar1
     name: LiDAR
     maker: 北陽電機
@@ -83,10 +83,10 @@ cables:
   - { from: ups1, to: tx1, type: power }
   - { from: ups1, to: pj1.AC, type: power, length: 30 }
   - { from: sd1.USB, to: pc1.USB, type: usb, length: 1.5 }
-  - { from: pc1.HDMI 1, to: tx1.HDMI IN, type: hdmi, length: 2, label: メイン映像 }
-  - { from: pc1.HDMI 2, to: mon1.HDMI, type: hdmi, length: 2 }
+  - { from: pc1.HDMI 1, to: tx1.HDMI IN, type: video, length: 2, label: メイン映像 }
+  - { from: pc1.HDMI 2, to: mon1.HDMI, type: video, length: 2 }
   - { from: tx1.HDBaseT, to: rx1.HDBaseT, type: lan, length: 30, label: Cat6A }
-  - { from: rx1.HDMI OUT, to: pj1.HDMI, type: hdmi, length: 1 }
+  - { from: rx1.HDMI OUT, to: pj1.HDMI, type: video, length: 1 }
   - { from: sw1.PORT 2, to: pj1.LAN, type: lan, length: 30, label: PJLink }
   - { from: lidar1.LAN, to: sw1.PORT 1, type: lan, length: 30 }
   - { from: sw1.PORT 3, to: pc1.LAN, type: lan, length: 2 }

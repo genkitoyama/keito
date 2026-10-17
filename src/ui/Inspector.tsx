@@ -234,7 +234,7 @@ function DevicePanel({ n }: { n: DeviceNode }) {
     const names = new Set(n.ports.map((p) => p.name));
     let name = base;
     for (let i = 2; names.has(name); i++) name = `${base} ${i}`;
-    patch({ ports: [...n.ports, { id: freshId(new Set(n.ports.map((p) => p.id)), 'p'), name, side, signal: 'hdmi' }] }, true);
+    patch({ ports: [...n.ports, { id: freshId(new Set(n.ports.map((p) => p.id)), 'p'), name, side, signal: 'video' }] }, true);
   };
   const removePort = (id: string) =>
     st().mutate((d) => ({

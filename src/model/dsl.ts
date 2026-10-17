@@ -2,7 +2,8 @@ import { Document, isScalar, parse, visit } from 'yaml';
 import { docBounds, frameOf } from './geometry';
 import { autoLayout } from './layout';
 import { JUNCTION, freshId, makeEdge, parsePort, presetOf, presetPorts } from './presets';
-import { customSignals, isBuiltInSignal, isSignal, registerSignals } from './signals';
+import { VIDEO_STANDARDS, currentSignal, customSignals, isBuiltInSignal, isSignal, registerSignals } from './signals';
+import { upgradeDoc, videoStandard } from './video';
 import type { ColorKey, CustomSignal, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FrameNode, Node, ShapeKind } from './types';
 import { PALETTE } from './signals';
 
@@ -33,18 +34,19 @@ devices:
     color: blue            # 任意。機材の色分け（手配元・系統など）
     preset: pc             # 任意。in/out を省略したときの既定ポート
     in:  [LAN:lan, AC:power]          # 左側ポート "名前:種別"
-    out: ["HDMI 1:hdmi", DP:dp]       # 右側ポート
+    out: ["HDMI 1:video", DP:video]   # 右側ポート
     pos: [x, y]            # 省略すると自動レイアウト
 cables:
   - from: pc1.HDMI 1       # 機材ID.ポート名（無いポートは自動追加。同じ名前のポートが複数あるときは IN#2 のように何番目かを付ける）
     to: pj1.HDMI
-    type: hdmi             # hdmi sdi dp lan usb audio power fiber dmx serial wireless other、または signals で足した種別
+    type: video            # video(映像) lan usb audio power fiber dmx serial wireless other、または signals で足した種別。
+                           # 映像の規格(HDMI / SDI …)は spec かポート名で。ケーブルIDは HDMI-01 のように規格から付く
     cableId: V-01          # 任意。ケーブルIDを手で決める（省略で自動採番）。showId / showLength: false でラベルから隠す。stacked: true で項目を 1 行ずつに
     spec: 光 HDMI AOC      # 任意。品名・規格（線のラベルに出る）。maker / model / url も書ける
     length: 10             # m、任意
     label: メイン映像      # 任意
     labelAt: 0.3           # 任意。ラベルの位置（線の始点 0 〜 終点 1、既定は中央）
-    color: "#dc2626"       # 任意。この線だけの色。種別ごとの色は先頭に colors: { hdmi: "#eab308" } と書く
+    color: "#dc2626"       # 任意。この線だけの色。種別ごとの色は先頭に colors: { video: "#eab308" } と書く
     # 電源(type: power)は線を省略し、両端に接続先だけ表示する。tag: true/false でケーブルごとに切替、
     # 全体は先頭の powerTags: false で線表示に。to をポートなしの機材IDにすると空きポートを自動で使う
 shapes:                    # フローチャート・付箋
@@ -251,7 +253,8 @@ export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
   // store registers the new ones itself if the result is applied.
   const before = customSignals();
   try {
-    return readYaml(src, prev, relayout);
+    // Old type names (hdmi, sdi, dp) anywhere else in it, colours included, come out as 映像.
+    return upgradeDoc(readYaml(src, prev, relayout));
   } finally {
     registerSignals(before);
   }
@@ -383,7 +386,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const edges: Edge[] = [];
-  const resolve = (ref: unknown, where: string, side: 'left' | 'right', signal: string): EdgeEnd => {
+  const resolve = (ref: unknown, where: string, side: 'left' | 'right', signal: string, base?: string): EdgeEnd => {
     // NFKC folds full-width alphanumerics / spaces / dots typed with an IME.
     const s = str(ref).normalize('NFKC').trim();
     const dot = s.indexOf('.');
@@ -396,7 +399,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
       const used = new Set(edges.flatMap((e) => [e.from.node === nodeId ? e.from.port : undefined, e.to.node === nodeId ? e.to.port : undefined]));
       let free = node.ports.find((p) => p.signal === signal && p.side === side && !used.has(p.id));
       if (!free) {
-        free = { id: freshId(new Set(node.ports.map((p) => p.id)), 'p'), name: `${signal === 'power' ? 'AC' : signal.toUpperCase()} ${node.ports.filter((p) => p.signal === signal && p.side === side).length + 1}`, side, signal };
+        free = { id: freshId(new Set(node.ports.map((p) => p.id)), 'p'), name: `${base ?? (signal === 'power' ? 'AC' : signal === 'video' ? 'HDMI' : signal.toUpperCase())} ${node.ports.filter((p) => p.signal === signal && p.side === side).length + 1}`, side, signal };
         node.ports.push(free);
       }
       return { node: nodeId, port: free.id };
@@ -420,10 +423,13 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   arr(root.cables).forEach((v, i) => {
     if (!isObj(v)) throw new Error(`cables[${i}]: マップではありません`);
     const where = `cables[${i}]`;
-    const given = str(v.type).normalize('NFKC').trim().toLowerCase();
-    if (given && !isSignal(given)) throw new Error(`${where}: 種別 "${given}" は使えません`);
-    const from = resolve(v.from, where, 'right', given || 'other');
-    const to = resolve(v.to, where, 'left', given || portSignal(from) || 'other');
+    const typed = str(v.type).normalize('NFKC').trim().toLowerCase();
+    if (typed && !isSignal(typed)) throw new Error(`${where}: 種別 "${typed}" は使えません`);
+    // The old video types (type: sdi) are 映像, and the standard they named names any port added.
+    const named = VIDEO_STANDARDS[typed] as string | undefined;
+    const given = typed && currentSignal(typed);
+    const from = resolve(v.from, where, 'right', given || 'other', named);
+    const to = resolve(v.to, where, 'left', given || portSignal(from) || 'other', named);
     const e = makeEdge(taken, from, to, given || portSignal(from) || portSignal(to) || 'other');
     e.length = typeof v.length === 'number' ? v.length : null;
     e.label = str(v.label);
@@ -433,6 +439,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (typeof v.showLength === 'boolean') e.showLength = v.showLength;
     if (typeof v.stacked === 'boolean') e.stacked = v.stacked;
     e.spec = str(v.spec) || undefined;
+    if (named && !e.spec && !videoStandard(nodes, e)) e.spec = named;
     e.maker = str(v.maker) || undefined;
     e.model = str(v.model) || undefined;
     e.url = str(v.url) || undefined;
@@ -513,7 +520,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (root[k] != null) meta[k] = str(root[k]);
   }
   const powerTags = typeof root.powerTags === 'boolean' ? root.powerTags : prev.powerTags;
-  // Per-board colours for signal types: `colors: { hdmi: "#eab308" }`.
+  // Per-board colours for signal types: `colors: { video: "#eab308" }`.
   // Leaving `colors` out keeps the board's current choices; `colors: {}` clears them.
   const picked = isObj(root.colors) ? Object.entries(root.colors).filter(([k, v]) => isSignal(k) && HEX.test(str(v))) : null;
   const signalColors = !picked ? prev.signalColors : picked.length ? Object.fromEntries(picked.map(([k, v]) => [k, str(v)])) : undefined;

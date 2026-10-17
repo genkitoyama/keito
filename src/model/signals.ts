@@ -14,9 +14,9 @@ export interface Signal {
 
 export const SIGNALS: Signal[] = [
   { id: 'flow', label: 'フロー（矢印）', prefix: '', color: '#76869a', dash: '', cable: false },
-  { id: 'hdmi', label: 'HDMI', prefix: 'HDMI', color: '#2563eb', dash: '', cable: true },
-  { id: 'sdi', label: 'SDI', prefix: 'SDI', color: '#16a34a', dash: '9 3', cable: true },
-  { id: 'dp', label: 'DisplayPort', prefix: 'DP', color: '#7c3aed', dash: '9 3 2 3', cable: true },
+  // One type for every video cable, as for audio: the standard (HDMI, SDI …) is the cable's spec.
+  // Its cable IDs still read HDMI-01, SDI-01 …, taken from the spec or the ports (see video.ts).
+  { id: 'video', label: '映像', prefix: 'VID', color: '#2563eb', dash: '', cable: true },
   { id: 'lan', label: 'LAN', prefix: 'LAN', color: '#d97706', dash: '2 3', cable: true },
   { id: 'usb', label: 'USB', prefix: 'USB', color: '#0891b2', dash: '10 3 2 3 2 3', cable: true },
   { id: 'audio', label: '音声', prefix: 'AUD', color: '#db2777', dash: '5 3', cable: true },
@@ -30,6 +30,11 @@ export const SIGNALS: Signal[] = [
 
 const byId = new Map(SIGNALS.map((s) => [s.id, s]));
 
+/** Video standards that were types of their own before 映像 took them in, by their old ids. */
+export const VIDEO_STANDARDS: Record<string, string> = { hdmi: 'HDMI', sdi: 'SDI', dp: 'DisplayPort' };
+/** The type an id stands for today: an old video id is 映像. */
+export const currentSignal = (id: SignalId): SignalId => (Object.prototype.hasOwnProperty.call(VIDEO_STANDARDS, id) ? 'video' : id);
+
 // Signal types a board adds for itself. They are looked up from so many places that the board in
 // use registers them here (the store does it whenever the board changes) instead of every caller
 // passing the board along.
@@ -37,13 +42,13 @@ let custom = new Map<SignalId, Signal>();
 /** Dash patterns handed to custom types in turn, so they stay distinguishable on monochrome sheets. */
 const DASHES = ['11 3 3 3', '7 3 1 3 1 3', '4 2', '16 3 2 3 2 3', '9 2 3 2'];
 export function registerSignals(list: CustomSignal[] | undefined): void {
-  custom = new Map((list ?? []).filter((s) => !byId.has(s.id)).map((s, i) => [s.id, { ...s, dash: DASHES[i % DASHES.length], cable: true }]));
+  custom = new Map((list ?? []).filter((s) => !isBuiltInSignal(s.id)).map((s, i) => [s.id, { ...s, dash: DASHES[i % DASHES.length], cable: true }]));
 }
 /** The types registered now, in a form `registerSignals` takes back. */
 export const customSignals = (): CustomSignal[] => [...custom.values()].map(({ id, label, prefix, color }) => ({ id, label, prefix, color }));
-export const signalOf = (id: SignalId): Signal => custom.get(id) ?? byId.get(id) ?? byId.get('other')!;
-export const isSignal = (id: string): boolean => custom.has(id) || byId.has(id);
-export const isBuiltInSignal = (id: string): boolean => byId.has(id);
+export const signalOf = (id: SignalId): Signal => custom.get(id) ?? byId.get(currentSignal(id)) ?? byId.get('other')!;
+export const isSignal = (id: string): boolean => custom.has(id) || byId.has(currentSignal(id));
+export const isBuiltInSignal = (id: string): boolean => byId.has(currentSignal(id));
 /** Every type on offer: the built-in ones, then the board's own. */
 export const allSignals = (): Signal[] => [...SIGNALS, ...custom.values()];
 

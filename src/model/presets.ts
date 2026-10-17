@@ -1,4 +1,7 @@
-import { signalOf } from './signals';
+import { currentSignal, signalOf } from './signals';
+
+/** What a port added for a type is called before its number: AC 1, HDMI 1, LAN 1. */
+export const portBase = (signal: string): string => (signal === 'power' ? 'AC' : signal === 'video' ? 'HDMI' : signalOf(signal).prefix);
 import type { ColorKey, DeviceNode, Doc, Edge, EdgeEnd, Node, Port, ShapeKind } from './types';
 
 export interface Preset {
@@ -11,21 +14,21 @@ export interface Preset {
 }
 
 export const PRESETS: Preset[] = [
-  { key: 'pc', name: 'PC', category: 'PC', in: ['LAN:lan', 'USB:usb', 'AC:power'], out: ['HDMI 1:hdmi', 'HDMI 2:hdmi', 'DP:dp'] },
-  { key: 'mac', name: 'Mac', category: 'PC', in: ['LAN:lan', 'USB-C:usb', 'AC:power'], out: ['HDMI:hdmi', 'TB 1:dp', 'TB 2:dp'] },
-  { key: 'player', name: 'メディアプレーヤー', category: '再生機', in: ['LAN:lan', 'AC:power'], out: ['HDMI:hdmi', 'AUDIO:audio'] },
-  { key: 'pj', name: 'プロジェクター', category: '映像表示', in: ['HDMI:hdmi', 'SDI:sdi', 'HDBaseT:lan', 'LAN:lan', 'AC:power'], out: [] },
-  { key: 'display', name: 'ディスプレイ', category: '映像表示', in: ['HDMI 1:hdmi', 'HDMI 2:hdmi', 'RS-232C:serial', 'AC:power'], out: [] },
-  { key: 'ledproc', name: 'LEDプロセッサ', category: '映像表示', in: ['HDMI:hdmi', 'SDI:sdi', 'LAN:lan', 'AC:power'], out: ['PORT 1:lan', 'PORT 2:lan', 'PORT 3:lan', 'PORT 4:lan'] },
+  { key: 'pc', name: 'PC', category: 'PC', in: ['LAN:lan', 'USB:usb', 'AC:power'], out: ['HDMI 1:video', 'HDMI 2:video', 'DP:video'] },
+  { key: 'mac', name: 'Mac', category: 'PC', in: ['LAN:lan', 'USB-C:usb', 'AC:power'], out: ['HDMI:video', 'TB 1:video', 'TB 2:video'] },
+  { key: 'player', name: 'メディアプレーヤー', category: '再生機', in: ['LAN:lan', 'AC:power'], out: ['HDMI:video', 'AUDIO:audio'] },
+  { key: 'pj', name: 'プロジェクター', category: '映像表示', in: ['HDMI:video', 'SDI:video', 'HDBaseT:lan', 'LAN:lan', 'AC:power'], out: [] },
+  { key: 'display', name: 'ディスプレイ', category: '映像表示', in: ['HDMI 1:video', 'HDMI 2:video', 'RS-232C:serial', 'AC:power'], out: [] },
+  { key: 'ledproc', name: 'LEDプロセッサ', category: '映像表示', in: ['HDMI:video', 'SDI:video', 'LAN:lan', 'AC:power'], out: ['PORT 1:lan', 'PORT 2:lan', 'PORT 3:lan', 'PORT 4:lan'] },
   { key: 'led', name: 'LEDウォール', category: '映像表示', in: ['DATA:lan', 'AC:power'], out: [] },
-  { key: 'switcher', name: 'スイッチャー', category: '映像処理', in: ['IN 1:hdmi', 'IN 2:hdmi', 'IN 3:hdmi', 'IN 4:hdmi', 'LAN:lan'], out: ['PGM:hdmi', 'AUX:hdmi', 'MV:hdmi'] },
-  { key: 'matrix', name: 'マトリクススイッチャー', category: '映像処理', in: ['IN 1:hdmi', 'IN 2:hdmi', 'IN 3:hdmi', 'IN 4:hdmi', 'LAN:lan'], out: ['OUT 1:hdmi', 'OUT 2:hdmi', 'OUT 3:hdmi', 'OUT 4:hdmi'] },
-  { key: 'da', name: '分配器', category: '映像処理', in: ['IN:hdmi'], out: ['OUT 1:hdmi', 'OUT 2:hdmi', 'OUT 3:hdmi', 'OUT 4:hdmi'] },
-  { key: 'conv', name: 'コンバーター', category: '映像処理', in: ['SDI IN:sdi'], out: ['HDMI OUT:hdmi'] },
-  { key: 'tx', name: 'エクステンダー TX', category: '延長器', in: ['HDMI IN:hdmi'], out: ['HDBaseT:lan'] },
-  { key: 'rx', name: 'エクステンダー RX', category: '延長器', in: ['HDBaseT:lan'], out: ['HDMI OUT:hdmi'] },
-  { key: 'capture', name: 'キャプチャー', category: '映像処理', in: ['HDMI IN:hdmi'], out: ['USB:usb', 'LOOP:hdmi'] },
-  { key: 'cam', name: 'カメラ', category: 'カメラ', in: ['LAN:lan', 'DC:power'], out: ['SDI:sdi', 'HDMI:hdmi'] },
+  { key: 'switcher', name: 'スイッチャー', category: '映像処理', in: ['HDMI IN 1:video', 'HDMI IN 2:video', 'HDMI IN 3:video', 'HDMI IN 4:video', 'LAN:lan'], out: ['HDMI PGM:video', 'HDMI AUX:video', 'HDMI MV:video'] },
+  { key: 'matrix', name: 'マトリクススイッチャー', category: '映像処理', in: ['HDMI IN 1:video', 'HDMI IN 2:video', 'HDMI IN 3:video', 'HDMI IN 4:video', 'LAN:lan'], out: ['HDMI OUT 1:video', 'HDMI OUT 2:video', 'HDMI OUT 3:video', 'HDMI OUT 4:video'] },
+  { key: 'da', name: '分配器', category: '映像処理', in: ['HDMI IN:video'], out: ['HDMI OUT 1:video', 'HDMI OUT 2:video', 'HDMI OUT 3:video', 'HDMI OUT 4:video'] },
+  { key: 'conv', name: 'コンバーター', category: '映像処理', in: ['SDI IN:video'], out: ['HDMI OUT:video'] },
+  { key: 'tx', name: 'エクステンダー TX', category: '延長器', in: ['HDMI IN:video'], out: ['HDBaseT:lan'] },
+  { key: 'rx', name: 'エクステンダー RX', category: '延長器', in: ['HDBaseT:lan'], out: ['HDMI OUT:video'] },
+  { key: 'capture', name: 'キャプチャー', category: '映像処理', in: ['HDMI IN:video'], out: ['USB:usb', 'HDMI LOOP:video'] },
+  { key: 'cam', name: 'カメラ', category: 'カメラ', in: ['LAN:lan', 'DC:power'], out: ['SDI:video', 'HDMI:video'] },
   { key: 'webcam', name: 'Webカメラ', category: 'カメラ', in: [], out: ['USB:usb'] },
   { key: 'depth', name: '深度カメラ', category: 'センサー', in: ['DC:power'], out: ['USB:usb'] },
   { key: 'lidar', name: 'LiDAR', category: 'センサー', in: ['DC:power'], out: ['LAN:lan'] },
@@ -35,7 +38,7 @@ export const PRESETS: Preset[] = [
   { key: 'router', name: 'ルーター', category: 'ネットワーク', in: ['WAN:lan', 'AC:power'], out: ['LAN 1:lan', 'LAN 2:lan', 'LAN 3:lan', 'LAN 4:lan'] },
   { key: 'ap', name: 'Wi-Fi AP', category: 'ネットワーク', in: ['LAN/PoE:lan'], out: ['Wi-Fi:wireless'] },
   { key: 'tablet', name: 'タブレット', category: '操作端末', in: ['Wi-Fi:wireless', 'USB-C:usb'], out: [] },
-  { key: 'touch', name: 'タッチモニター', category: '操作端末', in: ['HDMI:hdmi', 'AC:power'], out: ['USB:usb'] },
+  { key: 'touch', name: 'タッチモニター', category: '操作端末', in: ['HDMI:video', 'AC:power'], out: ['USB:usb'] },
   { key: 'streamdeck', name: 'Stream Deck', category: '操作端末', in: [], out: ['USB:usb'] },
   { key: 'audioif', name: 'オーディオIF', category: '音響', in: ['USB:usb', 'MIC 1:audio', 'MIC 2:audio'], out: ['OUT L:audio', 'OUT R:audio'] },
   { key: 'mixer', name: 'ミキサー', category: '音響', in: ['CH 1:audio', 'CH 2:audio', 'CH 3:audio', 'CH 4:audio', 'USB:usb'], out: ['MAIN L:audio', 'MAIN R:audio', 'AUX:audio'] },
@@ -47,50 +50,50 @@ export const PRESETS: Preset[] = [
   { key: 'tap', name: '電源タップ', category: '電源', in: ['AC IN:power'], out: ['AC 1:power', 'AC 2:power', 'AC 3:power', 'AC 4:power', 'AC 5:power', 'AC 6:power'] },
   { key: 'ups', name: 'UPS', category: '電源', in: ['AC IN:power'], out: ['AC 1:power', 'AC 2:power', 'AC 3:power', 'AC 4:power'] },
   // --- PC・再生機
-  { key: 'macmini', name: 'Mac mini', category: 'PC', in: ['LAN:lan', 'USB:usb', 'AC:power'], out: ['HDMI:hdmi', 'TB 1:dp', 'TB 2:dp'] },
-  { key: 'gamingpc', name: 'ゲーミングPC', category: 'PC', in: ['LAN:lan', 'USB:usb', 'AC:power'], out: ['HDMI:hdmi', 'DP 1:dp', 'DP 2:dp', 'DP 3:dp'] },
-  { key: 'laptop', name: 'ノートPC', category: 'PC', in: ['LAN:lan', 'USB:usb', 'AC:power'], out: ['HDMI:hdmi', 'USB-C:dp'] },
-  { key: 'raspi', name: 'Raspberry Pi', category: 'PC', in: ['LAN:lan', 'USB:usb', 'GPIO:serial', 'DC 5V:power'], out: ['HDMI 0:hdmi', 'HDMI 1:hdmi'] },
-  { key: 'mediaserver', name: 'メディアサーバー', category: '再生機', in: ['LAN:lan', 'SDI IN:sdi', 'LTC:audio', 'AC:power'], out: ['OUT 1:dp', 'OUT 2:dp', 'OUT 3:dp', 'OUT 4:dp'] },
-  { key: 'signage', name: 'サイネージプレーヤー', category: '再生機', in: ['LAN:lan', 'GPIO:serial', 'DC:power'], out: ['HDMI:hdmi', 'AUDIO:audio'] },
+  { key: 'macmini', name: 'Mac mini', category: 'PC', in: ['LAN:lan', 'USB:usb', 'AC:power'], out: ['HDMI:video', 'TB 1:video', 'TB 2:video'] },
+  { key: 'gamingpc', name: 'ゲーミングPC', category: 'PC', in: ['LAN:lan', 'USB:usb', 'AC:power'], out: ['HDMI:video', 'DP 1:video', 'DP 2:video', 'DP 3:video'] },
+  { key: 'laptop', name: 'ノートPC', category: 'PC', in: ['LAN:lan', 'USB:usb', 'AC:power'], out: ['HDMI:video', 'USB-C:video'] },
+  { key: 'raspi', name: 'Raspberry Pi', category: 'PC', in: ['LAN:lan', 'USB:usb', 'GPIO:serial', 'DC 5V:power'], out: ['HDMI 0:video', 'HDMI 1:video'] },
+  { key: 'mediaserver', name: 'メディアサーバー', category: '再生機', in: ['LAN:lan', 'SDI IN:video', 'LTC:audio', 'AC:power'], out: ['DP OUT 1:video', 'DP OUT 2:video', 'DP OUT 3:video', 'DP OUT 4:video'] },
+  { key: 'signage', name: 'サイネージプレーヤー', category: '再生機', in: ['LAN:lan', 'GPIO:serial', 'DC:power'], out: ['HDMI:video', 'AUDIO:audio'] },
   { key: 'nas', name: 'NAS', category: 'ネットワーク', in: ['LAN:lan', 'AC:power'], out: [] },
   // --- 映像表示
-  { key: 'laserpj', name: 'レーザープロジェクター', category: '映像表示', in: ['HDMI:hdmi', 'SDI:sdi', 'DIGITAL LINK:lan', 'LAN:lan', 'AC:power'], out: [] },
-  { key: 'shortpj', name: '超短焦点プロジェクター', category: '映像表示', in: ['HDMI 1:hdmi', 'HDMI 2:hdmi', 'LAN:lan', 'AC:power'], out: [] },
-  { key: 'signagemon', name: 'サイネージモニター', category: '映像表示', in: ['HDMI 1:hdmi', 'HDMI 2:hdmi', 'DP:dp', 'LAN:lan', 'RS-232C:serial', 'AC:power'], out: [] },
-  { key: 'videowall', name: 'マルチディスプレイ', category: '映像表示', in: ['HDMI:hdmi', 'DP:dp', 'LAN:lan', 'AC:power'], out: ['DP OUT:dp'] },
-  { key: 'oled', name: '透過ディスプレイ', category: '映像表示', in: ['HDMI:hdmi', 'USB (タッチ):usb', 'AC:power'], out: [] },
-  { key: 'previewmon', name: '確認用モニター', category: '映像表示', in: ['HDMI:hdmi', 'SDI:sdi', 'DC:power'], out: ['SDI LOOP:sdi'] },
-  { key: 'ledsender', name: 'LED送信ボックス', category: '映像表示', in: ['DVI/HDMI:hdmi', 'USB:usb', 'AC:power'], out: ['PORT 1:lan', 'PORT 2:lan'] },
+  { key: 'laserpj', name: 'レーザープロジェクター', category: '映像表示', in: ['HDMI:video', 'SDI:video', 'DIGITAL LINK:lan', 'LAN:lan', 'AC:power'], out: [] },
+  { key: 'shortpj', name: '超短焦点プロジェクター', category: '映像表示', in: ['HDMI 1:video', 'HDMI 2:video', 'LAN:lan', 'AC:power'], out: [] },
+  { key: 'signagemon', name: 'サイネージモニター', category: '映像表示', in: ['HDMI 1:video', 'HDMI 2:video', 'DP:video', 'LAN:lan', 'RS-232C:serial', 'AC:power'], out: [] },
+  { key: 'videowall', name: 'マルチディスプレイ', category: '映像表示', in: ['HDMI:video', 'DP:video', 'LAN:lan', 'AC:power'], out: ['DP OUT:video'] },
+  { key: 'oled', name: '透過ディスプレイ', category: '映像表示', in: ['HDMI:video', 'USB (タッチ):usb', 'AC:power'], out: [] },
+  { key: 'previewmon', name: '確認用モニター', category: '映像表示', in: ['HDMI:video', 'SDI:video', 'DC:power'], out: ['SDI LOOP:video'] },
+  { key: 'ledsender', name: 'LED送信ボックス', category: '映像表示', in: ['DVI/HDMI:video', 'USB:usb', 'AC:power'], out: ['PORT 1:lan', 'PORT 2:lan'] },
   { key: 'ledcabinet', name: 'LEDキャビネット', category: '映像表示', in: ['DATA IN:lan', 'AC IN:power'], out: ['DATA OUT:lan', 'AC OUT:power'] },
   // --- 映像処理
-  { key: 'atemmini', name: 'ATEM Mini Pro', category: '映像処理', in: ['HDMI 1:hdmi', 'HDMI 2:hdmi', 'HDMI 3:hdmi', 'HDMI 4:hdmi', 'MIC 1:audio', 'MIC 2:audio', 'LAN:lan', 'DC:power'], out: ['HDMI OUT:hdmi', 'USB-C:usb'] },
-  { key: 'sdiswitcher', name: 'SDIスイッチャー', category: '映像処理', in: ['SDI 1:sdi', 'SDI 2:sdi', 'SDI 3:sdi', 'SDI 4:sdi', 'LAN:lan', 'AC:power'], out: ['PGM:sdi', 'AUX:sdi', 'MV:hdmi'] },
-  { key: 'seamless', name: 'シームレススイッチャー', category: '映像処理', in: ['HDMI 1:hdmi', 'HDMI 2:hdmi', 'HDMI 3:hdmi', 'HDMI 4:hdmi', 'LAN:lan', 'AC:power'], out: ['OUT A:hdmi', 'OUT B:hdmi'] },
-  { key: 'scaler', name: 'スケーラー', category: '映像処理', in: ['HDMI IN:hdmi', 'DC:power'], out: ['HDMI OUT:hdmi'] },
-  { key: 'blend', name: 'エッジブレンド／マルチ出力', category: '映像処理', in: ['DP IN:dp', 'USB:usb', 'DC:power'], out: ['OUT 1:hdmi', 'OUT 2:hdmi', 'OUT 3:hdmi'] },
-  { key: 'hdmisplit', name: 'HDMIスプリッター', category: '映像処理', in: ['IN:hdmi', 'DC:power'], out: ['OUT 1:hdmi', 'OUT 2:hdmi'] },
-  { key: 'hdmisel', name: 'HDMIセレクター', category: '映像処理', in: ['IN 1:hdmi', 'IN 2:hdmi', 'IN 3:hdmi', 'IN 4:hdmi'], out: ['OUT:hdmi'] },
-  { key: 'sdida', name: 'SDI分配器', category: '映像処理', in: ['SDI IN:sdi', 'DC:power'], out: ['OUT 1:sdi', 'OUT 2:sdi', 'OUT 3:sdi', 'OUT 4:sdi'] },
-  { key: 'h2s', name: 'HDMI→SDIコンバーター', category: '映像処理', in: ['HDMI IN:hdmi', 'DC:power'], out: ['SDI OUT 1:sdi', 'SDI OUT 2:sdi'] },
-  { key: 's2h', name: 'SDI→HDMIコンバーター', category: '映像処理', in: ['SDI IN:sdi', 'DC:power'], out: ['HDMI OUT:hdmi', 'SDI LOOP:sdi'] },
-  { key: 'ioif', name: '映像入出力IF', category: '映像処理', in: ['SDI IN:sdi', 'HDMI IN:hdmi'], out: ['Thunderbolt:usb', 'SDI OUT:sdi', 'HDMI OUT:hdmi'] },
-  { key: 'ndienc', name: 'NDIエンコーダー', category: '映像処理', in: ['HDMI IN:hdmi', 'DC/PoE:power'], out: ['LAN (NDI):lan', 'HDMI LOOP:hdmi'] },
-  { key: 'ndidec', name: 'NDIデコーダー', category: '映像処理', in: ['LAN (NDI):lan', 'DC/PoE:power'], out: ['HDMI OUT:hdmi'] },
-  { key: 'streamenc', name: '配信エンコーダー', category: '映像処理', in: ['HDMI IN:hdmi', 'SDI IN:sdi', 'AUDIO IN:audio', 'AC:power'], out: ['LAN:lan'] },
-  { key: 'recorder', name: 'レコーダー', category: '映像処理', in: ['SDI IN:sdi', 'HDMI IN:hdmi', 'DC:power'], out: ['SDI OUT:sdi', 'HDMI OUT:hdmi'] },
+  { key: 'atemmini', name: 'ATEM Mini Pro', category: '映像処理', in: ['HDMI 1:video', 'HDMI 2:video', 'HDMI 3:video', 'HDMI 4:video', 'MIC 1:audio', 'MIC 2:audio', 'LAN:lan', 'DC:power'], out: ['HDMI OUT:video', 'USB-C:usb'] },
+  { key: 'sdiswitcher', name: 'SDIスイッチャー', category: '映像処理', in: ['SDI 1:video', 'SDI 2:video', 'SDI 3:video', 'SDI 4:video', 'LAN:lan', 'AC:power'], out: ['SDI PGM:video', 'SDI AUX:video', 'HDMI MV:video'] },
+  { key: 'seamless', name: 'シームレススイッチャー', category: '映像処理', in: ['HDMI 1:video', 'HDMI 2:video', 'HDMI 3:video', 'HDMI 4:video', 'LAN:lan', 'AC:power'], out: ['HDMI OUT A:video', 'HDMI OUT B:video'] },
+  { key: 'scaler', name: 'スケーラー', category: '映像処理', in: ['HDMI IN:video', 'DC:power'], out: ['HDMI OUT:video'] },
+  { key: 'blend', name: 'エッジブレンド／マルチ出力', category: '映像処理', in: ['DP IN:video', 'USB:usb', 'DC:power'], out: ['HDMI OUT 1:video', 'HDMI OUT 2:video', 'HDMI OUT 3:video'] },
+  { key: 'hdmisplit', name: 'HDMIスプリッター', category: '映像処理', in: ['HDMI IN:video', 'DC:power'], out: ['HDMI OUT 1:video', 'HDMI OUT 2:video'] },
+  { key: 'hdmisel', name: 'HDMIセレクター', category: '映像処理', in: ['HDMI IN 1:video', 'HDMI IN 2:video', 'HDMI IN 3:video', 'HDMI IN 4:video'], out: ['HDMI OUT:video'] },
+  { key: 'sdida', name: 'SDI分配器', category: '映像処理', in: ['SDI IN:video', 'DC:power'], out: ['SDI OUT 1:video', 'SDI OUT 2:video', 'SDI OUT 3:video', 'SDI OUT 4:video'] },
+  { key: 'h2s', name: 'HDMI→SDIコンバーター', category: '映像処理', in: ['HDMI IN:video', 'DC:power'], out: ['SDI OUT 1:video', 'SDI OUT 2:video'] },
+  { key: 's2h', name: 'SDI→HDMIコンバーター', category: '映像処理', in: ['SDI IN:video', 'DC:power'], out: ['HDMI OUT:video', 'SDI LOOP:video'] },
+  { key: 'ioif', name: '映像入出力IF', category: '映像処理', in: ['SDI IN:video', 'HDMI IN:video'], out: ['Thunderbolt:usb', 'SDI OUT:video', 'HDMI OUT:video'] },
+  { key: 'ndienc', name: 'NDIエンコーダー', category: '映像処理', in: ['HDMI IN:video', 'DC/PoE:power'], out: ['LAN (NDI):lan', 'HDMI LOOP:video'] },
+  { key: 'ndidec', name: 'NDIデコーダー', category: '映像処理', in: ['LAN (NDI):lan', 'DC/PoE:power'], out: ['HDMI OUT:video'] },
+  { key: 'streamenc', name: '配信エンコーダー', category: '映像処理', in: ['HDMI IN:video', 'SDI IN:video', 'AUDIO IN:audio', 'AC:power'], out: ['LAN:lan'] },
+  { key: 'recorder', name: 'レコーダー', category: '映像処理', in: ['SDI IN:video', 'HDMI IN:video', 'DC:power'], out: ['SDI OUT:video', 'HDMI OUT:video'] },
   // --- 延長器
-  { key: 'fibertx', name: '光エクステンダー TX', category: '延長器', in: ['HDMI IN:hdmi', 'DC:power'], out: ['FIBER:fiber'] },
-  { key: 'fiberrx', name: '光エクステンダー RX', category: '延長器', in: ['FIBER:fiber', 'DC:power'], out: ['HDMI OUT:hdmi'] },
+  { key: 'fibertx', name: '光エクステンダー TX', category: '延長器', in: ['HDMI IN:video', 'DC:power'], out: ['FIBER:fiber'] },
+  { key: 'fiberrx', name: '光エクステンダー RX', category: '延長器', in: ['FIBER:fiber', 'DC:power'], out: ['HDMI OUT:video'] },
   { key: 'usbext', name: 'USBエクステンダー', category: '延長器', in: ['USB HOST:usb', 'DC:power'], out: ['LAN:lan'] },
   { key: 'usbhub', name: 'USBハブ', category: '延長器', in: ['HOST:usb', 'DC:power'], out: ['PORT 1:usb', 'PORT 2:usb', 'PORT 3:usb', 'PORT 4:usb'] },
-  { key: 'kvmtx', name: 'KVMエクステンダー TX', category: '延長器', in: ['HDMI IN:hdmi', 'USB:usb', 'DC:power'], out: ['LAN:lan'] },
-  { key: 'kvmrx', name: 'KVMエクステンダー RX', category: '延長器', in: ['LAN:lan', 'DC:power'], out: ['HDMI OUT:hdmi', 'USB:usb'] },
+  { key: 'kvmtx', name: 'KVMエクステンダー TX', category: '延長器', in: ['HDMI IN:video', 'USB:usb', 'DC:power'], out: ['LAN:lan'] },
+  { key: 'kvmrx', name: 'KVMエクステンダー RX', category: '延長器', in: ['LAN:lan', 'DC:power'], out: ['HDMI OUT:video', 'USB:usb'] },
   // --- カメラ
-  { key: 'ptz', name: 'PTZカメラ', category: 'カメラ', in: ['LAN/PoE:lan', 'RS-422:serial', 'DC:power'], out: ['SDI:sdi', 'HDMI:hdmi'] },
-  { key: 'cinecam', name: 'シネマカメラ', category: 'カメラ', in: ['DC:power', 'TC IN:audio'], out: ['SDI:sdi', 'HDMI:hdmi'] },
-  { key: 'mirrorless', name: 'ミラーレス一眼', category: 'カメラ', in: ['USB-C:usb', 'DC:power'], out: ['HDMI:hdmi'] },
-  { key: 'actioncam', name: 'アクションカメラ', category: 'カメラ', in: ['USB-C:usb'], out: ['HDMI:hdmi'] },
+  { key: 'ptz', name: 'PTZカメラ', category: 'カメラ', in: ['LAN/PoE:lan', 'RS-422:serial', 'DC:power'], out: ['SDI:video', 'HDMI:video'] },
+  { key: 'cinecam', name: 'シネマカメラ', category: 'カメラ', in: ['DC:power', 'TC IN:audio'], out: ['SDI:video', 'HDMI:video'] },
+  { key: 'mirrorless', name: 'ミラーレス一眼', category: 'カメラ', in: ['USB-C:usb', 'DC:power'], out: ['HDMI:video'] },
+  { key: 'actioncam', name: 'アクションカメラ', category: 'カメラ', in: ['USB-C:usb'], out: ['HDMI:video'] },
   { key: 'machinecam', name: '産業用カメラ', category: 'カメラ', in: ['PoE:lan', 'TRIGGER:serial'], out: ['USB3:usb'] },
   { key: 'ipcam', name: 'ネットワークカメラ', category: 'カメラ', in: ['LAN/PoE:lan'], out: [] },
   // --- センサー
@@ -146,8 +149,8 @@ export const PRESETS: Preset[] = [
   { key: 'hpamp', name: 'ヘッドホンアンプ', category: '音響', in: ['IN:audio', 'DC:power'], out: ['HP 1:audio', 'HP 2:audio', 'HP 3:audio', 'HP 4:audio'] },
   { key: 'headphone', name: 'ヘッドホン', category: '音響', in: ['IN:audio'], out: [] },
   { key: 'di', name: 'DIボックス', category: '音響', in: ['IN:audio'], out: ['XLR OUT:audio', 'THRU:audio'] },
-  { key: 'embed', name: '音声エンベデッダー', category: '音響', in: ['HDMI IN:hdmi', 'AUDIO IN:audio', 'DC:power'], out: ['HDMI OUT:hdmi'] },
-  { key: 'deembed', name: '音声分離器', category: '音響', in: ['HDMI IN:hdmi', 'DC:power'], out: ['HDMI OUT:hdmi', 'AUDIO OUT:audio'] },
+  { key: 'embed', name: '音声エンベデッダー', category: '音響', in: ['HDMI IN:video', 'AUDIO IN:audio', 'DC:power'], out: ['HDMI OUT:video'] },
+  { key: 'deembed', name: '音声分離器', category: '音響', in: ['HDMI IN:video', 'DC:power'], out: ['HDMI OUT:video', 'AUDIO OUT:audio'] },
   { key: 'intercom', name: 'インカム親機', category: '音響', in: ['AC:power'], out: ['CH A:audio', 'CH B:audio'] },
   // --- 照明
   { key: 'lightdesk', name: '照明卓', category: '照明', in: ['LAN:lan', 'AC:power'], out: ['DMX A:dmx', 'DMX B:dmx', 'Art-Net:lan'] },
@@ -221,11 +224,11 @@ export function freshId(taken: Set<string>, prefix: string): string {
 
 export const randomId = (): string => Math.random().toString(36).slice(2, 10);
 
-/** "HDMI 1:hdmi" → port. */
+/** "HDMI 1:video" → port. The old video types (hdmi, sdi, dp) are read as 映像. */
 export function parsePort(spec: string, side: Port['side'], id: string): Port {
   const i = spec.lastIndexOf(':');
   const name = (i < 0 ? spec : spec.slice(0, i)).trim();
-  const signal = i < 0 ? 'other' : spec.slice(i + 1).trim().toLowerCase();
+  const signal = i < 0 ? 'other' : currentSignal(spec.slice(i + 1).trim().toLowerCase());
   return { id, name, side, signal };
 }
 
@@ -316,7 +319,7 @@ export function claimPort(doc: Doc, nodeId: string, signal: string, side: Port['
   const found = n.ports.find((p) => p.signal === signal && p.side === side && !used.has(p.id));
   if (found) return { end: { node: nodeId, port: found.id }, doc };
   const count = n.ports.filter((p) => p.signal === signal && p.side === side).length;
-  const port: Port = { id: freshId(new Set(n.ports.map((p) => p.id)), 'p'), name: `${signal === 'power' ? 'AC' : signalOf(signal).prefix} ${count + 1}`, side, signal };
+  const port: Port = { id: freshId(new Set(n.ports.map((p) => p.id)), 'p'), name: `${portBase(signal)} ${count + 1}`, side, signal };
   return {
     end: { node: nodeId, port: port.id },
     doc: { ...doc, nodes: doc.nodes.map((x) => (x.id === nodeId ? { ...n, ports: [...n.ports, port] } : x)) },

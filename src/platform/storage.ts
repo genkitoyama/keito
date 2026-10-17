@@ -1,4 +1,5 @@
 import type { Doc, UserPreset } from '../model/types';
+import { upgradeDoc, upgradePreset } from '../model/video';
 
 /**
  * Persistence boundary. Boards live in a folder on disk when the keito server
@@ -39,7 +40,7 @@ function clean(v: unknown): Doc | null {
   const d = v as Doc | null;
   if (!d || d.version !== 1 || !Array.isArray(d.nodes) || !Array.isArray(d.edges)) return null;
   d.nodes = d.nodes.filter((n) => n.type !== 'text' || (n.text ?? '').trim() !== '');
-  return d;
+  return upgradeDoc(d);
 }
 
 function localList(): BoardInfo[] {
@@ -89,7 +90,7 @@ const local: Backend = {
   loadPresets: async () => {
     try {
       const v = JSON.parse(localStorage.getItem('keito:presets') ?? '[]');
-      return Array.isArray(v) ? v : [];
+      return Array.isArray(v) ? v.map(upgradePreset) : [];
     } catch {
       return [];
     }
@@ -139,7 +140,7 @@ const server: Backend = {
   },
   loadPresets: async () => {
     const v = await (await ok(await fetch('/api/presets'))).json();
-    return Array.isArray(v) ? v : [];
+    return Array.isArray(v) ? v.map(upgradePreset) : [];
   },
   savePresets: async (list) => {
     await ok(await fetch('/api/presets', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(list) }));
