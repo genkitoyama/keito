@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { SCREEN, edgeTags, textHeightFor, textWeight } from '../canvas/render';
 import { docBounds, isTagged, labelPoint, routeEdges } from '../model/geometry';
 import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
@@ -45,6 +45,26 @@ export function QuickBar() {
   const nodes = doc.nodes.filter((n) => ids.has(n.id));
   const edge = nodes.length ? undefined : doc.edges.find((e) => ids.has(e.id));
   const box = nodes.length ? docBounds(doc, new Set(nodes.map((n) => n.id))) : null;
+  // Dragged out of the way by its grip: an offset in screen pixels. The bar is keyed by the
+  // selection, so it comes back to its usual place as soon as something else is selected.
+  const [moved, setMoved] = useState<{ dx: number; dy: number } | null>(null);
+  const shift = moved ?? { dx: 0, dy: 0 };
+  const grab = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const grip = e.currentTarget;
+    grip.setPointerCapture(e.pointerId);
+    const start = { x: e.clientX - shift.dx, y: e.clientY - shift.dy };
+    const move = (ev: PointerEvent) => setMoved({ dx: ev.clientX - start.x, dy: ev.clientY - start.y });
+    const up = () => {
+      grip.removeEventListener('pointermove', move);
+      grip.removeEventListener('pointerup', up);
+      grip.removeEventListener('pointercancel', up);
+    };
+    grip.addEventListener('pointermove', move);
+    grip.addEventListener('pointerup', up);
+    grip.addEventListener('pointercancel', up);
+  };
   let anchor: { x: number; top: number; bottom: number } | null = null;
   if (box) anchor = { x: box.x + box.w / 2, top: box.y, bottom: box.y + box.h };
   else if (edge) {
@@ -65,8 +85,8 @@ export function QuickBar() {
     let top = view.y + anchor.top * view.k - h - 14;
     const above = top >= 6;
     if (!above) top = view.y + anchor.bottom * view.k + 14;
-    top = clamp(top, 6, host.clientHeight - h - 6);
-    el.style.left = `${clamp(view.x + anchor.x * view.k, w / 2 + 6, host.clientWidth - w / 2 - 6)}px`;
+    top = clamp(top + shift.dy, 6, host.clientHeight - h - 6);
+    el.style.left = `${clamp(view.x + anchor.x * view.k + shift.dx, w / 2 + 6, host.clientWidth - w / 2 - 6)}px`;
     el.style.top = `${top}px`;
     // Tooltips and menus open away from the selection when there is room, so they don't cover it.
     el.classList.toggle('tips-down', top < 44);
@@ -114,6 +134,16 @@ export function QuickBar() {
   };
   return (
     <div ref={ref} className="quickbar" onPointerDown={(e) => e.stopPropagation()}>
+      <div
+        className={`qb-grip${moved ? ' moved' : ''}`}
+        data-tip={moved ? 'ドラッグで移動・ダブルクリックで元の位置へ' : 'ドラッグでツールバーをずらす'}
+        onPointerDown={grab}
+        onDoubleClick={() => setMoved(null)}
+      >
+        <svg viewBox="0 0 6 14" width="6" height="14" aria-hidden>
+          {[2, 7, 12].flatMap((y) => [<circle key={`a${y}`} cx="1.5" cy={y} r="1.1" />, <circle key={`b${y}`} cx="4.5" cy={y} r="1.1" />])}
+        </svg>
+      </div>
       {one?.type === 'shape' && (
         <div className={`qb-drop${menu === 'shape' ? ' open' : ''}`}>
           <Btn className="drop" tip="形を変える" on={menu === 'shape'} onClick={toggle('shape')}>
