@@ -1,5 +1,6 @@
 import type { Cell, Worksheet } from 'exceljs';
-import { type Table, cableSummaryTable, cableTable, checkTable, colourKey, equipmentTable, networkTable, powerTable } from '../model/lists';
+import { TABLES, type Table, colourKey, equipmentTable } from '../model/lists';
+import { kindOf } from '../model/kinds';
 import { PRESETS } from '../model/presets';
 import { allSignals } from '../model/signals';
 import type { Doc } from '../model/types';
@@ -27,6 +28,9 @@ function choices(doc: Doc): Record<string, string[]> {
     種別: allSignals()
       .filter((s) => s.cable)
       .map((s) => s.label),
+    プロトコル: allSignals()
+      .filter((s) => s.protocol)
+      .map((s) => s.label),
     カテゴリ: [...uniq([...devices.map((d) => d.category), ...PRESETS.map((p) => p.category)]).filter((c) => c !== 'その他').sort((a, b) => a.localeCompare(b, 'ja')), 'その他'],
     区分: uniq([...colourKey(doc).values(), ...devices.map((d) => d.vendor ?? '')]),
     [STATUS]: STATUSES,
@@ -37,6 +41,7 @@ function choices(doc: Doc): Record<string, string[]> {
 const DROPDOWNS: Record<string, string[]> = {
   機材リスト: ['区分', 'カテゴリ', '購入ステータス'],
   ケーブルリスト: ['種別'],
+  通信一覧: ['プロトコル'],
 };
 
 /**
@@ -145,7 +150,8 @@ function writeSheet(ws: Worksheet, t: Table, doc: Doc, lists: Map<string, string
 }
 
 /** The lists as the workbook's sheets have them, in its order (the equipment list with a status column). */
-export const sheetTables = (doc: Doc): Table[] => [withColumn(equipmentTable(doc), '金額(円)', STATUS), cableTable(doc), cableSummaryTable(doc), powerTable(doc), networkTable(doc), checkTable(doc)];
+/** The lists as the workbook's sheets have them: the board's kind's lists, the equipment list with a status column. */
+export const sheetTables = (doc: Doc): Table[] => kindOf(doc).lists.map((k) => (k === 'equipment' ? withColumn(equipmentTable(doc), '金額(円)', STATUS) : TABLES[k].make(doc)));
 
 async function build(doc: Doc) {
   const { default: ExcelJS } = await import('exceljs');
@@ -174,7 +180,7 @@ export async function workbook(doc: Doc): Promise<Blob> {
 }
 
 /** The lists whose rows carry over when a workbook is brought up to date; the others are made afresh. */
-const KEPT = ['機材リスト', 'ケーブルリスト', 'ケーブル集計', 'ネットワーク'];
+const KEPT = ['機材リスト', 'ケーブルリスト', 'ケーブル集計', 'ネットワーク', '通信一覧'];
 /** Columns the board never fills: what the sheet says in them is the sheet's to keep. */
 const SHEET_OWNED = [STATUS];
 const KEY = 'keito ID';

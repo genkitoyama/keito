@@ -13,8 +13,9 @@ import { fileURLToPath } from 'node:url';
 import { Conflict, boardsRoot, store } from '../server/store';
 import { DSL_GUIDE, fromYaml, toYaml } from '../src/model/dsl';
 import { fitLegends } from '../src/model/legend';
-import { type Table, cableSummaryTable, cableTable, checkTable, equipmentTable, networkTable, powerTable, toCsv } from '../src/model/lists';
+import { TABLES, type Table, checkTable, toCsv } from '../src/model/lists';
 import { drawingOf, entryFor, fingerprint, labelOf, thin } from '../src/model/history';
+import { kindOf } from '../src/model/kinds';
 import { readBoard } from '../src/model/load';
 import { randomId } from '../src/model/presets';
 import { registerSignals } from '../src/model/signals';
@@ -28,9 +29,11 @@ const HELP = `keito — 系統図ボードをコマンドラインから読み�
   boards                         ボードの一覧（id・タイトル・更新日時）
   show <ボード> [--json]          ボードを YAML（--json で JSON）で表示
   apply <ボード> [ファイル|-]      YAML をボードに反映（- または省略で標準入力）。--relayout で位置を捨てて自動配置
-  new <タイトル> [ファイル|-]      YAML から新しいボードを作る（YAML なしで空のボード）
+  new <タイトル> [ファイル|-] [--kind 種類] [--project 案件名]
+                                 YAML から新しいボードを作る（YAML なしで空のボード）。種類: system / software / sequence / free
   lists <ボード> [表] [--csv|--json]
-                                 表を表示。表: equipment / cables / summary / power / network / check（既定 equipment）
+                                 表を表示。表: equipment / cables / summary / power / network / comms（通信一覧）/ check
+                                 （既定はボードの種類の最初の表）
   check <ボード>                  チェック表。要修正があれば終了コード 1
   xlsx <ボード> [-o ファイル] [--update 前回.xlsx]
                                  Excel に書き出す。--update で前回のファイルを図の内容に更新（購入ステータスなどは引き継ぐ）
@@ -156,14 +159,7 @@ function bytes(file: string): ArrayBuffer {
   return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer;
 }
 
-const LISTS: Record<string, (doc: Doc) => Table> = {
-  equipment: equipmentTable,
-  cables: cableTable,
-  summary: cableSummaryTable,
-  power: powerTable,
-  network: networkTable,
-  check: checkTable,
-};
+const LISTS: Record<string, (doc: Doc) => Table> = Object.fromEntries(Object.entries(TABLES).map(([k, t]) => [k, t.make]));
 
 /** A list as plain text: columns padded to line up (full-width characters count double). */
 function text(t: Table): string {
@@ -190,7 +186,8 @@ async function main(): Promise<void> {
     case 'boards': {
       const all = boards.list();
       if (!all.length) return void console.log(`（ボードはありません: ${boards.root}）`);
-      for (const b of all) console.log(`${b.id}\t${b.title}\t${new Date(b.updated).toLocaleString('ja-JP')}`);
+      const KIND_LABEL: Record<string, string> = { software: 'ソフトウェア構成図', sequence: 'シーケンス図', free: '自由ボード' };
+      for (const b of all) console.log(`${b.id}\t${b.project ?? '（案件なし）'}\t${KIND_LABEL[b.kind ?? ''] ?? 'システム図'}\t${b.title}\t${new Date(b.updated).toLocaleString('ja-JP')}`);
       return;
     }
 
@@ -214,9 +211,12 @@ async function main(): Promise<void> {
     }
 
     case 'new': {
+      const kindArg = option('--kind');
+      const projectArg = option('--project');
       const title = args[0];
       if (!title) fail('タイトルを指定してください');
-      const blank: Doc = { version: 1, id: randomId(), meta: emptyMeta(title), nodes: [], edges: [] };
+      if (kindArg && !['system', 'software', 'sequence', 'free'].includes(kindArg)) fail('種類は system / software / sequence / free のどれかです');
+      const blank: Doc = { version: 1, id: randomId(), kind: kindArg && kindArg !== 'system' ? (kindArg as Doc['kind']) : undefined, meta: { ...emptyMeta(title), project: projectArg ?? '' }, nodes: [], edges: [] };
       const src = args[1] !== undefined || !process.stdin.isTTY ? await input(args[1]) : '';
       let doc = blank;
       if (src.trim()) {
@@ -226,8 +226,8 @@ async function main(): Promise<void> {
           fail(`YAML を読めませんでした: ${e instanceof Error ? e.message : e}`);
         }
       }
-      // The title asked for wins over one in the YAML.
-      doc = { ...doc, meta: { ...doc.meta, title } };
+      // The title (and the kind and project) asked for win over those in the YAML.
+      doc = { ...doc, kind: kindArg ? blank.kind : doc.kind, meta: { ...doc.meta, title, ...(projectArg !== undefined ? { project: projectArg } : {}) } };
       const done = boards.write(doc as never, undefined);
       process.stderr.write(`作成しました: ${done.folder}\n`);
       return void console.log(doc.id);
@@ -237,7 +237,7 @@ async function main(): Promise<void> {
       const csv = flag('--csv');
       const json = flag('--json');
       const { doc } = load(args[0]);
-      const make = LISTS[args[1] ?? 'equipment'];
+      const make = LISTS[args[1] ?? kindOf(doc).lists[0] ?? 'check'];
       if (!make) fail(`表は ${Object.keys(LISTS).join(' / ')} のどれかです`);
       const t = make(doc);
       if (json) return void console.log(JSON.stringify({ title: t.title, head: t.head, rows: t.rows }, null, 2));

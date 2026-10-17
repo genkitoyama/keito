@@ -130,10 +130,6 @@ textarea:focus {
   letter-spacing: 0.04em;
   margin-right: 6px;
 }
-.topbar .boards {
-  max-width: 260px;
-  font-weight: 600;
-}
 .topbar .sep {
   width: 1px;
   height: 20px;
@@ -1489,4 +1485,152 @@ body.row-dragging .lists td.editable:hover {
 .legend-row input[type='checkbox'] {
   flex: none;
   margin: 0;
+}
+
+/* Board kinds: a coloured badge wherever a board is named. */
+.kind-badge {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fff;
+  background: #2563eb;
+  white-space: nowrap;
+}
+.kind-badge.software {
+  background: #7c3aed;
+}
+.kind-badge.sequence {
+  background: #0d9488;
+}
+.kind-badge.free {
+  background: #64748b;
+}
+
+/* The top bar's board switch: project / kind / title. */
+.board-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 420px;
+  overflow: hidden;
+}
+.board-switch small {
+  color: var(--sub);
+  white-space: nowrap;
+}
+.board-switch span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.board-switch i {
+  font-style: normal;
+  color: var(--sub);
+  font-size: 10px;
+}
+
+/* The boards window: projects on the left, their boards on the right. */
+.modal.boards {
+  width: min(980px, 94vw);
+  height: min(640px, 88vh);
+}
+.boards .projects {
+  overflow: auto;
+}
+.boards .project {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  border: 0;
+  background: none;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-align: left;
+}
+.boards .project:hover {
+  background: #f1f5f9;
+}
+.boards .project.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.boards .project small {
+  color: var(--sub);
+}
+.boards .new-project {
+  margin-top: 8px;
+}
+.project-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.project-head h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.new-board {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+  background: #f8fafc;
+}
+.new-board .kinds {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.kind-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px;
+  text-align: left;
+  background: #fff;
+}
+.kind-card small {
+  color: var(--sub);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: normal;
+}
+.kind-card.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.new-board .row input {
+  flex: 1;
+}
+.board-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+  overflow: auto;
+}
+.board-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px;
+  text-align: left;
+  min-height: 74px;
+}
+.board-card .title {
+  font-weight: 600;
+  font-size: 13px;
+}
+.board-card small {
+  color: var(--sub);
+}
+.board-card.on {
+  border-color: var(--accent);
 }

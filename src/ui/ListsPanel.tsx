@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { type CellEdit, type Table, cableSummaryTable, cableTable, checkTable, clearOrder, editCell, editable, equipmentTable, moveRow, networkTable, powerTable } from '../model/lists';
+import { type CellEdit, TABLES, type Table, clearOrder, editCell, editable, moveRow } from '../model/lists';
+import { kindOf } from '../model/kinds';
 import { allSignals } from '../model/signals';
 import { useStore } from '../model/store';
 import { openExport } from './ExportPanel';
 
-const TABS = ['機材リスト', 'ケーブルリスト', 'ケーブル集計', '電源系統', 'ネットワーク', 'チェック'] as const;
 
 export function ListsPanel() {
   const doc = useStore((s) => s.doc);
@@ -15,8 +15,13 @@ export function ListsPanel() {
   const [editing, setEditing] = useState<{ row: number; col: number } | null>(null);
   // A row being dragged by its handle, and the place it would take if let go now.
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
-  const tables = useMemo<Table[]>(() => [equipmentTable(doc), cableTable(doc), cableSummaryTable(doc), powerTable(doc), networkTable(doc), checkTable(doc)], [doc]);
-  const t = tables[tab];
+  // The lists this kind of board has (a software board: its communication, its hosts, its checks).
+  const keys = kindOf(doc).lists;
+  const tables = useMemo<Table[]>(() => keys.map((k) => TABLES[k].make(doc)), [doc, keys]);
+  const at = Math.min(tab, tables.length - 1);
+  const t = tables[at];
+  // A board with no lists (a sequence or free board) shows none, even if the panel was left open.
+  if (!t) return null;
   // The rows in the order they are shown: while a row is dragged, already where it would go.
   const order = t.rows.map((_, i) => i);
   if (drag) order.splice(drag.to, 0, ...order.splice(drag.from, 1));
@@ -137,17 +142,17 @@ export function ListsPanel() {
   return (
     <section className="lists">
       <div className="tabs">
-        {TABS.map((name, i) => (
+        {keys.map((key, i) => (
           <button
-            key={name}
+            key={key}
             // Problems to fix turn the check tab red while it is out of view.
-            className={[tab === i ? 'on' : '', tables[i].rowClass?.includes('warn') ? 'alert' : ''].filter(Boolean).join(' ')}
+            className={[at === i ? 'on' : '', tables[i].rowClass?.includes('warn') ? 'alert' : ''].filter(Boolean).join(' ')}
             onClick={() => {
               setTab(i);
               setEditing(null);
             }}
           >
-            {name} <small>{tables[i].rows.length - (tables[i].total ? 1 : 0) - (tables[i].rowClass?.filter((c) => c?.startsWith('subtotal')).length ?? 0)}</small>
+            {TABLES[key].label} <small>{tables[i].rows.length - (tables[i].total ? 1 : 0) - (tables[i].rowClass?.filter((c) => c?.startsWith('subtotal')).length ?? 0)}</small>
           </button>
         ))}
         <span className="grow" />
@@ -156,7 +161,7 @@ export function ListsPanel() {
             並びを元に戻す
           </button>
         )}
-        <small>総ケーブル長 {totalLength} m</small>
+        {keys.includes('cables') && <small>総ケーブル長 {totalLength} m</small>}
         <button title="Excel・CSV への書き出しは、エクスポートの「表」にまとめています" onClick={() => openExport('table')}>
           Excel / CSV…
         </button>
@@ -262,7 +267,7 @@ function CellEditor({ t, row, edit, shown, done }: { t: Table; row: number; edit
     return (
       <select autoFocus defaultValue={e?.signal} onChange={(ev) => done(ev.target.value)} onBlur={() => done(null)} onKeyDown={(ev) => ev.key === 'Escape' && done(null)}>
         {allSignals()
-          .filter((s) => s.cable)
+          .filter((s) => s.id !== 'flow' && kindOf(doc).lines(s))
           .map((s) => (
             <option key={s.id} value={s.id}>
               {s.label}

@@ -2,6 +2,8 @@ import { fromYaml } from '../model/dsl';
 import { randomId } from '../model/presets';
 import { type Panel, emptyDoc, useStore } from '../model/store';
 import { tidy } from '../model/tidy';
+import { KINDS, kindOf } from '../model/kinds';
+import { openBoards } from './Boards';
 import type { Doc } from '../model/types';
 import { download, inlineImages, pickTextFile, safeName } from '../platform/storage';
 
@@ -32,26 +34,27 @@ async function openFile(): Promise<void> {
 
 export function TopBar() {
   const doc = useStore((s) => s.doc);
-  const boards = useStore((s) => s.boards);
   const panel = useStore((s) => s.panel);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
   const saving = useStore((s) => s.saving);
   const mode = useStore((s) => s.mode);
   const viewing = useStore((s) => !!s.viewing);
+  const kind = useStore((s) => kindOf(s.doc));
   const st = useStore.getState;
   const toggle = (p: Panel) => st().setPanel(panel === p ? null : p);
-  const list = boards.some((b) => b.id === doc.id) ? boards : [{ id: doc.id, title: doc.meta.title, updated: 0 }, ...boards];
 
   return (
     <header className="topbar">
       <b className="logo">keito</b>
-      <select className="boards" value={doc.id} onChange={(e) => st().openBoard(e.target.value)} title="ボードを切り替え">
-        {list.map((b) => (
-          <option key={b.id} value={b.id}>{b.id === doc.id ? doc.meta.title : b.title}</option>
-        ))}
-      </select>
-      <button onClick={() => st().newBoard()} data-tip="新しいボード">＋新規</button>
+      {/* The project and board on screen; the list of all of them opens from here. */}
+      <button className="board-switch" onClick={() => openBoards()} data-tip="ボード一覧（案件ごと）">
+        {doc.meta.project && <small>{doc.meta.project} ／</small>}
+        <b className={`kind-badge ${doc.kind ?? 'system'}`}>{KINDS[doc.kind ?? 'system'].label}</b>
+        <span>{doc.meta.title}</span>
+        <i>▾</i>
+      </button>
+      <button onClick={() => openBoards(true)} data-tip="新しいボード（種類を選ぶ）">＋新規</button>
       <button onClick={async () => st().newBoard({ ...(await inlineImages(doc)), id: randomId(), meta: { ...doc.meta, title: `${doc.meta.title} のコピー` } })}>複製</button>
       <button
         onClick={() => {
@@ -86,7 +89,11 @@ export function TopBar() {
         </span>
       )}
       <span className="grow" />
-      <button className={panel === 'lists' ? 'on' : ''} onClick={() => toggle('lists')}>機材・ケーブル表</button>
+      {kind.lists.length > 0 && (
+        <button className={panel === 'lists' ? 'on' : ''} onClick={() => toggle('lists')}>
+          {kind.listsLabel}
+        </button>
+      )}
       <button className={panel === 'text' ? 'on' : ''} onClick={() => toggle('text')}>テキスト / AI</button>
       <button className="primary" onClick={() => toggle('export')}>エクスポート</button>
     </header>

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type Paper, boardImage, copyPng, pdfHtml, printHtml, toPng } from '../export/exporters';
-import { type Table, cableSummaryTable, cableTable, checkTable, compact, equipmentTable, networkTable, powerTable, toCsv } from '../model/lists';
+import { TABLES, type Table, compact, toCsv } from '../model/lists';
+import { type ListKey, kindOf } from '../model/kinds';
 import { toYaml } from '../model/dsl';
 import { saveFile } from './TopBar';
 import { sheetTables } from '../export/xlsx';
@@ -10,16 +11,6 @@ import type { Doc } from '../model/types';
 import { labelOf } from '../model/history';
 import { download, getSetting, inlineImages, pickFile, safeName, setSetting } from '../platform/storage';
 
-const LISTS = [
-  { key: 'equipment', label: '機材リスト', make: equipmentTable },
-  { key: 'cables', label: 'ケーブルリスト', make: cableTable },
-  { key: 'summary', label: 'ケーブル集計', make: cableSummaryTable },
-  { key: 'power', label: '電源系統', make: powerTable },
-  { key: 'network', label: 'ネットワーク', make: networkTable },
-] as const;
-type ListKey = (typeof LISTS)[number]['key'];
-/** The workbook's sheets, by the key each is remembered under; one of them is what CSV saves. */
-const SHEETS = [...LISTS, { key: 'check', label: 'チェック', make: checkTable }] as const;
 type Mode = 'pdf' | 'image' | 'table' | 'data';
 const MODES: { key: Mode; label: string }[] = [
   { key: 'pdf', label: 'PDF' },
@@ -52,32 +43,40 @@ export function ExportPanel() {
   const [onlySelected, setOnlySelected] = useState(() => selection.length > 0);
   const partial = onlySelected && selection.length > 0;
   const doc = useMemo(() => (partial ? subset(whole, selection) : whole), [whole, partial, selection]);
+  // The lists come from the board's kind: the sheets of the workbook (and CSV) are all of them,
+  // the PDF takes them all but the check list.
+  const kind = kindOf(board);
+  const SHEETS = kind.lists;
+  const LISTS: ListKey[] = SHEETS.filter((k) => k !== 'check');
+  const modes = MODES.filter((m) => m.key !== 'table' || SHEETS.length > 0);
   // The tab used last comes back, so a board exported the same way each time takes one click.
-  const [mode, setModeState] = useState<Mode>(() => (MODES.find((m) => m.key === getSetting('exportMode'))?.key ?? 'pdf'));
+  const [chosenMode, setModeState] = useState<Mode>(() => (MODES.find((m) => m.key === getSetting('exportMode'))?.key ?? 'pdf'));
+  const mode: Mode = modes.some((m) => m.key === chosenMode) ? chosenMode : 'pdf';
   const setMode = (m: Mode) => {
     setModeState(m);
     setSetting('exportMode', m);
   };
   // The sheet on show in the preview, as in Excel's tabs; CSV saves that one.
-  const [sheet, setSheetState] = useState<number>(() => Math.max(0, SHEETS.findIndex((l) => l.key === getSetting('csvList'))));
+  const [sheetKey, setSheetKey] = useState<string>(() => getSetting('csvList') || 'equipment');
+  const sheet = Math.max(0, SHEETS.indexOf(sheetKey as ListKey));
   const setSheet = (i: number) => {
-    setSheetState(i);
-    setSetting('csvList', SHEETS[i].key);
+    setSheetKey(SHEETS[i]);
+    setSetting('csvList', SHEETS[i]);
   };
   const sheets = useMemo(() => (mode === 'table' ? sheetTables(doc) : []), [doc, mode]);
-  const csvTable = useMemo(() => SHEETS[sheet].make(doc), [doc, sheet]);
+  const csvTable = useMemo(() => (SHEETS.length ? TABLES[SHEETS[sheet]].make(doc) : null), [doc, sheet, kind.id]);
   const yaml = useMemo(() => (mode === 'data' ? toYaml(whole) : ''), [mode, whole]);
   const [paper, setPaper] = useState<Paper>(() => (getSetting('pdfPaper') === 'A3' ? 'A3' : 'A4'));
   const [lists, setLists] = useState<ListKey[]>(() => {
     const saved = getSetting('pdfLists');
-    return saved ? (saved.split(',').filter((k) => LISTS.some((l) => l.key === k)) as ListKey[]) : ['equipment', 'cables'];
+    return saved ? (saved.split(',') as ListKey[]) : ['equipment', 'cables', 'comms'];
   });
   const [background, setBackground] = useState(true);
   const [scale, setScale] = useState(2);
   const [msg, setMsg] = useState('');
 
-  const tables = useMemo(() => new Map<ListKey, Table>(LISTS.map((l) => [l.key, compact(l.make(doc))])), [doc]);
-  const chosen = LISTS.filter((l) => lists.includes(l.key) && tables.get(l.key)!.rows.length).map((l) => tables.get(l.key)!);
+  const tables = useMemo(() => new Map<ListKey, Table>(LISTS.map((k) => [k, compact(TABLES[k].make(doc))])), [doc, kind.id]);
+  const chosen = LISTS.filter((k) => lists.includes(k) && tables.get(k)!.rows.length).map((k) => tables.get(k)!);
   const image = useMemo(() => boardImage(doc, background), [doc, background]);
   const name = `${safeName(doc.meta.title)}${partial ? '_選択範囲' : ''}`;
 
@@ -108,7 +107,8 @@ export function ExportPanel() {
     }
   };
   const toggle = (key: ListKey, on: boolean) => {
-    const next = LISTS.map((l) => l.key).filter((k) => (k === key ? on : lists.includes(k)));
+    // Choices on other kinds of board are kept as they were.
+    const next = [...lists.filter((k) => !LISTS.includes(k)), ...LISTS.filter((k) => (k === key ? on : lists.includes(k)))];
     setLists(next);
     setSetting('pdfLists', next.join(',') || 'none');
   };
@@ -123,7 +123,7 @@ export function ExportPanel() {
         <div className="modal-body cols">
           <div className="col side">
             <div className="seg wrap">
-              {MODES.map((m) => (
+              {modes.map((m) => (
                 <button key={m.key} className={mode === m.key ? 'on' : ''} onClick={() => setMode(m.key)}>
                   {m.label}
                 </button>
@@ -164,8 +164,8 @@ export function ExportPanel() {
                 </p>
                 <h4>CSV（1 つの表）</h4>
                 <p className="hint">右のプレビューで開いているシートを保存します（下のタブで切り替え）。</p>
-                <button className="wide" onClick={run(() => download(`${name}_${csvTable.title}.csv`, toCsv(csvTable), 'text/csv'), 'CSV を保存しました。')}>
-                  「{SHEETS[sheet].label}」を CSV で保存
+                <button className="wide" disabled={!csvTable} onClick={run(() => void (csvTable && download(`${name}_${csvTable.title}.csv`, toCsv(csvTable), 'text/csv')), 'CSV を保存しました。')}>
+                  「{csvTable?.title}」を CSV で保存
                 </button>
               </>
             ) : mode === 'data' ? (
@@ -198,13 +198,13 @@ export function ExportPanel() {
                   </select>
                 </label>
                 <p className="hint">1 ページ目に図、そのあとに選んだリストが付きます。</p>
-                {LISTS.map((l) => {
-                  const rows = tables.get(l.key)!;
+                {LISTS.map((k) => {
+                  const rows = tables.get(k)!;
                   const count = rows.rows.length - (rows.total ? 1 : 0);
                   return (
-                    <label key={l.key} className="check">
-                      <input type="checkbox" checked={lists.includes(l.key)} disabled={!count} onChange={(e) => toggle(l.key, e.target.checked)} />
-                      {l.label} <small>{count ? `${count} 行` : 'なし'}</small>
+                    <label key={k} className="check">
+                      <input type="checkbox" checked={lists.includes(k)} disabled={!count} onChange={(e) => toggle(k, e.target.checked)} />
+                      {TABLES[k].label} <small>{count ? `${count} 行` : 'なし'}</small>
                     </label>
                   );
                 })}

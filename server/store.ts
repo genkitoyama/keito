@@ -39,6 +39,8 @@ export class Conflict extends Error {
 export interface BoardFile {
   id: string;
   title: string;
+  project?: string;
+  kind?: string;
   updated: number;
   serial: number;
   folder: string;
@@ -82,7 +84,7 @@ export function store(root: string) {
           try {
             const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
             if (typeof doc?.id !== 'string') throw new Error('no id');
-            return [{ id: doc.id as string, title: (doc.meta?.title as string) ?? d, updated: fs.statSync(file).mtimeMs, serial: Number(doc.serial) || 0, folder: d }];
+            return [{ id: doc.id as string, title: (doc.meta?.title as string) ?? d, project: (doc.meta?.project as string) || undefined, kind: (doc.kind as string) || undefined, updated: fs.statSync(file).mtimeMs, serial: Number(doc.serial) || 0, folder: d }];
           } catch (e) {
             console.warn(`[keito] skipped ${path.join(d, 'board.json')}: ${e instanceof Error ? e.message : e}`);
             return [];

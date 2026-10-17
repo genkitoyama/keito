@@ -13,6 +13,9 @@ export interface BoardInfo {
   id: string;
   title: string;
   updated: number;
+  /** The project (案件名) it belongs to, and what kind of board it is (unset: a system board). */
+  project?: string;
+  kind?: Doc['kind'];
 }
 
 export interface Backend {
@@ -73,12 +76,18 @@ export const localBoards = (): Doc[] => localList().map((b) => localLoad(b.id)).
 
 const local: Backend = {
   mode: 'local',
-  list: async () => localList(),
+  // Boards listed before projects and kinds were noted in the index get them from the board itself.
+  list: async () =>
+    localList().map((b) => {
+      if (b.project !== undefined || b.kind !== undefined) return b;
+      const doc = localLoad(b.id);
+      return doc ? { ...b, project: doc.meta.project || undefined, kind: doc.kind } : b;
+    }),
   load: async (id) => localLoad(id),
   // Throws when the board no longer fits (localStorage holds roughly 5 MB per site).
   save: async (doc) => {
     localStorage.setItem(key(doc.id), JSON.stringify(doc));
-    const info: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now() };
+    const info: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now(), project: doc.meta.project || undefined, kind: doc.kind };
     localStorage.setItem(INDEX, JSON.stringify([info, ...localList().filter((b) => b.id !== doc.id)]));
   },
   remove: async (id) => {

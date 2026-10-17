@@ -215,6 +215,8 @@ export interface Revision {
 export interface Doc {
   version: 1;
   id: string;
+  /** What the board is (system, software, sequence, free; see kinds.ts); unset is a system board. */
+  kind?: 'system' | 'software' | 'sequence' | 'free';
   meta: DocMeta;
   nodes: Node[];
   edges: Edge[];

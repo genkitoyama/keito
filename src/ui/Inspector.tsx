@@ -4,7 +4,8 @@ import { isTagged } from '../model/geometry';
 import { safeUrl } from '../model/url';
 import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
 import { cableIds, colourKey, idShown, ipIssues, labelStacked, lengthShown, quantityOf, unitsOf } from '../model/lists';
-import { PRESETS, freshId } from '../model/presets';
+import { PRESETS, SOFTWARE, freshId } from '../model/presets';
+import { type BoardKind, KINDS, KIND_ORDER, kindOf } from '../model/kinds';
 import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
@@ -52,7 +53,7 @@ const OTHER_CATEGORY = 'その他';
  * device that has a category could never be moved to another one; this list shows every category
  * on focus (the board's own first, then the library's) and narrows only once something is typed.
  */
-function CategoryField({ id, value, onChange }: { id: string; value: string; onChange: (v: string, record?: boolean) => void }) {
+function CategoryField({ id, value, onChange, soft }: { id: string; value: string; onChange: (v: string, record?: boolean) => void; soft?: boolean }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState(false);
   const [hi, setHi] = useState(-1);
@@ -67,7 +68,7 @@ function CategoryField({ id, value, onChange }: { id: string; value: string; onC
   );
   const onBoard = used.map((u) => ({ name: u.split('\t')[0], count: Number(u.split('\t')[1]) }));
   // その他 closes the list, for whatever fits nowhere else.
-  const library = [...[...new Set(PRESETS.map((p) => p.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja')), OTHER_CATEGORY].filter((c) => !onBoard.some((b) => b.name === c));
+  const library = [...[...new Set((soft ? SOFTWARE : PRESETS).map((p) => p.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja')), OTHER_CATEGORY].filter((c) => !onBoard.some((b) => b.name === c));
   const q = typed ? value.trim().toLowerCase() : '';
   const match = (c: string): boolean => !q || c.toLowerCase().includes(q);
   const groups = [
@@ -157,16 +158,25 @@ function Colors({ value, onPick, sticky }: { value: string; onPick: (c: (typeof 
   );
 }
 
-const SignalSelect = ({ value, onChange, flow }: { value: string; onChange: (v: string) => void; flow?: boolean }) => (
-  <select value={value} onChange={(e) => onChange(e.target.value)}>
-    {allSignals().filter((s) => flow || s.id !== 'flow').map((s) => (
-      <option key={s.id} value={s.id}>{s.label}</option>
-    ))}
-  </select>
-);
+/** The types this kind of board offers (a software board: protocols), with the current one kept even if it is not among them. */
+function SignalSelect({ value, onChange, flow }: { value: string; onChange: (v: string) => void; flow?: boolean }) {
+  const kind = kindOf(useStore((s) => s.doc));
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)}>
+      {allSignals()
+        .filter((s) => s.id === value || ((flow || s.id !== 'flow') && kind.lines(s)))
+        .map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.label}
+          </option>
+        ))}
+    </select>
+  );
+}
 
 function MetaPanel() {
   const meta = useStore((s) => s.doc.meta);
+  const kind = useStore((s) => kindOf(s.doc));
   const powerTags = useStore((s) => s.doc.powerTags !== false);
   const idLabels = useStore((s) => s.doc.cableIdLabels !== false);
   const lenLabels = useStore((s) => s.doc.lengthLabels !== false);
@@ -181,23 +191,38 @@ function MetaPanel() {
       <h3>ボード情報</h3>
       <Field label="タイトル（図面名称）" value={meta.title} onChange={set('title')} />
       <Field label="案件名" value={meta.project} onChange={set('project')} />
+      <label className="field">
+        <span>ボードの種類</span>
+        {/* Changing the kind changes what the board offers; what is drawn on it stays. */}
+        <select value={kind.id} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, kind: e.target.value === 'system' ? undefined : (e.target.value as BoardKind) }))}>
+          {KIND_ORDER.map((k) => (
+            <option key={k} value={k}>
+              {KINDS[k].label}
+            </option>
+          ))}
+        </select>
+      </label>
       <Revisions />
-      <label className="check">
-        <input type="checkbox" checked={powerTags} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, powerTags: e.target.checked }))} />
-        電源ケーブルは線を省略（両端に接続先だけ表示）
-      </label>
-      <label className="check">
-        <input type="checkbox" checked={idLabels} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, cableIdLabels: e.target.checked, edges: d.edges.map((x) => (x.showId === undefined ? x : { ...x, showId: undefined })) }))} />
-        ケーブル ID を線のラベルに表示
-      </label>
-      <label className="check">
-        <input type="checkbox" checked={lenLabels} onChange={(e) => boardLabel({ lengthLabels: e.target.checked }, 'showLength')} />
-        ケーブルの長さを線のラベルに表示
-      </label>
-      <label className="check">
-        <input type="checkbox" checked={stackLabels} onChange={(e) => boardLabel({ stackedLabels: e.target.checked }, 'stacked')} />
-        ラベルの項目を 1 行ずつに分ける
-      </label>
+      {kind.cableOptions && (
+        <>
+          <label className="check">
+            <input type="checkbox" checked={powerTags} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, powerTags: e.target.checked }))} />
+            電源ケーブルは線を省略（両端に接続先だけ表示）
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={idLabels} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, cableIdLabels: e.target.checked, edges: d.edges.map((x) => (x.showId === undefined ? x : { ...x, showId: undefined })) }))} />
+            ケーブル ID を線のラベルに表示
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={lenLabels} onChange={(e) => boardLabel({ lengthLabels: e.target.checked }, 'showLength')} />
+            ケーブルの長さを線のラベルに表示
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={stackLabels} onChange={(e) => boardLabel({ stackedLabels: e.target.checked }, 'stacked')} />
+            ラベルの項目を 1 行ずつに分ける
+          </label>
+        </>
+      )}
       <label className="check">
         <input type="checkbox" checked={hops} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, hops: e.target.checked || undefined }))} />
         線が交差するところを跨ぎ線（小さな山）にする
@@ -217,6 +242,8 @@ function MetaPanel() {
 const num = (v: string): number | undefined => (v === '' || isNaN(Number(v)) ? undefined : Number(v));
 
 function DevicePanel({ n }: { n: DeviceNode }) {
+  // On a software board a device is a piece of software: its fields are those of software.
+  const soft = useStore((s) => kindOf(s.doc).id === 'software');
   const st = useStore.getState;
   const patch = (p: Partial<DeviceNode>, record = false) => st().updateNode(n.id, p, record);
   const link = safeUrl(n.url);
@@ -228,7 +255,7 @@ function DevicePanel({ n }: { n: DeviceNode }) {
     const names = new Set(n.ports.map((p) => p.name));
     let name = base;
     for (let i = 2; names.has(name); i++) name = `${base} ${i}`;
-    patch({ ports: [...n.ports, { id: freshId(new Set(n.ports.map((p) => p.id)), 'p'), name, side, signal: 'video' }] }, true);
+    patch({ ports: [...n.ports, { id: freshId(new Set(n.ports.map((p) => p.id)), 'p'), name, side, signal: soft ? 'data' : 'video' }] }, true);
   };
   const removePort = (id: string) =>
     st().mutate((d) => ({
@@ -260,12 +287,17 @@ function DevicePanel({ n }: { n: DeviceNode }) {
   };
   return (
     <>
-      <h3>機材 <code>{n.id}</code></h3>
+      <h3>
+        {soft ? '部品' : '機材'} <code>{n.id}</code>
+      </h3>
       <Field wrap label="名称（改行できます）" value={n.text} onChange={(v) => patch({ text: v })} />
+      {/* A piece of software has no quantity, price, power or supplier: those belong to the gear it runs on. */}
       <div className="grid2">
-        <Field label="数量" type="number" placeholder={`${quantityOf(n.text).count}（名前から）`} value={n.qty == null ? '' : String(n.qty)} onChange={(v) => patch({ qty: num(v) && num(v)! >= 1 ? Math.round(num(v)!) : undefined })} />
-        <CategoryField id={n.id} value={n.category} onChange={(v, record) => patch({ category: v }, record)} />
+        {!soft && <Field label="数量" type="number" placeholder={`${quantityOf(n.text).count}（名前から）`} value={n.qty == null ? '' : String(n.qty)} onChange={(v) => patch({ qty: num(v) && num(v)! >= 1 ? Math.round(num(v)!) : undefined })} />}
+        <CategoryField id={n.id} soft={soft} value={n.category} onChange={(v, record) => patch({ category: v }, record)} />
+        {soft && <Field label="バージョン・実装" placeholder="例: Node 22 / TD 2025" value={n.model} onChange={(v) => patch({ model: v })} />}
       </div>
+      {!soft && (
       <div className="grid2">
         <Field label="メーカー" value={n.maker} onChange={(v) => patch({ maker: v })} />
         <Field
@@ -280,7 +312,8 @@ function DevicePanel({ n }: { n: DeviceNode }) {
           }}
         />
       </div>
-      <Field label="型番のリンク（製品ページなど）" placeholder="https://…" value={n.url ?? ''} onChange={(v) => patch({ url: v || undefined })} />
+      )}
+      <Field label={soft ? 'リンク（リポジトリ・資料など）' : '型番のリンク（製品ページなど）'} placeholder="https://…" value={n.url ?? ''} onChange={(v) => patch({ url: v || undefined })} />
       {n.url &&
         (link ? (
           <a className="open-link" href={link} target="_blank" rel="noopener noreferrer">
@@ -289,10 +322,10 @@ function DevicePanel({ n }: { n: DeviceNode }) {
         ) : (
           <p className="error">Web のアドレス（https://…）として読めません。</p>
         ))}
-      <Field label="手配先・担当（機材リストの区分）" placeholder="例: 自社 / レンタル / 先方支給" value={n.vendor ?? ''} onChange={(v) => patch({ vendor: v || undefined })} />
+      {!soft && <Field label="手配先・担当（機材リストの区分）" placeholder="例: 自社 / レンタル / 先方支給" value={n.vendor ?? ''} onChange={(v) => patch({ vendor: v || undefined })} />}
       {/* What the board's colour key says is only a guess (the colours may mean something else),
           so it is offered, never written in unasked. */}
-      {group && group !== (n.vendor?.trim() ?? '') && (
+      {!soft && group && group !== (n.vendor?.trim() ?? '') && (
         <p className="suggest">
           <span>{n.vendor?.trim() ? <>色分けでは「{group}」</> : <>空欄のときは色分けの「{group}」を表に使います</>}</span>
           <button className="mini" onClick={() => patch({ vendor: group }, true)}>
@@ -304,27 +337,31 @@ function DevicePanel({ n }: { n: DeviceNode }) {
         <span>色分け</span>
         <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />
       </label>
-      {networked && (
+      {(networked || soft) && (
         <div className="grid2">
-          <Field label="IP アドレス" placeholder="192.168.0.10" value={n.ip ?? ''} onChange={(v) => patch({ ip: v || undefined })} />
-          <Field label="ホスト名" value={n.host ?? ''} onChange={(v) => patch({ host: v || undefined })} />
+          <Field label={soft ? '動作ホストの IP' : 'IP アドレス'} placeholder="192.168.0.10" value={n.ip ?? ''} onChange={(v) => patch({ ip: v || undefined })} />
+          <Field label={soft ? '動作ホスト名' : 'ホスト名'} placeholder={soft ? '例: td-main / AWS' : undefined} value={n.host ?? ''} onChange={(v) => patch({ host: v || undefined })} />
         </div>
       )}
       {networked && ipIssue === 'bad' && <p className="error">IPv4 アドレス（192.168.0.10 の形）として読めません。</p>}
       {networked && ipIssue === 'dup' && <p className="error">{clash ? `「${clash}」と` : 'ほかの機材と'}同じ IP アドレスです。</p>}
-      {!networked && (
+      {!networked && !soft && (
         <button className="mini add-field" onClick={() => setNetworked(true)}>
           ＋IP アドレス・ホスト名
         </button>
       )}
-      <div className="grid2">
-        <Field label="単価 (円)" type="number" value={n.price == null ? '' : String(n.price)} onChange={(v) => patch({ price: num(v) })} />
-        {n.price != null && unitsOf(n).count > 1 && <span className="readout-inline">金額 {(n.price * unitsOf(n).count).toLocaleString('ja-JP')} 円</span>}
-      </div>
-      <div className="grid2">
-        <Field label="消費電力 (W)" type="number" value={n.watts == null ? '' : String(n.watts)} onChange={(v) => patch({ watts: num(v) })} />
-        {(supplies || n.capacity != null) && <Field label="給電容量 (W)" type="number" placeholder="UPS・タップ" value={n.capacity == null ? '' : String(n.capacity)} onChange={(v) => patch({ capacity: num(v) })} />}
-      </div>
+      {!soft && (
+        <>
+          <div className="grid2">
+            <Field label="単価 (円)" type="number" value={n.price == null ? '' : String(n.price)} onChange={(v) => patch({ price: num(v) })} />
+            {n.price != null && unitsOf(n).count > 1 && <span className="readout-inline">金額 {(n.price * unitsOf(n).count).toLocaleString('ja-JP')} 円</span>}
+          </div>
+          <div className="grid2">
+            <Field label="消費電力 (W)" type="number" value={n.watts == null ? '' : String(n.watts)} onChange={(v) => patch({ watts: num(v) })} />
+            {(supplies || n.capacity != null) && <Field label="給電容量 (W)" type="number" placeholder="UPS・タップ" value={n.capacity == null ? '' : String(n.capacity)} onChange={(v) => patch({ capacity: num(v) })} />}
+          </div>
+        </>
+      )}
       <Field wrap label="備考" value={n.note} onChange={(v) => patch({ note: v })} />
       <button className="wide" title="名称・メーカー・型番・ポート構成などを、機材ライブラリの「マイプリセット」に保存します" onClick={() => st().savePreset(n.id)}>
         {saved ? 'マイプリセットを上書き保存' : 'マイプリセットに保存'}
@@ -616,15 +653,19 @@ function EdgePanel({ e }: { e: Edge }) {
   const paint = (c: string | null) => useStore.getState().mutate((d) => paintLine(d, e.id, c, all));
   const patch = (p: Partial<Edge>, record = false) => useStore.getState().updateEdge(e.id, p, record);
   const cable = signalOf(e.signal).cable;
+  const protocol = !!signalOf(e.signal).protocol;
+  const kind = useStore((s) => kindOf(s.doc));
   return (
     <>
-      <h3>{cable ? 'ケーブル' : 'コネクタ'}</h3>
+      <h3>{cable ? 'ケーブル' : protocol ? '通信' : 'コネクタ'}</h3>
       {cable && <h4>ケーブル情報</h4>}
       <label className="field">
         <span>種別</span>
-        <SignalSelect flow value={e.signal} onChange={(signal) => patch({ signal, arrow: signal === 'flow' ? 'end' : signalOf(signal).cable ? 'none' : e.arrow }, true)} />
+        <SignalSelect flow value={e.signal} onChange={(signal) => patch({ signal, arrow: signal === 'flow' || signalOf(signal).protocol ? 'end' : signalOf(signal).cable ? 'none' : e.arrow }, true)} />
       </label>
-      <NewSignal onAdd={(signal) => patch({ signal, arrow: 'none' })} />
+      {/* Types of one's own are cables; a software board's protocols are the set offered. */}
+      {kind.cableOptions && <NewSignal onAdd={(signal) => patch({ signal, arrow: 'none' })} />}
+      {protocol && <Field label="ポート" placeholder="例: 443/tcp、7000/udp" value={e.spec ?? ''} onChange={(v) => patch({ spec: v || undefined })} />}
       {cable && (
         <>
           <div className="grid2">

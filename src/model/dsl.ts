@@ -12,6 +12,7 @@ import { PALETTE } from './signals';
 /** Schema reference shown in the editor and given to the AI. */
 export const DSL_GUIDE = `# keito YAML 書式
 title: 図のタイトル
+kind: system               # 任意。ボードの種類 system（システム図）/ software（ソフトウェア構成図）/ sequence / free
 project: 案件名            # 任意
 signals:                   # 任意。このボードだけの信号種別
   - { id: hdbt, label: HDBaseT, prefix: HDB, color: "#0d9488" }
@@ -47,6 +48,7 @@ cables:
     type: video            # video(映像) lan usb audio power fiber dmx serial wireless other、または signals で足した種別。
                            # 映像の規格(HDMI / SDI …)や音声のコネクタ(XLR / TRS …)は spec かポート名で。
                            # ケーブルIDは HDMI-01 / XLR-01 のようにそこから付く
+                           # ソフトウェア構成図（kind: software）では http websocket osc mqtt tcp udp ndi file data。ポートは spec に（例 7000/udp）
     cableId: V-01          # 任意。ケーブルIDを手で決める（省略で自動採番）。showId / showLength: false でラベルから隠す。stacked: true で項目を 1 行ずつに
     spec: 光 HDMI AOC      # 任意。品名・規格（線のラベルに出る）。maker / model / url も書ける
     length: 10             # m、任意
@@ -111,6 +113,7 @@ function refOf(doc: Doc, end: EdgeEnd): string {
 
 export function toYaml(doc: Doc): string {
   const out: Obj = { title: doc.meta.title };
+  if (doc.kind) out.kind = doc.kind;
   put(out, 'project', doc.meta.project);
 
   if (doc.powerTags === false) out.powerTags = false;
@@ -546,5 +549,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   const picked = isObj(root.colors) ? Object.entries(root.colors).filter(([k, v]) => isSignal(k) && HEX.test(str(v))) : null;
   const signalColors = !picked ? prev.signalColors : picked.length ? Object.fromEntries(picked.map(([k, v]) => [k, str(v)])) : undefined;
   // Revision history is not part of the text form; it stays with the board.
-  return { version: 1, id: prev.id, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
+  const KIND_IDS = ['system', 'software', 'sequence', 'free'];
+  const kind = typeof root.kind === 'string' && KIND_IDS.includes(root.kind) ? (root.kind === 'system' ? undefined : (root.kind as Doc['kind'])) : prev.kind;
+  return { version: 1, id: prev.id, kind, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
 }

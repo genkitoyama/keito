@@ -4,7 +4,7 @@ import { LEGEND, shownRows } from '../model/legend';
 import { lineColor, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, ipIssues, labelStacked, lengthShown, powerLoads } from '../model/lists';
 import { SEQ, SEQ_TEXT, parseSequence, seqLayout, seqScale } from '../model/sequence';
-import { PALETTE, STICKY, STRONG } from '../model/signals';
+import { PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { MONO_FONT, UI_FONT, measure, wrapText } from '../model/text';
 import { safeUrl } from '../model/url';
 import type { DeviceNode, Doc, Edge, Node, Pt, Rect, SequenceNode } from '../model/types';
@@ -476,6 +476,9 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
 
 /** A line's label; may run over several lines when the user's own text does. */
 export function edgeLabel(doc: Doc, e: Edge): string {
+  // A protocol line names what it is and its port ("OSC 7000/udp"): its colour alone would not say.
+  const sig = signalOf(e.signal);
+  if (sig.protocol) return [[sig.id === 'data' ? '' : sig.prefix, e.spec].filter(Boolean).join(' '), e.label.trim()].filter(Boolean).join(labelStacked(doc, e) ? '\n' : ' · ');
   const id = idShown(doc, e) ? cableIds(doc).get(e.id) : undefined;
   const length = e.length != null && lengthShown(doc, e) ? `${e.length}m` : '';
   return [id, e.spec, e.label.trim(), length].filter(Boolean).join(labelStacked(doc, e) ? '\n' : ' · ');

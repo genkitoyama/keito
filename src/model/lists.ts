@@ -2,6 +2,7 @@ import { frameOf } from './geometry';
 import { allSignals, signalOf } from './signals';
 import { safeUrl } from './url';
 import { cableKind } from './standards';
+import type { ListKey } from './kinds';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node } from './types';
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
@@ -609,3 +610,54 @@ export function checkTable(doc: Doc): Table {
     empty: '問題は見つかりませんでした。',
   };
 }
+
+/** "td-main（192.168.10.11）": where a piece of software runs, as far as the board says. */
+function hostOf(doc: Doc, id: string): string {
+  const n = doc.nodes.find((x) => x.id === id);
+  if (n?.type !== 'device') return '';
+  const host = n.host?.trim();
+  const ip = n.ip?.trim();
+  return host && ip ? `${host}（${ip}）` : host || ip || '';
+}
+
+/**
+ * Communication on a software board, one row per line: who talks to whom, over what, on which
+ * port. With the hosts and addresses beside each end, it is what a venue's network people ask
+ * for before opening their firewall.
+ */
+export function commsTable(doc: Doc): Table {
+  const order = allSignals().map((s) => s.id);
+  const list = doc.edges
+    .filter((e) => signalOf(e.signal).protocol)
+    .sort(byHand(doc, 'comms', (e) => [e.id], (a, b) => order.indexOf(a.signal) - order.indexOf(b.signal) || endOf(doc, a.from).name.localeCompare(endOf(doc, b.from).name, 'ja')));
+  return {
+    title: '通信一覧',
+    head: ['送信元', '送信元ホスト', '送信先', '送信先ホスト', 'プロトコル', 'ポート', '内容', '備考'],
+    widths: [16, 16, 16, 16, 10, 10, 18, 16],
+    rows: list.map((e) => {
+      const from = endOf(doc, e.from);
+      const to = endOf(doc, e.to);
+      return [from.port ? `${from.name}（${from.port}）` : from.name, hostOf(doc, e.from.node), to.port ? `${to.name}（${to.port}）` : to.name, hostOf(doc, e.to.node), signalOf(e.signal).label, e.spec ?? '', e.label.replace(/\n/g, ' '), e.note];
+    }),
+    refs: list.map((e) => [e.id]),
+    reorder: 'comms',
+    empty: 'ソフト部品同士を線で結び、線の種別（HTTP・OSC …）とポートを入れるとここに並びます。',
+    edit: {
+      プロトコル: { on: 'edge', field: 'signal', kind: 'signal' },
+      ポート: { on: 'edge', field: 'spec' },
+      内容: { on: 'edge', field: 'label' },
+      備考: { on: 'edge', field: 'note' },
+    },
+  };
+}
+
+/** Every list there is, by the key boards name them by (see kinds.ts). */
+export const TABLES: Record<ListKey, { label: string; make: (doc: Doc) => Table }> = {
+  equipment: { label: '機材リスト', make: (doc) => equipmentTable(doc) },
+  cables: { label: 'ケーブルリスト', make: (doc) => cableTable(doc) },
+  summary: { label: 'ケーブル集計', make: cableSummaryTable },
+  power: { label: '電源系統', make: powerTable },
+  network: { label: 'ネットワーク', make: networkTable },
+  comms: { label: '通信一覧', make: commsTable },
+  check: { label: 'チェック', make: checkTable },
+};

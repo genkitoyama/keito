@@ -17,6 +17,15 @@ keito のボードは `boards/<タイトル>__<id>/board.json` に保存され�
 
 `<ボード>` は id、フォルダ名、タイトルの一部のどれでもよい。
 
+## ボードの種類
+
+ボードには種類がある（YAML の `kind:`。`keito boards` の 3 列目）。種類に合わない要素は使わない。
+
+- `system`（システム図・既定）: 機材と配線。線の種別は映像・LAN・USB・音声・電源など。
+- `software`（ソフトウェア構成図）: アプリ・サーバー・DB などの部品と通信。線の `type` は http / websocket / osc / mqtt / tcp / udp / ndi / file / data、ポートは `spec`（例 `7000/udp`）、`ip` / `host` は動作ホスト。`lists <ボード> comms` で通信一覧。
+- `sequence`: シーケンス図だけ。`free`: 図形とメモだけ。
+- 新しく作るときは `new <タイトル> --kind <種類> --project <案件名>`。同じ案件のボードは案件名をそろえる。
+
 ## 直し方のこつ
 
 - `show` で取った YAML を**丸ごと**直して `apply` する。消した要素はボードからも消える。

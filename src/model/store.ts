@@ -3,15 +3,17 @@ import { drawingOf, entryFor, fingerprint, thin } from './history';
 import { create } from 'zustand';
 import { type Backend, type BoardInfo, Conflict, connect, externalize, localBoards } from '../platform/storage';
 import { fromYaml } from './dsl';
+import { type BoardKind, KINDS } from './kinds';
+import { SEQUENCE_SAMPLE } from './sequence';
 import { readBoard } from './load';
 import { docBounds, nodeRect } from './geometry';
-import { allIds, freshId, randomId } from './presets';
+import { allIds, freshId, makeNode, randomId } from './presets';
 import { SAMPLE_YAML } from './sample';
 import { registerSignals } from './signals';
 import { type Doc, type Edge, type Node, type Revision, type UserPreset, emptyMeta } from './types';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
-export type Panel = null | 'lists' | 'text' | 'export' | 'library';
+export type Panel = null | 'lists' | 'text' | 'export' | 'library' | 'boards';
 export interface View {
   x: number;
   y: number;
@@ -24,6 +26,17 @@ const SETTLE_MS = 2 * 60 * 1000;
 const CURRENT = 'keito:current';
 
 export const emptyDoc = (title?: string): Doc => ({ version: 1, id: randomId(), meta: emptyMeta(title), nodes: [], edges: [] });
+
+/**
+ * A new board of a kind, in a project. A sequence board starts with a diagram to write over, so
+ * it is never a blank page.
+ */
+export function startBoard(kind: BoardKind, title: string, project: string): Doc {
+  const doc: Doc = { ...emptyDoc(title.trim() || KINDS[kind].label), kind: kind === 'system' ? undefined : kind };
+  doc.meta.project = project.trim();
+  if (kind === 'sequence') doc.nodes.push(makeNode('sequence', 0, 0, new Set(), SEQUENCE_SAMPLE));
+  return doc;
+}
 
 function sampleDoc(): Doc {
   try {
@@ -78,6 +91,8 @@ interface State {
   openBoard(id: string): void;
   newBoard(doc?: Doc): void;
   deleteBoard(id: string): void;
+  /** Give every board of a project another project name (案件名). */
+  renameProject(from: string, to: string): void;
   /** Settle a conflict: take the board as it is on disk, or write this page's version over it. */
   resolveConflict(choice: 'reload' | 'overwrite'): void;
   /** Keep the board as it stands now in its history under a name, for good. */
@@ -262,6 +277,19 @@ export const useStore = create<State>((set, get) => ({
     await b.savePresets(presets);
     set({ presets });
   }),
+  renameProject: (from, to) =>
+    void run(async (b) => {
+      const name = to.trim();
+      if (!name || name === from) return;
+      // The board on screen changes in place (one undo step); the others are read, renamed, written.
+      if ((get().doc.meta.project ?? '') === from) get().mutate((d) => ({ ...d, meta: { ...d.meta, project: name } }));
+      for (const info of get().boards) {
+        if ((info.project ?? '') !== from || info.id === get().doc.id) continue;
+        const doc = await b.load(info.id);
+        if (doc && (doc.meta.project ?? '') === from) await b.save({ ...doc, meta: { ...doc.meta, project: name } });
+      }
+      set({ boards: await b.list() });
+    }),
   resolveConflict: (choice) =>
     void run(async (b) => {
       const mine = get().doc;
@@ -443,7 +471,7 @@ async function persist(doc: Doc): Promise<void> {
   try {
     await backend.save(doc);
     stored = doc;
-    const info: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now() };
+    const info: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now(), project: doc.meta.project || undefined, kind: doc.kind };
     useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], saving: s.doc === doc ? 'saved' : 'saving' }));
   } catch (e) {
     // Written elsewhere since it was read here: the user settles it (see resolveConflict).

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { insertImages, insertNode, viewCenter } from '../canvas/Canvas';
 import { snap } from '../model/geometry';
-import { COMMON, PRESETS, type Preset, allIds, freshId, makeDevice, makeLegend } from '../model/presets';
+import { COMMON, PRESETS, type Preset, SOFTWARE, allIds, freshId, makeDevice, makeLegend } from '../model/presets';
+import { kindOf } from '../model/kinds';
 import type { DeviceNode, UserPreset } from '../model/types';
 import { type Tool, useStore } from '../model/store';
 import { getSetting, setSetting } from '../platform/storage';
@@ -62,6 +63,11 @@ function pickImages() {
 const MINE = 'マイプリセット';
 
 function Library() {
+  const kind = kindOf(useStore((s) => s.doc));
+  // A software board takes pieces of software, all shown; a system board its gear, the common ones first.
+  const software = kind.library?.set === 'software';
+  const source = software ? SOFTWARE : PRESETS;
+  const blankKey = software ? 'swblank' : 'blank';
   const [q, setQ] = useState('');
   // Categories start folded; the opened ones are remembered, and a search opens everything.
   const [opened, setOpened] = useState<string[]>(() => {
@@ -83,8 +89,8 @@ function Library() {
     setSetting('libraryAll', on ? '1' : '');
   };
   const hit = (text: string) => !q || text.toLowerCase().includes(q.toLowerCase());
-  const list = PRESETS.filter((p) => p.key !== 'blank' && (q || every || COMMON.has(p.key)) && hit(`${p.name}${p.category}${p.key}`));
-  const blank = PRESETS.find((p) => p.key === 'blank')!;
+  const list = source.filter((p) => p.key !== blankKey && (q || every || software || COMMON.has(p.key)) && hit(`${p.name}${p.category}${p.key}`));
+  const blank = source.find((p) => p.key === blankKey)!;
   const cats = [...new Set(list.map((p) => p.category || 'その他'))];
   const mine = useStore((s) => s.presets).filter((p) => hit(`${p.name}${p.category}${p.maker}${p.model}`));
   const all = [...(mine.length ? [MINE] : []), ...cats];
@@ -110,7 +116,7 @@ function Library() {
   return (
     <div className="library">
       <div className="library-top">
-        <input autoFocus placeholder="機材を検索…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <input autoFocus placeholder={kind.library?.search ?? '検索…'} value={q} onChange={(e) => setQ(e.target.value)} />
         <button
           className="mini"
           disabled={!!q}
@@ -120,8 +126,8 @@ function Library() {
           {allClosed ? '開く' : 'しまう'}
         </button>
       </div>
-      <button className="library-blank" data-tip="名前もポートも自分で決める、まっさらな機材を置きます" onClick={() => addDevice(blank)}>
-        ＋ 空の機材を置く
+      <button className="library-blank" data-tip={`名前もポートも自分で決める、まっさらな${kind.library?.label ?? '機材'}を置きます`} onClick={() => addDevice(blank)}>
+        ＋ 空の{kind.library?.label ?? '機材'}を置く
       </button>
       <div className="library-list">
         {mine.length > 0 &&
@@ -162,8 +168,8 @@ function Library() {
             )),
           );
         })}
-        {all.length === 0 && <p className="library-empty">該当する機材がありません</p>}
-        {q ? (
+        {all.length === 0 && <p className="library-empty">該当する{kind.library?.label ?? '機材'}がありません</p>}
+        {software ? null : q ? (
           <p className="library-note">検索はすべての機材（{PRESETS.length - 1} 種）から探します</p>
         ) : (
           <button className="library-more" onClick={() => showAll(!every)}>
@@ -178,11 +184,12 @@ function Library() {
 export function Toolbar() {
   const tool = useStore((s) => s.tool);
   const panel = useStore((s) => s.panel);
+  const kind = kindOf(useStore((s) => s.doc));
   const st = useStore.getState;
   return (
     <>
       <nav className="toolbar">
-        {TOOLS.map((t) => (
+        {TOOLS.filter((t) => kind.tools.includes(t.tool)).map((t) => (
           <button
             key={t.tool}
             className={tool === t.tool ? 'on' : ''}
@@ -197,16 +204,22 @@ export function Toolbar() {
         <button data-tip="画像・SVG（ドロップや貼り付けでも可）" aria-label="画像・SVG を埋め込む" onClick={pickImages}>
           {ico(<path d="M3 4h14v12H3zM3 13l4-4 3 3 3-4 4 5M7 7.5h.01" />)}
         </button>
-        <button data-tip="凡例（使っている線の色の一覧。色を変えると追従します）" aria-label="凡例を置く" onClick={addLegend}>
-          {ico(<path d="M3 6h5M3 10h5M3 14h5M11 6h6M11 10h6M11 14h4" />)}
-        </button>
-        <hr />
-        <button className={panel === 'library' ? 'on' : ''} data-tip="機材ライブラリ（L）" aria-label="機材ライブラリ" onClick={() => st().setPanel(panel === 'library' ? null : 'library')}>
-          {ico(<path d="M3 6h14v8H3zM6 6V4m8 2V4M6 10h2m2 0h4" />)}
-          <span>機材</span>
-        </button>
+        {kind.library && (
+          <button data-tip="凡例（使っている線の色の一覧。色を変えると追従します）" aria-label="凡例を置く" onClick={addLegend}>
+            {ico(<path d="M3 6h5M3 10h5M3 14h5M11 6h6M11 10h6M11 14h4" />)}
+          </button>
+        )}
+        {kind.library && (
+          <>
+            <hr />
+            <button className={panel === 'library' ? 'on' : ''} data-tip={`${kind.library.label}ライブラリ（L）`} aria-label={`${kind.library.label}ライブラリ`} onClick={() => st().setPanel(panel === 'library' ? null : 'library')}>
+              {ico(<path d="M3 6h14v8H3zM6 6V4m8 2V4M6 10h2m2 0h4" />)}
+              <span>{kind.library.label}</span>
+            </button>
+          </>
+        )}
       </nav>
-      {panel === 'library' && <Library />}
+      {panel === 'library' && kind.library && <Library />}
     </>
   );
 }

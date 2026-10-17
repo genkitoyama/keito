@@ -138,7 +138,7 @@ export function keitoBoards(root = boardsRoot()): Plugin {
         if (req.method !== 'GET') return send(405);
         // One unreadable board (a merge conflict, a bad hand edit) must not hide all the others:
         // failing the whole list would send the app quietly off to browser storage.
-        return send(200, boards.list().map(({ id, title, updated }) => ({ id, title, updated })));
+        return send(200, boards.list().map(({ id, title, updated, project, kind }) => ({ id, title, updated, project, kind })));
       }
       if (!ID.test(id)) return send(400, { error: 'bad id' });
       const dir = dirOf(id);

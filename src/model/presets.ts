@@ -1,8 +1,8 @@
 import { currentSignal, signalOf } from './signals';
+import type { ColorKey, DeviceNode, Doc, Edge, EdgeEnd, Node, Port, ShapeKind } from './types';
 
 /** What a port added for a type is called before its number: AC 1, HDMI 1, LAN 1. */
 export const portBase = (signal: string): string => (signal === 'power' ? 'AC' : signal === 'video' ? 'HDMI' : signalOf(signal).prefix);
-import type { ColorKey, DeviceNode, Doc, Edge, EdgeEnd, Node, Port, ShapeKind } from './types';
 
 export interface Preset {
   key: string;
@@ -199,7 +199,38 @@ export const COMMON = new Set([
   'printer',
 ]);
 
-export const presetOf = (key: string): Preset | undefined => PRESETS.find((p) => p.key === key);
+/**
+ * Pieces of software for software boards: what runs where, and how it talks. Their ports are the
+ * ends of protocols (an API, an OSC input …), not sockets on a box.
+ */
+export const SOFTWARE: Preset[] = [
+  { key: 'td', name: 'TouchDesigner', category: 'アプリ', in: ['OSC IN:osc', 'NDI IN:ndi'], out: ['OSC OUT:osc', 'NDI OUT:ndi'] },
+  { key: 'unityapp', name: 'Unity アプリ', category: 'アプリ', in: ['OSC IN:osc', 'WebSocket:websocket'], out: ['HTTP:http'] },
+  { key: 'nativeapp', name: 'アプリ', category: 'アプリ', in: ['IN:data'], out: ['OUT:data'] },
+  { key: 'browser', name: 'Web ブラウザ（フロント）', category: 'アプリ', in: [], out: ['HTTP:http', 'WebSocket:websocket'] },
+  { key: 'mobile', name: 'スマホアプリ', category: 'アプリ', in: [], out: ['HTTP:http', 'WebSocket:websocket'] },
+  { key: 'admin', name: '管理画面', category: 'アプリ', in: [], out: ['HTTP:http'] },
+  { key: 'sensorapp', name: 'センサー制御アプリ', category: 'アプリ', in: [], out: ['OSC:osc', 'UDP:udp'] },
+  { key: 'webserver', name: 'Web サーバー', category: 'サーバー', in: ['HTTP:http'], out: ['HTTP:http'] },
+  { key: 'apiserver', name: 'API サーバー', category: 'サーバー', in: ['HTTP:http', 'WebSocket:websocket'], out: ['DB:tcp', 'HTTP:http'] },
+  { key: 'wsserver', name: 'WebSocket サーバー', category: 'サーバー', in: ['WebSocket:websocket'], out: ['WebSocket:websocket'] },
+  { key: 'worker', name: 'バッチ・ワーカー', category: 'サーバー', in: ['QUEUE:tcp'], out: ['HTTP:http', 'DB:tcp'] },
+  { key: 'mqttbroker', name: 'MQTT ブローカー', category: 'サーバー', in: ['MQTT:mqtt'], out: ['MQTT:mqtt'] },
+  { key: 'oscrouter', name: 'OSC ルーター', category: 'サーバー', in: ['OSC IN:osc'], out: ['OSC OUT:osc'] },
+  { key: 'db', name: 'データベース', category: 'データ', in: ['TCP:tcp'], out: [] },
+  { key: 'cache', name: 'キャッシュ（Redis など）', category: 'データ', in: ['TCP:tcp'], out: [] },
+  { key: 'storage', name: 'ストレージ（S3 など）', category: 'データ', in: ['HTTP:http'], out: [] },
+  { key: 'nas', name: 'NAS・共有フォルダ', category: 'データ', in: ['SMB:file'], out: [] },
+  { key: 'cdn', name: 'CDN', category: 'データ', in: ['HTTP:http'], out: ['HTTP:http'] },
+  { key: 'extapi', name: '外部 API', category: '外部サービス', in: ['HTTP:http'], out: [] },
+  { key: 'aiapi', name: '生成 AI API', category: '外部サービス', in: ['HTTP:http'], out: [] },
+  { key: 'stream', name: '配信サービス', category: '外部サービス', in: ['RTMP / SRT:ndi'], out: [] },
+  { key: 'plc', name: 'PLC・マイコン', category: '機器制御', in: ['TCP:tcp'], out: ['UDP:udp'] },
+  { key: 'lightctl', name: '照明・演出制御', category: '機器制御', in: ['OSC:osc'], out: [] },
+  { key: 'swblank', name: '新しい部品', category: '', in: ['IN:data'], out: ['OUT:data'] },
+];
+
+export const presetOf = (key: string): Preset | undefined => PRESETS.find((p) => p.key === key) ?? SOFTWARE.find((p) => p.key === key);
 
 export const allIds = (doc: Doc): Set<string> => {
   const ids = new Set<string>();
@@ -242,7 +273,7 @@ export function presetPorts(p: Preset): Port[] {
 
 export function makeDevice(preset: Preset, x: number, y: number, taken: Set<string>): DeviceNode {
   return {
-    id: freshId(taken, preset.key === 'blank' ? 'dev' : preset.key),
+    id: freshId(taken, preset.key === 'blank' ? 'dev' : preset.key === 'swblank' ? 'app' : preset.key),
     type: 'device',
     x,
     y,

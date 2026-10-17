@@ -10,6 +10,8 @@ export interface Signal {
   dash: string;
   /** Physical cable (appears in the cable list). */
   cable: boolean;
+  /** A protocol between pieces of software (software boards), rather than a cable. */
+  protocol?: boolean;
 }
 
 export const SIGNALS: Signal[] = [
@@ -26,6 +28,16 @@ export const SIGNALS: Signal[] = [
   { id: 'serial', label: 'シリアル/GPIO', prefix: 'SER', color: '#65a30d', dash: '3 2', cable: true },
   { id: 'wireless', label: '無線', prefix: 'WL', color: '#64748b', dash: '1 4', cable: false },
   { id: 'other', label: 'その他ケーブル', prefix: 'CBL', color: '#1f2937', dash: '', cable: true },
+  // Software boards: how pieces of software talk. Not cables; their port goes in the line's spec.
+  { id: 'http', label: 'HTTP(S)', prefix: 'HTTP', color: '#2563eb', dash: '', cable: false, protocol: true },
+  { id: 'websocket', label: 'WebSocket', prefix: 'WS', color: '#7c3aed', dash: '', cable: false, protocol: true },
+  { id: 'osc', label: 'OSC', prefix: 'OSC', color: '#db2777', dash: '5 3', cable: false, protocol: true },
+  { id: 'mqtt', label: 'MQTT', prefix: 'MQTT', color: '#0d9488', dash: '9 3', cable: false, protocol: true },
+  { id: 'tcp', label: 'TCP', prefix: 'TCP', color: '#d97706', dash: '', cable: false, protocol: true },
+  { id: 'udp', label: 'UDP', prefix: 'UDP', color: '#ea580c', dash: '2 3', cable: false, protocol: true },
+  { id: 'ndi', label: 'NDI / 映像ストリーム', prefix: 'NDI', color: '#16a34a', dash: '9 3 2 3', cable: false, protocol: true },
+  { id: 'file', label: 'ファイル共有', prefix: 'FILE', color: '#64748b', dash: '1 4', cable: false, protocol: true },
+  { id: 'data', label: 'その他の通信', prefix: 'DATA', color: '#1f2937', dash: '6 2 1 2', cable: false, protocol: true },
 ];
 
 const byId = new Map(SIGNALS.map((s) => [s.id, s]));

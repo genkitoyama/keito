@@ -6,12 +6,14 @@ import { hasText } from './model/types';
 import { getSetting, setSetting } from './platform/storage';
 import { copySelection, pasteClipboard, useStore } from './model/store';
 import { ExportPanel } from './ui/ExportPanel';
+import { BoardsPanel } from './ui/Boards';
 import { Inspector } from './ui/Inspector';
 import { ListsPanel } from './ui/ListsPanel';
 import { RevisionBanner } from './ui/Revisions';
 import { TextPanel } from './ui/TextPanel';
 import { TOOL_KEYS, Toolbar } from './ui/Toolbar';
 import { TopBar, saveFile } from './ui/TopBar';
+import { kindOf } from './model/kinds';
 
 /** Copy on the board, and clear any picture left on the system clipboard so the next paste is this copy. */
 function copyOut() {
@@ -70,8 +72,9 @@ function useHotkeys() {
         const ids = new Set(nodeIds);
         s.mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (ids.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n)) }));
       } else if (e.shiftKey && e.code === 'Digit1') s.fit();
-      else if (key === 'l') s.setPanel(s.panel === 'library' ? null : 'library');
-      else if (TOOL_KEYS[key] && !e.shiftKey && !e.altKey) s.setTool(TOOL_KEYS[key]);
+      // The library and the tools a board's kind offers; keys for others do nothing on it.
+      else if (key === 'l' && kindOf(s.doc).library) s.setPanel(s.panel === 'library' ? null : 'library');
+      else if (TOOL_KEYS[key] && !e.shiftKey && !e.altKey && kindOf(s.doc).tools.includes(TOOL_KEYS[key])) s.setTool(TOOL_KEYS[key]);
       else if (editable && e.key.length === 1 && e.key !== ' ' && !e.altKey) return typeToEdit();
       else handled = false;
       if (handled) e.preventDefault();
@@ -137,6 +140,8 @@ function usePaneSize(name: string, initial: number, min: number, max: () => numb
 
 export function App() {
   const panel = useStore((s) => s.panel);
+  // A board with no lists (a sequence or free board) keeps no lists panel, even if it was left open.
+  const hasLists = useStore((s) => kindOf(s.doc).lists.length > 0);
   const ready = useStore((s) => s.ready);
   const [side, growSide] = usePaneSize('inspectorWidth', 270, 220, () => Math.max(220, window.innerWidth - 420));
   const [lists, growLists] = usePaneSize('listsHeight', 260, 110, () => Math.max(110, window.innerHeight - 220));
@@ -150,14 +155,15 @@ export function App() {
         <div className="stage">
           <RevisionBanner />
           <Canvas />
-          {panel === 'lists' && <Splitter axis="y" onDrag={(d) => growLists(-d)} />}
-          {panel === 'lists' && <ListsPanel />}
+          {panel === 'lists' && hasLists && <Splitter axis="y" onDrag={(d) => growLists(-d)} />}
+          {panel === 'lists' && hasLists && <ListsPanel />}
         </div>
         <Splitter axis="x" onDrag={(d) => growSide(-d)} />
         <Inspector />
       </div>
       {panel === 'text' && <TextPanel />}
       {panel === 'export' && <ExportPanel />}
+      {panel === 'boards' && <BoardsPanel />}
     </div>
   );
 }
