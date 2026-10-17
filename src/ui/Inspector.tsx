@@ -8,7 +8,7 @@ import { PRESETS, freshId } from '../model/presets';
 import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
-import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type ShapeKind, latestRev } from '../model/types';
+import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type ShapeKind } from '../model/types';
 import { FILLS, FillPreview, SHAPES, sizesFor } from './icons';
 import { textHeightFor, textWeight } from '../canvas/render';
 import { useShallow } from 'zustand/react/shallow';
@@ -167,8 +167,6 @@ const SignalSelect = ({ value, onChange, flow }: { value: string; onChange: (v: 
 
 function MetaPanel() {
   const meta = useStore((s) => s.doc.meta);
-  // While an old revision is on screen, that revision is the one shown.
-  const rev = useStore((s) => s.viewing?.entry.rev ?? latestRev(s.doc));
   const powerTags = useStore((s) => s.doc.powerTags !== false);
   const idLabels = useStore((s) => s.doc.cableIdLabels !== false);
   const lenLabels = useStore((s) => s.doc.lengthLabels !== false);
@@ -183,10 +181,6 @@ function MetaPanel() {
       <h3>ボード情報</h3>
       <Field label="タイトル（図面名称）" value={meta.title} onChange={set('title')} />
       <Field label="案件名" value={meta.project} onChange={set('project')} />
-      <div className="field">
-        <span>REV（改訂履歴の最新の版）</span>
-        <output className="readout">{rev || '—（版を記録すると付きます）'}</output>
-      </div>
       <Revisions />
       <label className="check">
         <input type="checkbox" checked={powerTags} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, powerTags: e.target.checked }))} />
@@ -209,7 +203,7 @@ function MetaPanel() {
         線が交差するところを跨ぎ線（小さな山）にする
       </label>
       <p className="hint">
-        タイトル・案件名・REV は、PDF エクスポートの見出しに入ります。
+        タイトルと案件名は、PDF・Excel の見出しに入ります。
         <br />
         <br />
         <b>操作</b>

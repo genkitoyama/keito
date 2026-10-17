@@ -8,15 +8,13 @@ import path from 'node:path';
  *
  *   <root>/<title>__<id>/board.json
  *   <root>/<title>__<id>/assets/<hash>.<ext>
- *   <root>/<title>__<id>/revisions/<revision id>.json
- *   <root>/<title>__<id>/backups/<time>.json   (the board before each command-line write)
+ *   <root>/<title>__<id>/revisions/<state id>.json   (the board's history, listed in board.json)
  *
  * Every write bumps `serial` in board.json. A writer says which serial its change was made on, and
  * a write made on an older one is refused, so two writers never silently undo each other.
  */
 
 export const ID = /^[A-Za-z0-9_-]{1,64}$/;
-const BACKUPS_KEPT = 30;
 
 /** Where the boards live: KEITO_BOARDS, else the folder named in ~/.config/keito/config.json, else ./boards. */
 export function boardsRoot(fallback = path.resolve('boards')): string {
@@ -121,41 +119,24 @@ export function store(root: string) {
       return { serial, folder: path.basename(target) };
     },
 
-    /** Keep the board as it stands before a command-line write; the oldest copies drop off. */
-    backup(id: string, note: string): string | null {
+    /** A state from a board's history (revisions/<id>.json). */
+    readState(id: string, state: string): Stored | null {
       const dir = dirOf(id);
-      if (!dir) return null;
-      const folder = path.join(dir, 'backups');
-      fs.mkdirSync(folder, { recursive: true });
-      const name = `${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-      fs.writeFileSync(path.join(folder, name), JSON.stringify({ note, board: readAt(dir) }, null, 2));
-      const all = fs.readdirSync(folder).filter((f) => f.endsWith('.json')).sort();
-      for (const old of all.slice(0, Math.max(0, all.length - BACKUPS_KEPT))) fs.rmSync(path.join(folder, old));
-      return name;
+      const file = dir && path.join(dir, 'revisions', `${path.basename(state)}.json`);
+      return file && fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : null;
     },
 
-    backups(id: string): { name: string; note: string }[] {
+    writeState(id: string, state: string, doc: unknown): void {
       const dir = dirOf(id);
-      const folder = dir && path.join(dir, 'backups');
-      if (!folder || !fs.existsSync(folder)) return [];
-      return fs
-        .readdirSync(folder)
-        .filter((f) => f.endsWith('.json'))
-        .sort()
-        .reverse()
-        .map((name) => {
-          try {
-            return { name, note: String(JSON.parse(fs.readFileSync(path.join(folder, name), 'utf8')).note ?? '') };
-          } catch {
-            return { name, note: '' };
-          }
-        });
+      if (!dir || !ID.test(state)) return;
+      fs.mkdirSync(path.join(dir, 'revisions'), { recursive: true });
+      fs.writeFileSync(path.join(dir, 'revisions', `${state}.json`), JSON.stringify(doc, null, 2));
     },
 
-    readBackup(id: string, name: string): Stored | null {
+    removeState(id: string, state: string): void {
       const dir = dirOf(id);
-      const file = dir && path.join(dir, 'backups', path.basename(name));
-      return file && fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')).board : null;
+      const file = dir && path.join(dir, 'revisions', `${path.basename(state)}.json`);
+      if (file && fs.existsSync(file)) fs.rmSync(file);
     },
 
     /** Deleting moves the folder aside instead of destroying it. */

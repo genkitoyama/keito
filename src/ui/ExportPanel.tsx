@@ -6,7 +6,8 @@ import { saveFile } from './TopBar';
 import { sheetTables } from '../export/xlsx';
 import { subset } from '../model/geometry';
 import { useStore } from '../model/store';
-import { type Doc, latestRev } from '../model/types';
+import type { Doc } from '../model/types';
+import { labelOf } from '../model/history';
 import { download, getSetting, inlineImages, pickFile, safeName, setSetting } from '../platform/storage';
 
 const LISTS = [
@@ -93,9 +94,9 @@ export function ExportPanel() {
     return () => watch.disconnect();
   }, [mode]);
   const zoom = width ? Math.min(1, (width - 16) / (PAGE_PX[paper] + 48)) : 0.5;
-  // An old revision on screen exports under its own mark; the live board under the latest one recorded.
-  const rev = useStore((s) => s.viewing?.entry.rev ?? latestRev(s.doc));
-  const html = useMemo(() => pdfHtml(doc, { paper, rev, tables: chosen }, zoom), [doc, paper, rev, zoom, chosen.map((t) => t.title).join()]);
+  // An older state on screen exports under its own name or time.
+  const version = useStore((s) => (s.viewing ? labelOf(s.viewing.entry) : undefined));
+  const html = useMemo(() => pdfHtml(doc, { paper, version, tables: chosen }, zoom), [doc, paper, version, zoom, chosen.map((t) => t.title).join()]);
 
   // An action may report back in its own words (how many rows an update touched …).
   const run = (fn: () => Promise<string | void> | string | void, done: string) => async () => {
@@ -208,9 +209,9 @@ export function ExportPanel() {
                   );
                 })}
                 <p className="hint">
-                  何も書かれていない列（URL や備考など）は出しません。長いリストは自動で改ページされ、見出し行が各ページに付きます。見出しの右にはボード情報（案件名・REV）と今日の日付が入ります。
+                  何も書かれていない列（URL や備考など）は出しません。長いリストは自動で改ページされ、見出し行が各ページに付きます。見出しの右には案件名と今日の日付（履歴の版を開いているときはその版の名前か日時）が入ります。
                 </p>
-                <button className="primary wide" onClick={run(() => printHtml(pdfHtml(doc, { paper, rev, tables: chosen })), '印刷ダイアログで送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。')}>
+                <button className="primary wide" onClick={run(() => printHtml(pdfHtml(doc, { paper, version, tables: chosen })), '印刷ダイアログで送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。')}>
                   PDF にする（{paper} 横）
                 </button>
               </>

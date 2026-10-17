@@ -1,7 +1,9 @@
 import { fitLegends } from './legend';
+import { drawingOf, entryFor, fingerprint, thin } from './history';
 import { create } from 'zustand';
 import { type Backend, type BoardInfo, Conflict, connect, externalize, localBoards } from '../platform/storage';
 import { fromYaml } from './dsl';
+import { readBoard } from './load';
 import { docBounds, nodeRect } from './geometry';
 import { allIds, freshId, randomId } from './presets';
 import { SAMPLE_YAML } from './sample';
@@ -17,19 +19,8 @@ export interface View {
 }
 
 const HISTORY = 100;
-/** How many recorded revisions a board keeps; the oldest drop off beyond this. */
-export const MAX_REVISIONS = 100;
-
-/** The mark after this one: A → B, Z → AA, 3 → 4. */
-export function nextRev(rev: string): string {
-  if (/^\d+$/.test(rev)) return String(Number(rev) + 1);
-  if (!/^[A-Z]+$/.test(rev)) return rev;
-  let n = 0;
-  for (const ch of rev) n = n * 26 + ch.charCodeAt(0) - 64;
-  let out = '';
-  for (n += 1; n > 0; n = Math.floor((n - 1) / 26)) out = String.fromCharCode(65 + ((n - 1) % 26)) + out;
-  return out;
-}
+/** A board's state goes into its history once editing has paused this long. */
+const SETTLE_MS = 2 * 60 * 1000;
 const CURRENT = 'keito:current';
 
 export const emptyDoc = (title?: string): Doc => ({ version: 1, id: randomId(), meta: emptyMeta(title), nodes: [], edges: [] });
@@ -89,8 +80,10 @@ interface State {
   deleteBoard(id: string): void;
   /** Settle a conflict: take the board as it is on disk, or write this page's version over it. */
   resolveConflict(choice: 'reload' | 'overwrite'): void;
-  /** Record the board as it stands as revision `rev`. */
-  recordRevision(rev: string, note: string): void;
+  /** Keep the board as it stands now in its history under a name, for good. */
+  nameState(name: string): void;
+  /** Give a state in the history a name (kept for good), or take it away (empty: it may thin out). */
+  renameRevision(id: string, name: string): void;
   viewRevision(id: string): void;
   exitRevision(): void;
   /** Make the revision on screen the live board again. */
@@ -172,39 +165,45 @@ export const useStore = create<State>((set, get) => ({
   },
   openBoard: (id) => void run(async (b) => {
     if (id === get().doc.id) return;
+    await quietly(() => settle(b));
     await flush();
     const doc = await b.load(id);
     if (doc) show(doc);
   }),
   newBoard: (doc = emptyDoc()) => void run(async (b) => {
+    await quietly(() => settle(b));
     await flush();
     // A file opened from elsewhere may carry its pictures inline; give them a home in the board's folder.
     // History belongs to the board it was recorded on; a copy or an opened file starts without one.
-    const next = await externalize({ ...doc, revisions: undefined }, b);
+    // An opened file may be of an older form: it is read the way a stored board is.
+    const next = await externalize(readBoard({ ...doc, revisions: undefined }) ?? { ...doc, revisions: undefined }, b);
     show(next);
     await persist(next);
   }),
-  recordRevision: (rev, note) => void run(async (b) => {
-    if (get().viewing) return;
-    // The board the button was pressed on, even if another one is opened while this runs.
-    const board = get().doc.id;
-    await flush();
-    const doc = get().doc.id === board ? get().doc : await b.load(board);
-    if (!doc) return;
-    const entry: Revision = { id: randomId(), rev, date: new Date().toLocaleDateString('sv-SE'), note };
-    // The snapshot is the drawing itself; the list of revisions lives only on the live board.
-    await b.saveRevision(doc.id, entry.id, { ...doc, revisions: undefined });
-    const all = [...(doc.revisions ?? []), entry];
-    for (const old of all.slice(0, Math.max(0, all.length - MAX_REVISIONS))) await b.removeRevision(doc.id, old.id);
-    await setRevisions(b, doc.id, () => all.slice(-MAX_REVISIONS));
+  nameState: (name) => void run(async (b) => {
+    if (get().viewing || !name.trim()) return;
+    const doc = get().doc;
+    const last = doc.revisions?.at(-1);
+    // The state already in the history (nothing changed since): it just takes the name.
+    if (last && last.hash === fingerprint(doc)) return setRevisions(b, doc.id, (list) => list.map((r) => (r.id === last.id ? { ...r, name: name.trim() } : r)));
+    await snapshot(b, doc, { name: name.trim() });
+  }),
+  renameRevision: (id, name) => void run(async (b) => {
+    const board = (live ?? get().doc).id;
+    await setRevisions(b, board, (list) => list.map((r) => (r.id === id ? { ...r, name: name.trim() || undefined } : r)));
   }),
   viewRevision: (id) => void run(async (b) => {
-    if (!get().viewing) await flush();
+    // The board as it is goes into the history before an older state takes its place on screen.
+    if (!get().viewing) {
+      await quietly(() => settle(b));
+      await flush();
+    }
     const base = live ?? get().doc;
     const all = base.revisions ?? [];
     const i = all.findIndex((r) => r.id === id);
-    const snap = i < 0 ? null : await b.loadRevision(base.id, id);
-    if (!snap) throw new Error('revision not found');
+    const snap = i < 0 ? null : await b.loadRevision(base.id, id).catch(() => null);
+    // A state whose drawing is gone (an entry from an older copy of the board) says so plainly.
+    if (!snap) return alert('この時点の図が見つかりませんでした（図のファイルが残っていません）。');
     live = base;
     // On screen the old drawing carries the history up to its own entry, as its sheet would have.
     set({ doc: { ...snap, id: base.id, revisions: all.slice(0, i + 1) }, viewing: { entry: all[i], all }, past: [], future: [], selection: [], editing: null });
@@ -217,14 +216,19 @@ export const useStore = create<State>((set, get) => ({
     set({ doc, viewing: null, past: [], future: [], selection: [], editing: null });
     requestAnimationFrame(get().fit);
   },
-  restoreRevision: () => {
+  restoreRevision: () => void run(async (b) => {
     const { viewing, doc } = get();
     if (!viewing || !live) return;
     const before = live;
+    // What is replaced goes into the history first, so going back is never a loss.
+    const kept = await snapshot(b, before, { source: 'restore', summary: `${viewing.entry.name ?? 'この時点'}に戻す前` });
     live = null;
+    // The state gone back to is already in the history: it is the base for what comes next.
+    snapBase = doc;
+    baseKept = true;
     // The old drawing becomes the live board (and is saved); undo brings back what it replaced.
-    set({ doc: { ...doc, revisions: viewing.all }, viewing: null, past: [before], future: [], selection: [], editing: null });
-  },
+    set({ doc: { ...doc, revisions: kept ?? before.revisions }, viewing: null, past: [before], future: [], selection: [], editing: null });
+  }),
   deleteRevision: (id) => void run(async (b) => {
     if (get().viewing) return;
     const board = get().doc.id;
@@ -269,8 +273,9 @@ export const useStore = create<State>((set, get) => ({
       const fresh = await b.load(mine.id);
       if (!fresh) return;
       stored = fresh;
+      const shown = fitLegends(fresh);
       // This page's version stays one undo away, should it be wanted after all.
-      set({ doc: fitLegends(fresh), past: [mine], future: [], selection: get().selection.filter((id) => fresh.nodes.some((n) => n.id === id) || fresh.edges.some((e) => e.id === id)), saving: 'saved' });
+      adopt(shown, () => set({ doc: shown, past: [mine], future: [], selection: get().selection.filter((id) => fresh.nodes.some((n) => n.id === id) || fresh.edges.some((e) => e.id === id)), saving: 'saved' }));
     }),
   deleteBoard: (id) => void run(async (b) => {
     if (id === get().doc.id) clearTimeout(timer);
@@ -300,6 +305,108 @@ async function run(fn: (b: Backend) => Promise<void>): Promise<void> {
   }
 }
 
+/**
+ * Automatic history. The board as last kept (or as it was opened) is `snapBase`; once editing
+ * pauses, a board that differs from it goes into the history. The state it was opened in is kept
+ * first, at the first edit, unless the history already ends with it.
+ */
+let snapBase: Doc | null = null;
+let baseKept = false;
+/** Set while a board written elsewhere is taken in: that is no edit, and starts a new base. */
+let adopting = false;
+/** The opened state being put into the history, for anything that must wait for it. */
+let keeping: Promise<void> | null = null;
+let settleTimer: number | undefined;
+
+/**
+ * Put `doc` into its board's history (thinning older unnamed states); returns the new list.
+ * The change is described against `previous`, by default the state last kept.
+ */
+async function snapshot(b: Backend, doc: Doc, extra: Partial<Revision> = {}, previous: Doc | null = snapBase): Promise<Revision[] | null> {
+  // A state the history already ends with is not kept twice (unless it is being given a name).
+  const current = live?.id === doc.id ? live : useStore.getState().doc;
+  if (!extra.name && current.id === doc.id && current.revisions?.at(-1)?.hash === fingerprint(doc)) {
+    snapBase = doc;
+    return current.revisions ?? null;
+  }
+  const before = previous?.id === doc.id ? previous : null;
+  const entry = entryFor(doc, before, randomId(), { source: 'auto', ...extra });
+  await b.saveRevision(doc.id, entry.id, drawingOf(doc));
+  let drop: string[] = [];
+  let kept: Revision[] = [];
+  await setRevisions(b, doc.id, (list) => {
+    const out = thin([...list, entry]);
+    drop = out.drop;
+    kept = out.keep;
+    return out.keep;
+  });
+  for (const id of drop) await b.removeRevision(doc.id, id).catch(() => {});
+  if (doc.id === (live ?? useStore.getState().doc).id) snapBase = doc;
+  return kept;
+}
+
+/** Put a board written elsewhere on screen as the new base of the history, without counting it an edit. */
+function adopt(shown: Doc, apply: () => void): void {
+  adopting = true;
+  try {
+    apply();
+  } finally {
+    adopting = false;
+  }
+  snapBase = shown;
+  baseKept = false;
+}
+
+/** Keep the board now if it changed since it was last kept (before leaving it, after a pause). */
+async function settle(b: Backend): Promise<void> {
+  clearTimeout(settleTimer);
+  // Only a board that changed since it was opened (or last kept) has anything to keep.
+  const changed = () => {
+    const { doc, viewing, ready, saving } = useStore.getState();
+    return ready && !viewing && saving !== 'conflict' && !!snapBase && snapBase.id === doc.id && fingerprint(doc) !== fingerprint(snapBase);
+  };
+  if (!changed()) return;
+  await keepBase(b);
+  if (changed()) await snapshot(b, useStore.getState().doc);
+}
+
+/** The state the board was opened in, into the history if it does not end with it already. */
+function keepBase(b: Backend): Promise<void> {
+  if (keeping) return keeping;
+  if (baseKept || !snapBase) return Promise.resolve();
+  baseKept = true;
+  const base = snapBase;
+  keeping = (async () => {
+    const last = (useStore.getState().doc.revisions ?? []).at(-1);
+    if (last?.hash === fingerprint(base)) return;
+    // Described against the last state kept, which may be from long before (or from elsewhere).
+    const previous = last ? await b.loadRevision(base.id, last.id).catch(() => null) : null;
+    await snapshot(b, base, {}, previous);
+  })().finally(() => (keeping = null));
+  return keeping;
+}
+
+/**
+ * Run a step of the automatic history. Its failure (browser storage full …) is logged, never shown
+ * as a failed save: the board itself is saved all the same.
+ */
+async function quietly(fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (e) {
+    console.warn('[keito] history not kept:', e);
+  }
+}
+
+/** One state from the open board's history, as it was. */
+export async function loadState(id: string): Promise<Doc | null> {
+  const board = live ?? useStore.getState().doc;
+  return backend ? backend.loadRevision(board.id, id) : null;
+}
+
+/** The open board as it is now (not an older state shown in its place). */
+export const currentBoard = (): Doc => live ?? useStore.getState().doc;
+
 /** Put a freshly loaded (or created) board on screen. */
 /**
  * Update a board's list of revisions once the files are written. The writes take a moment, and
@@ -319,7 +426,13 @@ async function setRevisions(b: Backend, board: string, change: (list: Revision[]
 function show(doc: Doc): void {
   stored = doc;
   live = null;
-  useStore.setState({ doc: fitLegends(doc), viewing: null, past: [], future: [], selection: [], editing: null });
+  // The base is the board as shown (legends fitted), so fitting alone never reads as an edit.
+  const shown = fitLegends(doc);
+  snapBase = shown;
+  baseKept = false;
+  keeping = null;
+  clearTimeout(settleTimer);
+  useStore.setState({ doc: shown, viewing: null, past: [], future: [], selection: [], editing: null });
   showInUrl(doc.id);
   requestAnimationFrame(useStore.getState().fit);
 }
@@ -352,6 +465,15 @@ async function flush(): Promise<void> {
 registerSignals(useStore.getState().doc.signals);
 useStore.subscribe((s, prev) => {
   if (s.doc.signals !== prev.doc.signals) registerSignals(s.doc.signals);
+});
+
+// History: the opened state is kept at the first edit, the edited one once editing pauses.
+useStore.subscribe((s, prev) => {
+  if (!s.ready || s.viewing || adopting || s.doc === prev.doc || s.doc.id !== prev.doc.id || !backend) return;
+  const b = backend;
+  if (!baseKept) void quietly(() => keepBase(b));
+  clearTimeout(settleTimer);
+  settleTimer = window.setTimeout(() => void quietly(() => settle(b)), SETTLE_MS);
 });
 
 // Autosave shortly after every change.
@@ -424,10 +546,14 @@ async function pickUp(b: Backend): Promise<void> {
   if (!fresh || useStore.getState().doc !== s.doc) return;
   if (JSON.stringify(fresh) === JSON.stringify(s.doc)) return;
   stored = fresh;
-  // The history was made on the version just replaced: undoing into it would write that old
-  // version back over what was saved elsewhere. It starts over from the version read in.
-  const keep = (id: string) => fresh.nodes.some((n) => n.id === id) || fresh.edges.some((e) => e.id === id);
-  useStore.setState({ doc: fitLegends(fresh), selection: s.selection.filter(keep), past: [], future: [] });
+  const shown = fitLegends(fresh);
+  // The board as written elsewhere is the new base; it goes into the history at the next edit here.
+  adopt(shown, () => {
+    // The history was made on the version just replaced: undoing into it would write that old
+    // version back over what was saved elsewhere. It starts over from the version read in.
+    const keep = (id: string) => fresh.nodes.some((n) => n.id === id) || fresh.edges.some((e) => e.id === id);
+    useStore.setState({ doc: shown, selection: s.selection.filter(keep), past: [], future: [] });
+  });
 }
 
 window.addEventListener('focus', () => {

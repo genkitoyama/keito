@@ -2,7 +2,7 @@ import type { Cell, Worksheet } from 'exceljs';
 import { type Table, cableSummaryTable, cableTable, checkTable, colourKey, equipmentTable, networkTable, powerTable } from '../model/lists';
 import { PRESETS } from '../model/presets';
 import { allSignals } from '../model/signals';
-import { type Doc, latestRev } from '../model/types';
+import type { Doc } from '../model/types';
 
 /**
  * The lists as one Excel workbook: a sheet per list with the board's title over it, a dark
@@ -62,8 +62,7 @@ function writeSheet(ws: Worksheet, t: Table, doc: Doc, lists: Map<string, string
   // Title and the board's particulars above the table, as on the printed sheets.
   ws.getCell(1, 1).value = `${t.title} — ${doc.meta.title || '無題のボード'}`;
   ws.getCell(1, 1).font = { size: 14, bold: true, color: { argb: INK } };
-  const rev = latestRev(doc);
-  ws.getCell(2, 1).value = [doc.meta.project && `案件名: ${doc.meta.project}`, rev && `REV: ${rev}`, `出力日: ${new Date().toLocaleDateString('ja-JP')}`].filter(Boolean).join('　');
+  ws.getCell(2, 1).value = [doc.meta.project && `案件名: ${doc.meta.project}`, `出力日: ${new Date().toLocaleDateString('ja-JP')}`].filter(Boolean).join('　');
   ws.getCell(2, 1).font = { size: 10, color: { argb: 'FF64748B' } };
 
   const head = ws.getRow(HEAD_ROW);

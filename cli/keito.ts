@@ -14,10 +14,11 @@ import { Conflict, boardsRoot, store } from '../server/store';
 import { DSL_GUIDE, fromYaml, toYaml } from '../src/model/dsl';
 import { fitLegends } from '../src/model/legend';
 import { type Table, cableSummaryTable, cableTable, checkTable, equipmentTable, networkTable, powerTable, toCsv } from '../src/model/lists';
+import { drawingOf, entryFor, fingerprint, labelOf, thin } from '../src/model/history';
 import { readBoard } from '../src/model/load';
 import { randomId } from '../src/model/presets';
 import { registerSignals } from '../src/model/signals';
-import { type Doc, emptyMeta } from '../src/model/types';
+import { type Doc, type Revision, emptyMeta } from '../src/model/types';
 import { updateWorkbook, workbook } from '../src/export/xlsx';
 
 const HELP = `keito — 系統図ボードをコマンドラインから読み書きする
@@ -33,16 +34,23 @@ const HELP = `keito — 系統図ボードをコマンドラインから読み�
   check <ボード>                  チェック表。要修正があれば終了コード 1
   xlsx <ボード> [-o ファイル] [--update 前回.xlsx]
                                  Excel に書き出す。--update で前回のファイルを図の内容に更新（購入ステータスなどは引き継ぐ）
-  backups <ボード>                CLI が書き込む前に残した控えの一覧
-  restore <ボード> <控え>          控えの内容に戻す（戻す前の状態も控えに残る）
+  history <ボード>                履歴の一覧（番号・日時か名前・変わったところ）
+  restore <ボード> <番号|名前>     履歴のその時点に戻す（戻す前の状態も履歴に残る）
+  name <ボード> <名前>            今の状態に名前を付けて履歴に残す（自動で消えなくなる）
   url <ボード>                    画面で開く URL
   guide                          YAML の書式（AI に渡す用）
 
 <ボード> は id、フォルダ名、またはタイトルの一部。
 ボードのフォルダ: --dir、環境変数 KEITO_BOARDS、~/.config/keito/config.json の "boards"、keito の boards/ の順に探します。
-書き込みの前には毎回、元の状態を <ボード>/backups/ に残します（30 件まで）。`;
+書き込む前には毎回、元の状態を履歴に残します（画面の「履歴」にも出ます）。`;
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+
+// Output cut short by the reader (`keito history | head`) is no error.
+process.stdout.on('error', (e: NodeJS.ErrnoException) => {
+  if (e.code === 'EPIPE') process.exit(0);
+  throw e;
+});
 
 function fail(msg: string, code = 2): never {
   process.stderr.write(`keito: ${msg}\n`);
@@ -104,17 +112,42 @@ async function input(file: string | undefined): Promise<string> {
   return Buffer.concat(chunks).toString('utf8');
 }
 
-/** Write a changed board, keeping it as it was first; a board changed meanwhile is left alone. */
-function save(doc: Doc, serial: number, note: string): number {
-  const kept = boards.backup(doc.id, note);
+/**
+ * Write a changed board. The board as it was goes into its history first (unless the history
+ * already ends with it), so the change can always be undone; a board changed meanwhile is left alone.
+ */
+function save(before: Doc, next: Doc, serial: number, extra: Partial<Revision> = { source: 'cli' }): number {
+  let history = before.revisions ?? [];
+  let drop: string[] = [];
+  if (history.at(-1)?.hash !== fingerprint(before)) {
+    const entry = entryFor(before, null, randomId(), { ...extra, summary: undefined });
+    boards.writeState(before.id, entry.id, drawingOf(before));
+    ({ keep: history, drop } = thin([...history, entry]));
+  }
+  const done = commit({ ...next, revisions: history }, serial);
+  // Drawings thinned out go only once the board no longer lists them: a refused write keeps them all.
+  for (const id of drop) boards.removeState(before.id, id);
+  process.stderr.write(`保存しました: ${done.folder}（版番号 ${done.serial}）。元の状態は履歴に残っています（keito history）\n`);
+  return done.serial;
+}
+
+/** Write the board on the version read; a board changed meanwhile is left alone, and says so. */
+function commit(doc: Doc, serial: number): { serial: number; folder: string } {
   try {
-    const done = boards.write(doc as never, serial);
-    process.stderr.write(`保存しました: ${done.folder}（版番号 ${done.serial}${kept ? `、控え ${kept}` : ''}）\n`);
-    return done.serial;
+    return boards.write(doc as never, serial);
   } catch (e) {
-    if (e instanceof Conflict) fail(`${e.message}。もう一度 show してから反映してください`);
+    if (e instanceof Conflict) fail(`${e.message}。もう一度 show してからやり直してください`);
     throw e;
   }
+}
+
+/** A state in a board's history by its number in `keito history` (1 = newest), id or name. */
+function stateOf(doc: Doc, key: string | undefined): Revision {
+  if (!key) fail('履歴の番号か名前を指定してください（keito history で一覧）');
+  const list = [...(doc.revisions ?? [])].reverse();
+  const hit = /^\d+$/.test(key) ? list[Number(key) - 1] : (list.find((r) => r.id === key) ?? list.find((r) => r.name === key) ?? list.find((r) => r.name?.includes(key)));
+  if (!hit) fail(`履歴に「${key}」がありません（keito history で一覧）`);
+  return hit;
 }
 
 /** A file's bytes as an ArrayBuffer of their own (a Buffer may sit in a larger shared one). */
@@ -176,7 +209,7 @@ async function main(): Promise<void> {
       } catch (e) {
         fail(`YAML を反映できませんでした: ${e instanceof Error ? e.message : e}`);
       }
-      save(next, serial, 'CLI apply の前');
+      save(doc, next, serial);
       return;
     }
 
@@ -234,22 +267,40 @@ async function main(): Promise<void> {
       return void console.log(`書き出しました: ${file}`);
     }
 
-    case 'backups': {
-      const info = find(args[0]);
-      const list = boards.backups(info.id);
-      if (!list.length) return void console.log('（控えはありません）');
-      for (const b of list) console.log(`${b.name}\t${b.note}`);
+    case 'history': {
+      const { doc } = load(args[0]);
+      const list = [...(doc.revisions ?? [])].reverse();
+      if (!list.length) return void console.log('（履歴はまだありません）');
+      const when = (r: Revision) => (r.at ? new Date(r.at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
+      const what = (r: Revision) => (r.source === 'cli' ? 'CLI で変更する前' : r.source === 'restore' ? '戻す前' : (r.summary ?? ''));
+      list.forEach((r, i) => console.log(`${i + 1}\t${r.name ? `★ ${r.name}（${when(r)}）` : when(r)}\t${what(r)}`));
       return;
     }
 
     case 'restore': {
       const { doc, serial } = load(args[0]);
-      const name = args[1];
-      if (!name) fail('控えの名前を指定してください（keito backups で一覧）');
-      const old = readBoard(boards.readBackup(doc.id, name));
-      if (!old) fail(`控え「${name}」がありません`);
-      save({ ...old, id: doc.id }, serial, `restore ${name} の前`);
-      return;
+      const entry = stateOf(doc, args[1]);
+      const old = readBoard(boards.readState(doc.id, entry.id));
+      if (!old) fail(`「${labelOf(entry)}」の図が見つかりません`);
+      save(doc, { ...old, id: doc.id }, serial, { source: 'restore' });
+      return void console.log(`「${labelOf(entry)}」に戻しました`);
+    }
+
+    case 'name': {
+      const { doc, serial } = load(args[0]);
+      const name = args.slice(1).join(' ').trim();
+      if (!name) fail('名前を指定してください');
+      const last = doc.revisions?.at(-1);
+      // The state already in the history takes the name; otherwise the board as it is goes in.
+      let history: Revision[];
+      if (last && last.hash === fingerprint(doc)) history = doc.revisions!.map((r) => (r.id === last.id ? { ...r, name } : r));
+      else {
+        const entry = entryFor(doc, null, randomId(), { name, summary: undefined });
+        boards.writeState(doc.id, entry.id, drawingOf(doc));
+        history = [...(doc.revisions ?? []), entry];
+      }
+      commit({ ...doc, revisions: history }, serial);
+      return void console.log(`「${name}」として残しました`);
     }
 
     case 'url': {

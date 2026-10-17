@@ -1092,34 +1092,34 @@ td a {
   vertical-align: bottom;
 }
 
-/* Revision history */
+/* History: states kept on their own, grouped by day; named ones on top. */
 .rev-form {
   display: flex;
   flex-direction: column;
   gap: 6px;
   margin-bottom: 8px;
 }
-.rev-form input {
-  flex: 1;
-}
-.rev-form .rev-id {
-  flex: 0 0 44px;
-  text-align: center;
+.rev-day {
+  margin: 8px 0 2px;
+  font-size: 10.5px;
   font-weight: 700;
+  color: var(--sub);
 }
 .rev {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 4px;
-  border-top: 1px solid var(--line);
+  padding: 4px 4px 4px 6px;
+  border-radius: 6px;
+}
+.rev:hover {
+  background: #f1f5f9;
 }
 .rev.on {
   background: var(--accent-soft);
 }
-.rev b {
-  flex: 0 0 26px;
-  text-align: center;
+.rev.named {
+  box-shadow: inset 2px 0 0 #eab308;
 }
 .rev-text {
   flex: 1;
@@ -1133,6 +1133,58 @@ td a {
   display: block;
   color: var(--sub);
   font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rev-actions {
+  display: flex;
+  gap: 2px;
+  flex: none;
+}
+/* The actions show on the row pointed at (and the one open), so the list reads as a list. */
+.rev:not(:hover):not(.on) .rev-actions {
+  opacity: 0;
+}
+.rev-more {
+  margin-top: 4px;
+}
+.modal.compare {
+  width: min(640px, 92vw);
+  height: auto;
+  max-height: 84vh;
+}
+.modal.compare .modal-body {
+  display: block;
+  overflow: auto;
+}
+.changes {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: 12.5px;
+}
+.changes li {
+  padding: 4px 0;
+  border-bottom: 1px solid var(--line);
+}
+.changes li b {
+  display: inline-block;
+  min-width: 34px;
+  font-size: 11px;
+}
+.changes li.add b {
+  color: #15803d;
+}
+.changes li.del b {
+  color: #dc2626;
+}
+.changes li.mod b {
+  color: #b45309;
+}
+.changes small {
+  display: block;
+  margin-left: 38px;
+  color: var(--sub);
 }
 .rev-banner {
   display: flex;

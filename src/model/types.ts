@@ -167,8 +167,6 @@ export interface DocMeta {
   project: string;
 }
 
-/** The mark of the latest recorded revision, or '' while none has been recorded. */
-export const latestRev = (doc: Pick<Doc, 'revisions'>): string => doc.revisions?.[doc.revisions.length - 1]?.rev ?? '';
 
 /** A device the user saved to reuse: everything about it except where it sits. */
 export interface UserPreset {
@@ -195,14 +193,23 @@ export interface CustomSignal {
   color: string;
 }
 
-/** One recorded revision of a board. The drawing as it stood is kept beside the board, under `id`. */
+/** One state in a board's history. The drawing as it stood is kept beside the board, under `id`. */
 export interface Revision {
   id: string;
-  /** Revision mark shown on the drawing (A, B, …). */
-  rev: string;
-  /** YYYY-MM-DD. */
-  date: string;
-  note: string;
+  /** When it was taken (ISO time). */
+  at?: string;
+  /** A name given by hand ("先方提出 10/15"): such a state is kept for good, others thin out as they age. */
+  name?: string;
+  /** What changed since the state before, in a few words ("機材 +2・ケーブル 3 本変更"). */
+  summary?: string;
+  /** Who took it: on its own while the board was worked on, the command line before writing, or going back to an older state. */
+  source?: 'auto' | 'cli' | 'restore';
+  /** Fingerprint of the drawing (see history.ts), to tell the same state twice. */
+  hash?: string;
+  /** From boards recorded before history was automatic: the revision mark (A, B …), its date and note. */
+  rev?: string;
+  date?: string;
+  note?: string;
 }
 
 export interface Doc {
@@ -228,7 +235,7 @@ export interface Doc {
   serial?: number;
   /** Signal types added on this board. */
   signals?: CustomSignal[];
-  /** Recorded revisions, oldest first. */
+  /** The board's history, oldest first (see history.ts). */
   revisions?: Revision[];
   /**
    * Set only on a part of a board cut out for export (never saved): the whole board, from which
