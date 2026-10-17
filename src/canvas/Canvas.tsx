@@ -9,6 +9,7 @@ import {
   center,
   contains,
   intersects,
+  isUnderlay,
   isTagged,
   labelPoint,
   nearestT,
@@ -443,6 +444,7 @@ export function Canvas() {
       const rect = { x: Math.min(d.start.x, p.x), y: Math.min(d.start.y, p.y), w: Math.abs(p.x - d.start.x), h: Math.abs(p.y - d.start.y) };
       setGhost({ kind: 'marquee', rect });
       const hit = s.doc.nodes.filter((n) => {
+        if (isUnderlay(n)) return false;
         const r = nodeRect(n);
         // Frames need to be fully enclosed, otherwise every marquee inside one would grab it.
         return n.type === 'frame' ? contains(rect, r) && contains(rect, { x: r.x + r.w, y: r.y + r.h }) : intersects(rect, r);
@@ -660,8 +662,10 @@ export function Canvas() {
 
   const sel = new Set(selection);
   const routes = routeEdges(doc);
+  // An underlay (a floor plan) lies beneath everything and lets the pointer through.
+  const underlays = doc.nodes.filter(isUnderlay);
   const frames = doc.nodes.filter((n) => n.type === 'frame');
-  const others = doc.nodes.filter((n) => n.type !== 'frame');
+  const others = doc.nodes.filter((n) => n.type !== 'frame' && !isUnderlay(n));
   const single = selection.length === 1 ? doc.nodes.find((n) => n.id === selection[0]) : undefined;
   const selectedEdge = selection.length === 1 ? doc.edges.find((e) => e.id === selection[0]) : undefined;
   const handleNode = doc.nodes.find((n) => n.id === hover && hasHandles(n)) ?? (single && hasHandles(single) ? single : undefined);
@@ -703,6 +707,9 @@ export function Canvas() {
         <rect width="100%" height="100%" fill="#f4f6f9" />
         {view.k > 0.4 && <rect width="100%" height="100%" fill="url(#dots)" />}
         <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
+          {underlays.map((n) => (
+            <NodeView key={n.id} n={n} theme={SCREEN} doc={doc} />
+          ))}
           {frames.map(nodeGroup)}
           {(doc.hops ? hopOrder(doc) : doc.edges).map((e) => {
             const pts = routes.get(e.id);
@@ -816,6 +823,20 @@ export function Canvas() {
         <button onClick={() => zoomBy(1.25)} title="拡大">＋</button>
         <button onClick={() => st().fit()} title="全体表示 (⇧1)">全体</button>
       </div>
+      {/* A layout board's scale bar: a length that reads as a round number at this zoom. */}
+      {doc.kind === 'layout' && <ScaleBar k={view.k} scale={doc.scale || 100} />}
+    </div>
+  );
+}
+
+function ScaleBar({ k, scale }: { k: number; scale: number }) {
+  // The longest of 10 cm, 50 cm, 1 m, 2 m, 5 m, 10 m that stays under 160 px on screen.
+  const steps = [0.1, 0.5, 1, 2, 5, 10, 20, 50];
+  const m = [...steps].reverse().find((v) => v * scale * k <= 160) ?? steps[0];
+  return (
+    <div className="scale-bar">
+      <span style={{ width: m * scale * k }} />
+      <small>{m < 1 ? `${m * 100} cm` : `${m} m`}</small>
     </div>
   );
 }

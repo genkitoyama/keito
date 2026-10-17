@@ -8,10 +8,10 @@ import type { Doc } from './types';
  * library, the types of line, the fields of a device, its lists and checks — so each stays as
  * simple as what it is for. The drawing underneath is the same everywhere.
  */
-export type BoardKind = 'system' | 'software' | 'sequence' | 'free';
+export type BoardKind = NonNullable<Doc['kind']>;
 
 /** The lists a board can have, by key (see lists.ts). */
-export type ListKey = 'equipment' | 'cables' | 'summary' | 'power' | 'network' | 'comms' | 'check';
+export type ListKey = 'equipment' | 'cables' | 'summary' | 'power' | 'network' | 'comms' | 'fixtures' | 'check';
 
 export interface KindSpec {
   id: BoardKind;
@@ -20,7 +20,7 @@ export interface KindSpec {
   hint: string;
   tools: Tool[];
   /** The library at the side, and what its items are called; none on a board without one. */
-  library: { label: string; search: string; set: 'equipment' | 'software' } | null;
+  library: { label: string; search: string; set: 'equipment' | 'software' | 'furniture' } | null;
   /** The types a line (or a port) can take on this board. */
   lines: (s: Signal) => boolean;
   /** Lists in the order shown; none, no lists button. */
@@ -67,6 +67,17 @@ export const KINDS: Record<BoardKind, KindSpec> = {
     listsLabel: '',
     cableOptions: false,
   },
+  layout: {
+    id: 'layout',
+    label: '配置図',
+    hint: 'バックヤードや会場の平面図。縮尺つきで、机・ラック・機材の位置を実寸で置く',
+    tools: ['select', 'pan', 'rect', 'ellipse', 'round', 'cloud', 'sticky', 'text', 'frame'],
+    library: { label: '什器', search: '什器を検索…', set: 'furniture' },
+    lines: (s) => s.id === 'flow',
+    lists: ['fixtures'],
+    listsLabel: '配置物一覧',
+    cableOptions: false,
+  },
   free: {
     id: 'free',
     label: '自由ボード',
@@ -80,6 +91,6 @@ export const KINDS: Record<BoardKind, KindSpec> = {
   },
 };
 
-export const KIND_ORDER: BoardKind[] = ['system', 'software', 'sequence', 'free'];
+export const KIND_ORDER: BoardKind[] = ['system', 'software', 'sequence', 'layout', 'free'];
 
 export const kindOf = (doc: Pick<Doc, 'kind'>): KindSpec => KINDS[doc.kind ?? 'system'] ?? KINDS.system;

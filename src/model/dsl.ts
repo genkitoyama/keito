@@ -12,7 +12,8 @@ import { PALETTE } from './signals';
 /** Schema reference shown in the editor and given to the AI. */
 export const DSL_GUIDE = `# keito YAML 書式
 title: 図のタイトル
-kind: system               # 任意。ボードの種類 system（システム図）/ software（ソフトウェア構成図）/ sequence / free
+kind: system               # 任意。ボードの種類 system（システム図）/ software（ソフトウェア構成図）/ sequence / layout（配置図）/ free
+                           # 配置図は 1 m = 100（pos・size の単位）。shapes の dims: true で寸法を表示、images の under: true で下敷き
 project: 案件名            # 任意
 signals:                   # 任意。このボードだけの信号種別
   - { id: hdbt, label: HDBaseT, prefix: HDB, color: "#0d9488" }
@@ -191,6 +192,7 @@ export function toYaml(doc: Doc): string {
       if (s.type === 'shape') {
         if (s.fill && s.fill !== 'tint') o.fill = s.fill;
         if (s.dash) o.dash = true;
+        if (s.dims) o.dims = true;
       }
       o.pos = [r(s.x), r(s.y)];
       o.size = [r(s.w), r(s.h)];
@@ -218,7 +220,7 @@ export function toYaml(doc: Doc): string {
   // Pictures are listed without their data so the text stays readable; applying
   // the YAML keeps each picture by id.
   const images = doc.nodes.filter((n) => n.type === 'image');
-  if (images.length) out.images = images.map((n) => ({ id: n.id, name: n.text, pos: [r(n.x), r(n.y)], size: [r(n.w), r(n.h)] }));
+  if (images.length) out.images = images.map((n) => ({ id: n.id, name: n.text, pos: [r(n.x), r(n.y)], size: [r(n.w), r(n.h)], ...(n.under ? { under: true } : {}), ...(n.opacity != null ? { opacity: n.opacity } : {}) }));
 
   const junctions = doc.nodes.filter((n) => n.type === 'junction');
   if (junctions.length) out.junctions = junctions.map((n) => ({ id: n.id, pos: [r(n.x + n.w / 2), r(n.y + n.h / 2)] }));
@@ -369,7 +371,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     else if (kind === 'text') nodes.push({ ...base, type: 'text', fontSize, bold });
     else {
       const fill = ['solid', 'outline', 'none'].includes(str(v.fill)) ? (str(v.fill) as FillStyle) : undefined;
-      nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined, fontSize, bold });
+      nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined, dims: v.dims === true || undefined, fontSize, bold });
     }
     if (v.area) areaHint.set(id, str(v.area));
   });
@@ -402,7 +404,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (!src) return;
     const id = claim(v.id, 'img', `images[${i}]`);
     const size = nums(v.size, 2) ?? (old ? [old.w, old.h] : [200, 150]);
-    nodes.push({ id, type: 'image', ...place(id, v.pos), w: size[0], h: size[1], text: str(v.name), src });
+    nodes.push({ id, type: 'image', ...place(id, v.pos), w: size[0], h: size[1], text: str(v.name), src, under: v.under === true || undefined, opacity: typeof v.opacity === 'number' ? v.opacity : undefined });
   });
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
@@ -549,7 +551,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   const picked = isObj(root.colors) ? Object.entries(root.colors).filter(([k, v]) => isSignal(k) && HEX.test(str(v))) : null;
   const signalColors = !picked ? prev.signalColors : picked.length ? Object.fromEntries(picked.map(([k, v]) => [k, str(v)])) : undefined;
   // Revision history is not part of the text form; it stays with the board.
-  const KIND_IDS = ['system', 'software', 'sequence', 'free'];
+  const KIND_IDS = ['system', 'software', 'sequence', 'layout', 'free'];
   const kind = typeof root.kind === 'string' && KIND_IDS.includes(root.kind) ? (root.kind === 'system' ? undefined : (root.kind as Doc['kind'])) : prev.kind;
   return { version: 1, id: prev.id, kind, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
 }

@@ -304,11 +304,14 @@ export function docBounds(doc: Doc, ids?: Set<string>): Rect | null {
 }
 
 /** Topmost node under a point; frames only when nothing else is hit. */
+/** An underlay (a floor plan beneath the drawing) is never what the pointer is on. */
+export const isUnderlay = (n: Node): boolean => n.type === 'image' && !!n.under;
+
 export function nodeAt(doc: Doc, p: Pt): Node | null {
   let frame: Node | null = null;
   for (let i = doc.nodes.length - 1; i >= 0; i--) {
     const n = doc.nodes[i];
-    if (!contains(nodeRect(n), p)) continue;
+    if (isUnderlay(n) || !contains(nodeRect(n), p)) continue;
     if (n.type !== 'frame') return n;
     frame ??= n;
   }

@@ -1504,6 +1504,9 @@ body.row-dragging .lists td.editable:hover {
 .kind-badge.sequence {
   background: #0d9488;
 }
+.kind-badge.layout {
+  background: #c2410c;
+}
 .kind-badge.free {
   background: #64748b;
 }
@@ -1633,4 +1636,57 @@ body.row-dragging .lists td.editable:hover {
 }
 .board-card.on {
   border-color: var(--accent);
+}
+
+.library-head.static {
+  cursor: default;
+  font-weight: 600;
+  padding: 6px 8px 2px;
+  color: var(--sub);
+  font-size: 11px;
+}
+
+.underlay {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.underlay span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.underlay input {
+  width: 80px;
+}
+.real-width input {
+  flex: 1;
+}
+
+.scale-bar {
+  position: absolute;
+  left: 260px;
+  bottom: 18px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  pointer-events: none;
+}
+.scale-bar span {
+  display: block;
+  height: 6px;
+  border: 1.5px solid #334155;
+  border-top: 0;
+}
+.scale-bar small {
+  font-size: 11px;
+  color: #334155;
 }

@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
 import { insertImages, insertNode, viewCenter } from '../canvas/Canvas';
-import { snap } from '../model/geometry';
-import { COMMON, PRESETS, type Preset, SOFTWARE, allIds, freshId, makeDevice, makeLegend } from '../model/presets';
+import { intersects, isUnderlay, nodeRect, snap } from '../model/geometry';
+import { COMMON, FURNITURE, type Furniture, PRESETS, type Preset, SOFTWARE, allIds, freshId, makeDevice, makeFurniture, makeLegend } from '../model/presets';
 import { kindOf } from '../model/kinds';
 import type { DeviceNode, UserPreset } from '../model/types';
 import { type Tool, useStore } from '../model/store';
@@ -61,6 +61,56 @@ function pickImages() {
 }
 
 const MINE = 'マイプリセット';
+
+function addFurniture(f: Furniture) {
+  const s = useStore.getState();
+  const c = viewCenter();
+  const n = makeFurniture(f, 0, 0, allIds(s.doc), s.doc.scale);
+  // Centred on the view, then stepped aside until it overlaps nothing placed (the room's outline,
+  // areas and underlays aside), so repeated clicks set pieces side by side.
+  let x = snap(c.x - n.w / 2);
+  const y = snap(c.y - n.h / 2);
+  const placed = s.doc.nodes.filter((o) => o.type !== 'frame' && !isUnderlay(o)).map(nodeRect);
+  for (let i = 0; i < 40 && placed.some((r) => intersects(r, { x, y, w: n.w, h: n.h })); i++) x += snap(n.w / 2) || 10;
+  s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, { ...n, x, y }] }));
+  s.select([n.id]);
+  s.setTool('select');
+}
+
+/** Furniture for layout boards, by category, each in its real size. */
+function FurnitureLibrary() {
+  const [q, setQ] = useState('');
+  const list = FURNITURE.filter((f) => !q || `${f.name}${f.category}`.includes(q));
+  const cats = [...new Set(list.map((f) => f.category))];
+  return (
+    <div className="library">
+      <div className="library-top">
+        <input autoFocus placeholder="什器を検索…" value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+      <div className="library-list">
+        {cats.map((c) => (
+          <div key={c} className="library-cat">
+            <div className="library-head static">
+              <span className="name">{c}</span>
+            </div>
+            {list
+              .filter((f) => f.category === c)
+              .map((f) => (
+                <button key={f.key} className="item" onClick={() => addFurniture(f)}>
+                  <span className="label">{f.name}</span>
+                  <small>
+                    {f.w} × {f.d}
+                  </small>
+                </button>
+              ))}
+          </div>
+        ))}
+        {!list.length && <p className="library-empty">該当する什器がありません</p>}
+        <p className="library-note">寸法は mm（幅 × 奥行）。置いたあと右のパネルで変えられます。</p>
+      </div>
+    </div>
+  );
+}
 
 function Library() {
   const kind = kindOf(useStore((s) => s.doc));
@@ -219,7 +269,7 @@ export function Toolbar() {
           </>
         )}
       </nav>
-      {panel === 'library' && kind.library && <Library />}
+      {panel === 'library' && kind.library && (kind.library.set === 'furniture' ? <FurnitureLibrary /> : <Library />)}
     </>
   );
 }

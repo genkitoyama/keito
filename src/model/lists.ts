@@ -150,7 +150,9 @@ export function editCell(doc: Doc, edit: CellEdit, ids: string[], raw: string): 
   return {
     ...doc,
     nodes: doc.nodes.map((n) => {
-      if (!hit.has(n.id) || n.type !== 'device') return n;
+      if (!hit.has(n.id)) return n;
+      // Furniture and other shapes take only a new name from a list.
+      if (n.type !== 'device') return edit.field === 'text' && text && 'text' in n ? ({ ...n, text } as Node) : n;
       if (edit.field === 'text') {
         // The list shows the name without its "x2": a quantity that came from the name stays.
         const units = unitsOf(n);
@@ -651,6 +653,43 @@ export function commsTable(doc: Doc): Table {
   };
 }
 
+/**
+ * What a layout board places, for ordering and setting up: furniture by name and real size, with
+ * how many of each and in which areas.
+ */
+export function fixturesTable(doc: Doc): Table {
+  const scale = doc.scale || 100;
+  const mm = (px: number) => Math.round((px * 1000) / scale);
+  const groups = new Map<string, { name: string; size: string; ids: string[]; places: Set<string> }>();
+  for (const n of doc.nodes) {
+    if (n.type !== 'shape' || !n.dims) continue;
+    const name = oneLine(n.text) || '（名前なし）';
+    // Turned round, a desk is still the same desk: the size reads larger side first.
+    const [a, b] = [mm(n.w), mm(n.h)].sort((x, y) => y - x);
+    const size = `${a} × ${b}`;
+    const key = `${name}|${size}`;
+    const g = groups.get(key) ?? { name, size, ids: [], places: new Set<string>() };
+    g.ids.push(n.id);
+    const place = placeOf(doc, n);
+    if (place) g.places.add(place);
+    groups.set(key, g);
+  }
+  const list = [...groups.values()].sort(byHand(doc, 'fixtures', (g) => g.ids, (a, b) => a.name.localeCompare(b.name, 'ja') || a.size.localeCompare(b.size, 'ja', { numeric: true })));
+  const total = list.reduce((sum, g) => sum + g.ids.length, 0);
+  return {
+    title: '配置物一覧',
+    head: ['名称', '寸法 (mm)', '数量', '設置場所'],
+    widths: [24, 18, 8, 30],
+    rows: [...list.map((g) => [g.name, g.size, String(g.ids.length), [...g.places].join(' / ')]), ...(list.length ? [['合計', '', String(total), '']] : [])],
+    refs: [...list.map((g) => g.ids), ...(list.length ? [[]] : [])],
+    numeric: ['数量'],
+    total: list.length > 0,
+    reorder: 'fixtures',
+    empty: '什器ライブラリから机やラックを置くと、名前と寸法ごとにここに並びます。',
+    edit: { 名称: { on: 'node', field: 'text' } },
+  };
+}
+
 /** Every list there is, by the key boards name them by (see kinds.ts). */
 export const TABLES: Record<ListKey, { label: string; make: (doc: Doc) => Table }> = {
   equipment: { label: '機材リスト', make: (doc) => equipmentTable(doc) },
@@ -659,5 +698,6 @@ export const TABLES: Record<ListKey, { label: string; make: (doc: Doc) => Table 
   power: { label: '電源系統', make: powerTable },
   network: { label: 'ネットワーク', make: networkTable },
   comms: { label: '通信一覧', make: commsTable },
+  fixtures: { label: '配置物一覧', make: fixturesTable },
   check: { label: 'チェック', make: checkTable },
 };

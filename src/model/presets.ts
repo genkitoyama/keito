@@ -383,3 +383,49 @@ export function splitEdge(doc: Doc, edgeId: string, at: { x: number; y: number }
 
 /** The kind of line a junction carries, taken from any line already on it. */
 export const junctionSignal = (doc: Doc, node: string): string | undefined => doc.edges.find((e) => e.from.node === node || e.to.node === node)?.signal;
+
+/** A piece of furniture or a fixed part of the room, in its real size (mm). */
+export interface Furniture {
+  key: string;
+  name: string;
+  category: string;
+  /** Width and depth in millimetres. */
+  w: number;
+  d: number;
+  shape: ShapeKind;
+  color: ColorKey;
+  fill?: 'solid' | 'none';
+  dash?: boolean;
+}
+
+/** What a layout board places: desks, racks, the room itself, gear on stands, power. */
+export const FURNITURE: Furniture[] = [
+  { key: 'desk1800', name: '机', category: '机・椅子', w: 1800, d: 600, shape: 'rect', color: 'white' },
+  { key: 'desk1500', name: '机', category: '机・椅子', w: 1500, d: 600, shape: 'rect', color: 'white' },
+  { key: 'desk1200', name: '机', category: '机・椅子', w: 1200, d: 600, shape: 'rect', color: 'white' },
+  { key: 'fold1800', name: '折りたたみ机', category: '机・椅子', w: 1800, d: 450, shape: 'rect', color: 'white' },
+  { key: 'chair', name: '椅子', category: '机・椅子', w: 450, d: 450, shape: 'ellipse', color: 'gray' },
+  { key: 'rack', name: '19インチラック', category: 'ラック・台', w: 600, d: 1000, shape: 'rect', color: 'gray' },
+  { key: 'halfrack', name: 'ハーフラック', category: 'ラック・台', w: 600, d: 600, shape: 'rect', color: 'gray' },
+  { key: 'deskrack', name: '卓上ラック', category: 'ラック・台', w: 550, d: 450, shape: 'rect', color: 'gray' },
+  { key: 'case', name: '機材ケース', category: 'ラック・台', w: 800, d: 600, shape: 'rect', color: 'yellow' },
+  { key: 'monstand', name: 'モニタースタンド', category: 'ラック・台', w: 1000, d: 600, shape: 'rect', color: 'blue' },
+  { key: 'tripod', name: '三脚', category: 'ラック・台', w: 900, d: 900, shape: 'ellipse', color: 'blue', fill: 'none' },
+  { key: 'screen', name: 'スクリーン', category: '映像・音響', w: 2400, d: 100, shape: 'rect', color: 'blue', fill: 'solid' },
+  { key: 'display', name: 'ディスプレイ', category: '映像・音響', w: 1450, d: 300, shape: 'rect', color: 'blue' },
+  { key: 'projector', name: 'プロジェクター', category: '映像・音響', w: 500, d: 450, shape: 'rect', color: 'blue' },
+  { key: 'speaker', name: 'スピーカー', category: '映像・音響', w: 400, d: 400, shape: 'rect', color: 'purple' },
+  { key: 'pillar', name: '柱', category: '建物', w: 600, d: 600, shape: 'rect', color: 'gray', fill: 'solid' },
+  { key: 'wall', name: '壁', category: '建物', w: 3000, d: 120, shape: 'rect', color: 'gray', fill: 'solid' },
+  { key: 'door', name: '扉', category: '建物', w: 900, d: 60, shape: 'rect', color: 'orange', fill: 'solid' },
+  { key: 'aisle', name: '通路', category: '建物', w: 1200, d: 3000, shape: 'rect', color: 'green', fill: 'none', dash: true },
+  { key: 'outlet', name: 'コンセント', category: '電源', w: 150, d: 80, shape: 'rect', color: 'red', fill: 'solid' },
+  { key: 'panel', name: '分電盤', category: '電源', w: 600, d: 200, shape: 'rect', color: 'red' },
+  { key: 'drum', name: 'コードリール', category: '電源', w: 300, d: 300, shape: 'ellipse', color: 'red' },
+];
+
+/** A piece of furniture as a shape at (x, y), sized by the board's scale (px per metre). */
+export function makeFurniture(f: Furniture, x: number, y: number, taken: Set<string>, scale = 100): Node {
+  const px = (mm: number) => Math.max(4, Math.round((mm * scale) / 1000));
+  return { id: freshId(taken, f.key), type: 'shape', shape: f.shape, x, y, w: px(f.w), h: px(f.d), text: f.name, color: f.color, fill: f.fill, dash: f.dash || undefined, dims: true, fontSize: 11 };
+}

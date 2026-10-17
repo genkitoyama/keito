@@ -37,6 +37,8 @@ export interface ShapeNode extends Base {
   fill?: FillStyle;
   /** Dashed border. */
   dash?: boolean;
+  /** Drawn to scale (furniture on a layout board): shows its real size, by the board's scale. */
+  dims?: boolean;
 }
 export interface StickyNode extends Base {
   type: 'sticky';
@@ -101,6 +103,10 @@ export interface SequenceNode extends Base {
 export interface ImageNode extends Base {
   type: 'image';
   src: string;
+  /** An underlay (a floor plan): drawn beneath everything, faded, and passed through by the pointer. */
+  under?: boolean;
+  /** Opacity of an underlay, 0–1 (default 0.55). */
+  opacity?: number;
 }
 /** A dot where lines meet: a line splits here into several, or several join into one. */
 export interface JunctionNode extends Base {
@@ -216,7 +222,9 @@ export interface Doc {
   version: 1;
   id: string;
   /** What the board is (system, software, sequence, free; see kinds.ts); unset is a system board. */
-  kind?: 'system' | 'software' | 'sequence' | 'free';
+  kind?: 'system' | 'software' | 'sequence' | 'free' | 'layout';
+  /** Layout boards: how many px of the board make one metre (default 100: a grid step is 10 cm). */
+  scale?: number;
   meta: DocMeta;
   nodes: Node[];
   edges: Edge[];

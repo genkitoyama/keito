@@ -174,6 +174,33 @@ function SignalSelect({ value, onChange, flow }: { value: string; onChange: (v: 
   );
 }
 
+/** Pictures laid under the drawing (floor plans): they cannot be clicked, so they are managed here. */
+function Underlays() {
+  const list = useStore(useShallow((s) => s.doc.nodes.filter((n): n is Extract<Node, { type: 'image' }> => n.type === 'image' && !!n.under)));
+  const patch = (id: string, p: Partial<Node>, record = false) => useStore.getState().updateNode(id, p, record);
+  if (!list.length) return null;
+  return (
+    <>
+      <h4>下敷き</h4>
+      {list.map((n) => (
+        <div key={n.id} className="underlay">
+          <span>{n.text || n.id}</span>
+          <input type="range" min={0.1} max={1} step={0.05} value={n.opacity ?? 0.55} onChange={(e) => patch(n.id, { opacity: Number(e.target.value) })} title="濃さ" />
+          <button
+            className="mini"
+            onClick={() => {
+              patch(n.id, { under: undefined }, true);
+              useStore.getState().select([n.id]);
+            }}
+          >
+            やめる
+          </button>
+        </div>
+      ))}
+    </>
+  );
+}
+
 function MetaPanel() {
   const meta = useStore((s) => s.doc.meta);
   const kind = useStore((s) => kindOf(s.doc));
@@ -202,6 +229,8 @@ function MetaPanel() {
           ))}
         </select>
       </label>
+      {kind.id === 'layout' && <p className="hint">縮尺は 1 m = 100 px（方眼の点 1 マス = 20 cm、矢印キー 1 回 = 10 cm）。什器は実寸で置かれます。平面図の画像は、選んで「実寸の横幅」を入れると縮尺に合います。</p>}
+      <Underlays />
       <Revisions />
       {kind.cableOptions && (
         <>
@@ -408,8 +437,73 @@ function PortName({ value, onChange }: { value: string; onChange: (v: string) =>
 }
 
 
+/**
+ * A length in millimetres, taken when typing is done (Enter or leaving the field): the board keeps
+ * whole pixels, so applying each keystroke would round the number under the cursor.
+ */
+function MmField({ label, value, onCommit }: { label: string; value: string; onCommit: (v: string) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft !== null && Number(draft.normalize('NFKC')) > 0 && draft !== value) onCommit(draft);
+    setDraft(null);
+  };
+  return (
+    <label className="field">
+      <span>{label}</span>
+      <input inputMode="numeric" value={draft ?? value} onFocus={() => setDraft(value)} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => !e.nativeEvent.isComposing && e.key === 'Enter' && commit()} />
+    </label>
+  );
+}
+
+/** Width and depth of a shape in millimetres, by the board's scale; and turning it a quarter round. */
+function RealSize({ n }: { n: Extract<Node, { type: 'shape' }> }) {
+  const scale = useStore((s) => s.doc.scale || 100);
+  const mm = (px: number) => String(Math.round((px * 1000) / scale));
+  const px = (v: string) => Math.max(4, Math.round((Number(v.normalize('NFKC')) * scale) / 1000));
+  const patch = (p: Partial<Node>, record = false) => useStore.getState().updateNode(n.id, p, record);
+  return (
+    <>
+      <div className="grid2">
+        <MmField label="幅 (mm)" value={mm(n.w)} onCommit={(v) => patch({ w: px(v) }, true)} />
+        <MmField label="奥行 (mm)" value={mm(n.h)} onCommit={(v) => patch({ h: px(v) }, true)} />
+      </div>
+      <div className="row">
+        <button onClick={() => patch({ w: n.h, h: n.w, x: n.x + (n.w - n.h) / 2, y: n.y + (n.h - n.w) / 2 }, true)} data-tip="幅と奥行を入れ替えて 90° 回します（中心はそのまま）">
+          90° 回す
+        </button>
+        <label className="check">
+          <input type="checkbox" checked={!!n.dims} onChange={(e) => patch({ dims: e.target.checked || undefined }, true)} />
+          寸法を図に出す
+        </label>
+      </div>
+    </>
+  );
+}
+
+/** Scale a picture to its real width (a floor plan known to be 24 m across), by the board's scale. */
+function RealWidth({ n }: { n: Extract<Node, { type: 'image' }> }) {
+  const scale = useStore((s) => s.doc.scale || 100);
+  const [m, setM] = useState('');
+  const apply = () => {
+    const v = Number(m.normalize('NFKC'));
+    if (!(v > 0)) return;
+    const w = Math.round(v * scale);
+    useStore.getState().updateNode(n.id, { w, h: Math.round((n.h * w) / n.w) }, true);
+    setM('');
+  };
+  return (
+    <div className="row real-width">
+      <input placeholder={`実寸の横幅 (m)　今 ${(n.w / scale).toFixed(2)} m`} value={m} onChange={(e) => setM(e.target.value)} onKeyDown={(e) => !e.nativeEvent.isComposing && e.key === 'Enter' && apply()} />
+      <button onClick={apply} disabled={!(Number(m.normalize('NFKC')) > 0)}>
+        縮尺に合わせる
+      </button>
+    </div>
+  );
+}
+
 function NodePanel({ n }: { n: Node }) {
   const patch = (p: Partial<Node>, record = false) => useStore.getState().updateNode(n.id, p, record);
+  const layout = useStore((s) => kindOf(s.doc).id === 'layout');
   if (n.type === 'device') return <DevicePanel key={n.id} n={n} />;
   if (n.type === 'sequence') {
     return (
@@ -512,6 +606,10 @@ function NodePanel({ n }: { n: Node }) {
           角をドラッグで比率を保ったまま拡縮（Shift で自由変形）。
         </p>
         <button onClick={replace}>画像を差し替え</button>
+        {layout && <RealWidth n={n} />}
+        <button className="wide" data-tip="平面図などを一番下に敷き、クリックで選ばれないようにします（戻すのはボード情報から）" onClick={() => patch({ under: true }, true)}>
+          下敷きにする
+        </button>
       </>
     );
   }
@@ -519,6 +617,7 @@ function NodePanel({ n }: { n: Node }) {
     <>
       <h3>{n.type === 'shape' ? '図形' : n.type === 'sticky' ? '付箋' : n.type === 'frame' ? 'エリア枠' : 'テキスト'} <code>{n.id}</code></h3>
       <Field label={n.type === 'frame' ? 'エリア名（機材リストの設置場所になります）' : 'テキスト'} value={n.text} onChange={(v) => patch({ text: v })} multiline={n.type !== 'frame'} />
+      {n.type === 'shape' && (layout || n.dims) && <RealSize n={n} />}
       {n.type === 'shape' && (
         <label className="field">
           <span>形</span>

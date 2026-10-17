@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isTagged, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { LEGEND, shownRows } from '../model/legend';
 import { lineColor, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, ipIssues, labelStacked, lengthShown, powerLoads } from '../model/lists';
@@ -375,6 +375,9 @@ function cloudPath(x: number, y: number, w: number, h: number): string {
   return `${d} Z`;
 }
 
+/** A length on the board in millimetres, by the board's scale (px per metre). */
+export const mm = (doc: Pick<Doc, 'scale'>, px: number): number => Math.round((px * 1000) / (doc.scale || 100));
+
 export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }) {
   const { x, y } = n;
   const { w, h } = nodeSize(n);
@@ -441,7 +444,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
       );
     }
     case 'image':
-      return <image href={assetUrl(doc?.id, n.src)} x={x} y={y} width={w} height={h} preserveAspectRatio="xMidYMid meet" />;
+      return <image href={assetUrl(doc?.id, n.src)} x={x} y={y} width={w} height={h} preserveAspectRatio="xMidYMid meet" opacity={n.under ? (n.opacity ?? 0.55) : undefined} pointerEvents={n.under ? 'none' : undefined} />;
     case 'text':
       return (
         <g>
@@ -497,10 +500,19 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
         const rx = n.shape === 'round' ? h / 2 : 4;
         body = <rect x={x} y={y} width={w} height={h} rx={rx} {...paint} />;
       }
+      // Furniture drawn to scale says how big it really is, under its name.
+      const dims = n.dims && doc ? `${mm(doc, w)} × ${mm(doc, h)}` : '';
+      const named = n.text.trim() !== '';
+      const caption = Math.min(10.5, textSize(n) * 0.8);
       return (
         <g>
           {body}
-          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={textSize(n)} weight={textWeight(n)} fill={ink} theme={theme} />
+          <TextBlock x={cx} y={dims && named ? cy - caption * 0.6 : cy} w={textWidth(n)} text={n.text} size={textSize(n)} weight={textWeight(n)} fill={ink} theme={theme} />
+          {dims && (
+            <text x={cx} y={mid(named ? cy + textSize(n) * 0.75 : cy, caption)} textAnchor="middle" fontFamily={theme.font} fontSize={caption} fill={style === 'solid' ? ink : '#64748b'}>
+              {dims}
+            </text>
+          )}
         </g>
       );
     }
@@ -714,10 +726,11 @@ export function HopCaps({ doc, theme }: { doc: Doc; theme: Theme }) {
 export function DocView({ doc, theme }: { doc: Doc; theme: Theme }) {
   return (
     <g>
+      {doc.nodes.filter(isUnderlay).map((n) => <NodeView key={n.id} n={n} theme={theme} doc={doc} />)}
       {doc.nodes.filter((n) => n.type === 'frame').map((n) => <NodeView key={n.id} n={n} theme={theme} />)}
       {(doc.hops ? hopOrder(doc) : doc.edges).map((e) => <EdgeView key={e.id} doc={doc} e={e} theme={theme} />)}
       <HopCaps doc={doc} theme={theme} />
-      {doc.nodes.filter((n) => n.type !== 'frame').map((n) => <NodeView key={n.id} n={n} theme={theme} doc={doc} />)}
+      {doc.nodes.filter((n) => n.type !== 'frame' && !isUnderlay(n)).map((n) => <NodeView key={n.id} n={n} theme={theme} doc={doc} />)}
     </g>
   );
 }
