@@ -154,12 +154,9 @@ function IpBadge({ n, doc }: { n: DeviceNode; doc?: Doc }) {
   if (!ip && !host) return null;
   const issue = doc ? ipIssues(doc).get(n.id) : undefined;
   const gap = ip && host ? IP_SIZE * 0.8 : 0;
-  const ipW = ip ? measure(ip, `700 ${IP_SIZE}px ${MONO_FONT}`) : 0;
-  const hostW = host ? measure(host, `400 ${IP_SIZE}px ${MONO_FONT}`) : 0;
-  const bw = ipW + gap + hostW + 12;
-  // Clear of the power tag on the same edge: a narrow device takes this one a row higher.
-  const load = doc ? loadBadgeWidth(doc, n) : 0;
-  const by = n.y - 20 - (load && bw + load + 4 > n.w ? 18 : 0);
+  const bw = ipBadgeWidth(n);
+  // Clear of the power tag: when both do not fit side by side, this one takes the row above.
+  const by = n.y - 20 - (doc && tagsStacked(doc, n) ? 18 : 0);
   const solid = issue ? { fill: '#ffffff', text: '#dc2626' } : STRONG[n.color ?? 'gray'];
   return (
     <g>
@@ -191,13 +188,33 @@ const loadBadgeWidth = (doc: Doc, n: DeviceNode): number => {
   return text ? measure(text, `600 ${LOAD_SIZE}px ${UI_FONT}`) + 12 : 0;
 };
 
+/** Width of a device's address tag; 0 when it has no address. */
+function ipBadgeWidth(n: DeviceNode): number {
+  const ip = n.ip?.trim();
+  const host = n.host?.trim();
+  if (!ip && !host) return 0;
+  const gap = ip && host ? IP_SIZE * 0.8 : 0;
+  return (ip ? measure(ip, `700 ${IP_SIZE}px ${MONO_FONT}`) : 0) + gap + (host ? measure(host, `400 ${IP_SIZE}px ${MONO_FONT}`) : 0) + 12;
+}
+
+/**
+ * Whether a device's address tag and power tag are too wide to share the row above it. Then the
+ * two stack, address on top, and both line up on the device's left edge instead of one on each
+ * side, which would leave them staggered.
+ */
+function tagsStacked(doc: Doc, n: DeviceNode): boolean {
+  const ip = ipBadgeWidth(n);
+  const load = loadBadgeWidth(doc, n);
+  return !!ip && !!load && ip + load + 4 > n.w;
+}
+
 function LoadBadge({ doc, n, theme }: { doc: Doc; n: DeviceNode; theme: Theme }) {
   const load = powerLoads(doc).get(n.id);
   if (!load) return null;
   const text = loadBadgeText(doc, n);
   const size = LOAD_SIZE;
   const bw = measure(text, `600 ${size}px ${theme.font}`) + 12;
-  const bx = n.x + n.w - bw;
+  const bx = tagsStacked(doc, n) ? n.x : n.x + n.w - bw;
   const by = n.y - 20;
   const color = load.over ? '#dc2626' : '#b45309';
   return (
