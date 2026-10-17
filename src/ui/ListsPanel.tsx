@@ -29,7 +29,7 @@ export function ListsPanel() {
               setEditing(null);
             }}
           >
-            {name} <small>{tables[i].rows.length - (tables[i].total ? 1 : 0)}</small>
+            {name} <small>{tables[i].rows.length - (tables[i].total ? 1 : 0) - (tables[i].rowClass?.filter((c) => c?.startsWith('subtotal')).length ?? 0)}</small>
           </button>
         ))}
         <span className="grow" />
@@ -47,7 +47,7 @@ export function ListsPanel() {
           </thead>
           <tbody>
             {t.rows.map((row, i) => (
-              <tr key={i} className={t.total && i === t.rows.length - 1 ? 'total' : t.refs[i].some((id) => sel.has(id)) ? 'on' : ''} onClick={() => t.refs[i].length && useStore.getState().select(t.refs[i])}>
+              <tr key={i} className={[t.total && i === t.rows.length - 1 ? 'total' : t.refs[i].some((id) => sel.has(id)) ? 'on' : '', t.rowClass?.[i] ?? ''].filter(Boolean).join(' ')} onClick={() => t.refs[i].length && useStore.getState().select(t.refs[i])}>
                 {row.map((c, j) => {
                   const edit = editable(t, i, j);
                   const cls = [t.numeric?.includes(t.head[j]) ? 'num' : '', edit ? 'editable' : ''].filter(Boolean).join(' ');

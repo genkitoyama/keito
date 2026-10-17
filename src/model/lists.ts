@@ -49,6 +49,8 @@ export interface Table {
   numeric?: string[];
   /** The last row is a total. */
   total?: boolean;
+  /** Extra look per row, as class names: `subtotal` for a group's sum, `over` for one past its limit. */
+  rowClass?: (string | undefined)[];
   /** Columns that can be edited in place, by heading, and what each writes to on the board. */
   edit?: Record<string, CellEdit>;
 }
@@ -440,17 +442,23 @@ export function powerTable(doc: Doc): Table {
   const name = (id: string): string => oneLine(byId.get(id)?.text ?? '') || id;
   const rows: string[][] = [];
   const refs: string[][] = [];
+  const rowClass: (string | undefined)[] = [];
   for (const [id, load] of powerLoads(doc)) {
     if (!shown.has(id)) continue;
     for (const d of load.ids) {
       const n = byId.get(d);
       rows.push([name(id), name(d), n?.type === 'device' && n.watts != null ? String(n.watts) : '', '', '']);
       refs.push([d]);
+      rowClass.push('member');
     }
-    rows.push([name(id), `合計 ${load.ids.length} 台`, String(load.watts), load.capacity == null ? '' : String(load.capacity), load.capacity == null ? '' : load.over ? `超過 ${load.watts - load.capacity}` : `余裕 ${load.capacity - load.watts}`]);
+    // The sum closes each source's group, with how much of its capacity the load takes.
+    const use = load.capacity ? ` · 使用率 ${Math.round((load.watts / load.capacity) * 100)}%` : '';
+    const verdict = load.capacity == null ? '容量未設定' : load.over ? `超過 ${load.watts - load.capacity}W${use}` : `余裕 ${load.capacity - load.watts}W${use}`;
+    rows.push([name(id), `合計 ${load.ids.length} 台`, String(load.watts), load.capacity == null ? '' : String(load.capacity), verdict]);
     refs.push([id]);
+    rowClass.push(load.over ? 'subtotal over' : load.capacity == null ? 'subtotal unknown' : 'subtotal');
   }
-  return { title: '電源系統', head: ['電源元', '接続機器', '消費電力(W)', '容量(W)', '判定'], widths: [24, 30, 16, 14, 16], rows, refs, numeric: ['消費電力(W)', '容量(W)'] };
+  return { title: '電源系統', head: ['電源元', '接続機器', '消費電力(W)', '容量(W)', '判定'], widths: [22, 28, 14, 12, 24], rows, refs, rowClass, numeric: ['消費電力(W)', '容量(W)'] };
 }
 
 /** The table without the columns nothing is written in, for print: an unused "URL" or "備考" only costs width. */

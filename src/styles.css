@@ -1151,6 +1151,28 @@ td a {
 .lists th.num {
   text-align: right;
 }
+/* Power list: each source's group ends in a sum that reads apart from the devices above it. */
+.lists tr.member td:first-child {
+  color: var(--sub);
+}
+.lists tr.subtotal td {
+  font-weight: 700;
+  background: #f8fafc;
+  border-bottom: 2px solid #cbd5e1;
+}
+.lists tr.subtotal td:last-child {
+  color: #15803d;
+}
+.lists tr.subtotal.over td {
+  background: #fef2f2;
+}
+.lists tr.subtotal.over td:last-child {
+  color: #dc2626;
+}
+.lists tr.subtotal.unknown td:last-child {
+  color: var(--sub);
+  font-weight: 400;
+}
 /* Cells that write back to the board read as editable on hover. */
 .lists td.editable {
   cursor: text;
