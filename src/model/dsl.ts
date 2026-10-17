@@ -136,6 +136,7 @@ export function toYaml(doc: Doc): string {
       put(o, 'vendor', d.vendor);
       put(o, 'ip', d.ip);
       put(o, 'host', d.host);
+      put(o, 'order', d.listOrder);
       put(o, 'watts', d.watts);
       put(o, 'capacity', d.capacity);
       if (d.color && d.color !== 'gray') o.color = d.color;
@@ -332,6 +333,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
       vendor: str(v.vendor) || undefined,
       ip: str(v.ip) || undefined,
       host: str(v.host) || undefined,
+      listOrder: typeof v.order === 'number' ? v.order : undefined,
     });
     if (v.area) areaHint.set(id, str(v.area));
   });

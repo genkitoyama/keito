@@ -55,7 +55,26 @@ export interface Table {
   rowClass?: (string | undefined)[];
   /** Columns that can be edited in place, by heading, and what each writes to on the board. */
   edit?: Record<string, CellEdit>;
+  /** Rows can be put in order by hand (see `moveRow`). */
+  reorder?: boolean;
 }
+
+/**
+ * The board with one list row moved: every row's devices are numbered in the new order, so the
+ * list keeps it (and so do its CSV and PDF). Devices placed later go to the end.
+ */
+export function moveRow(doc: Doc, t: Table, from: number, to: number): Doc {
+  const body = t.total ? t.refs.slice(0, -1) : t.refs;
+  if (from === to || from < 0 || to < 0 || from >= body.length || to >= body.length) return doc;
+  const order = body.map((_, i) => i);
+  order.splice(to, 0, ...order.splice(from, 1));
+  const rank = new Map<string, number>();
+  order.forEach((row, i) => body[row].forEach((id) => rank.set(id, i + 1)));
+  return { ...doc, nodes: doc.nodes.map((n) => (n.type === 'device' && rank.has(n.id) ? { ...n, listOrder: rank.get(n.id) } : n)) };
+}
+
+/** The board with the hand-made order of the equipment list dropped. */
+export const clearOrder = (doc: Doc): Doc => ({ ...doc, nodes: doc.nodes.map((n) => (n.type === 'device' && n.listOrder != null ? { ...n, listOrder: undefined } : n)) });
 
 /**
  * How a list cell writes back: the field of the devices or cables behind its row. A row that
@@ -216,9 +235,15 @@ export function equipmentTable(doc: Doc, withUrl = true): Table {
     if (d.watts != null) g.watts = (g.watts ?? 0) + d.watts * q.count;
     groups.set(id, g);
   }
-  const list = [...groups.values()].sort(
-    (a, b) => a.d.category.localeCompare(b.d.category, 'ja') || [...a.names][0].localeCompare([...b.names][0], 'ja') || groupOf(a.d).localeCompare(groupOf(b.d), 'ja'),
-  );
+  // Rows put in order by hand come first, in that order; the rest by category and name.
+  const byId = new Map(doc.nodes.map((n) => [n.id, n]));
+  const rank = (ids: string[]): number => Math.min(...ids.map((id) => (byId.get(id) as DeviceNode | undefined)?.listOrder ?? Infinity));
+  const list = [...groups.values()].sort((a, b) => {
+    const ra = rank(a.ids);
+    const rb = rank(b.ids);
+    if (ra !== rb) return ra < rb ? -1 : 1;
+    return a.d.category.localeCompare(b.d.category, 'ja') || [...a.names][0].localeCompare([...b.names][0], 'ja') || groupOf(a.d).localeCompare(groupOf(b.d), 'ja');
+  });
   // The link of a model is whichever of its devices carries one.
   const urlOf = (ids: string[]): string => {
     for (const id of ids) {
@@ -255,6 +280,7 @@ export function equipmentTable(doc: Doc, withUrl = true): Table {
     refs: [...list.map((g) => g.ids), ...(list.length ? [[]] : [])],
     numeric: ['No', '数量', '消費電力(W)'],
     total: list.length > 0,
+    reorder: true,
     edit: {
       区分: { on: 'node', field: 'vendor' },
       カテゴリ: { on: 'node', field: 'category' },

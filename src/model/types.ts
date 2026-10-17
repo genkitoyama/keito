@@ -86,6 +86,8 @@ export interface DeviceNode extends Base {
   /** Network settings, listed in the network table. */
   ip?: string;
   host?: string;
+  /** Place in the equipment list, as arranged by hand; unset keeps the list's own order. */
+  listOrder?: number;
 }
 /** `text` is the sequence source. Size is derived from the parsed diagram. */
 export interface SequenceNode extends Base {

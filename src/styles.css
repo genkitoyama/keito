@@ -1195,6 +1195,75 @@ td a {
   color: #dc2626;
   border-color: #fca5a5;
 }
+/* Equipment list rows are put in order by a grip at their start (and their number). */
+.lists th.grip,
+.lists td.grip {
+  width: 22px;
+  padding: 0 4px 0 10px;
+  color: #b4bfcc;
+  fill: currentColor;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.lists td.grip svg {
+  display: block;
+}
+.lists td.handle {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.lists tr:hover td.grip {
+  color: var(--sub);
+}
+.lists tr.total td.grip,
+.lists th.grip {
+  cursor: default;
+}
+/* While a row is dragged its place stays open as a faint slot, and a see-through copy follows the pointer. */
+.lists tr.dragging td {
+  background: var(--accent-soft);
+  color: transparent;
+  box-shadow: inset 0 1px 0 #bfdbfe, inset 0 -1px 0 #bfdbfe;
+}
+.lists tr.dragging td * {
+  visibility: hidden;
+}
+.row-ghost {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+  background: #fff;
+  opacity: 0.85;
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.22), 0 0 0 1px var(--accent);
+  transform: scale(1.01);
+}
+.row-ghost td {
+  border-bottom: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-ghost td.grip {
+  color: var(--accent);
+  fill: currentColor;
+  padding: 0 4px 0 10px;
+}
+.row-ghost td.num {
+  text-align: right;
+}
+body.row-dragging,
+body.row-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
+body.row-dragging .lists td.editable:hover {
+  box-shadow: none;
+}
 /* Cells that write back to the board read as editable on hover. */
 .lists td.editable {
   cursor: text;
