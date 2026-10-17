@@ -1151,6 +1151,28 @@ td a {
 .lists th.num {
   text-align: right;
 }
+/* Cells that write back to the board read as editable on hover. */
+.lists td.editable {
+  cursor: text;
+}
+.lists td.editable:hover {
+  box-shadow: inset 0 0 0 1px #cbd5e1;
+  background: #fff;
+}
+.lists td.editing {
+  padding: 2px 4px;
+}
+.lists td.editing input,
+.lists td.editing select {
+  width: 100%;
+  min-width: 80px;
+  padding: 3px 6px;
+  font: inherit;
+  text-align: inherit;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
 
 .field .readout {
   display: block;

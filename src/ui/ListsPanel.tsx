@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
-import { type Table, cableSummaryTable, cableTable, equipmentTable, networkTable, powerTable, toCsv } from '../model/lists';
+import { useMemo, useRef, useState } from 'react';
+import { type CellEdit, type Table, cableSummaryTable, cableTable, editCell, editable, equipmentTable, networkTable, powerTable, toCsv } from '../model/lists';
+import { allSignals } from '../model/signals';
 import { useStore } from '../model/store';
 import { download, safeName } from '../platform/storage';
 
@@ -9,6 +10,8 @@ export function ListsPanel() {
   const doc = useStore((s) => s.doc);
   const selection = useStore((s) => s.selection);
   const [tab, setTab] = useState(0);
+  // The cell being edited in place, by its row and column in the table on show.
+  const [editing, setEditing] = useState<{ row: number; col: number } | null>(null);
   const tables = useMemo<Table[]>(() => [equipmentTable(doc), cableTable(doc), cableSummaryTable(doc), powerTable(doc), networkTable(doc)], [doc]);
   const t = tables[tab];
   const sel = new Set(selection);
@@ -18,7 +21,14 @@ export function ListsPanel() {
     <section className="lists">
       <div className="tabs">
         {TABS.map((name, i) => (
-          <button key={name} className={tab === i ? 'on' : ''} onClick={() => setTab(i)}>
+          <button
+            key={name}
+            className={tab === i ? 'on' : ''}
+            onClick={() => {
+              setTab(i);
+              setEditing(null);
+            }}
+          >
             {name} <small>{tables[i].rows.length - (tables[i].total ? 1 : 0)}</small>
           </button>
         ))}
@@ -38,17 +48,36 @@ export function ListsPanel() {
           <tbody>
             {t.rows.map((row, i) => (
               <tr key={i} className={t.total && i === t.rows.length - 1 ? 'total' : t.refs[i].some((id) => sel.has(id)) ? 'on' : ''} onClick={() => t.refs[i].length && useStore.getState().select(t.refs[i])}>
-                {row.map((c, j) => (
-                  <td key={j} className={t.numeric?.includes(t.head[j]) ? 'num' : ''}>
-                    {/^https?:\/\//.test(c) ? (
-                      <a href={c} target="_blank" rel="noopener noreferrer" title={c} onClick={(e) => e.stopPropagation()}>
-                        {c.replace(/^https?:\/\/(www\.)?/, '')}
-                      </a>
-                    ) : (
-                      c
-                    )}
-                  </td>
-                ))}
+                {row.map((c, j) => {
+                  const edit = editable(t, i, j);
+                  const cls = [t.numeric?.includes(t.head[j]) ? 'num' : '', edit ? 'editable' : ''].filter(Boolean).join(' ');
+                  if (edit && editing?.row === i && editing.col === j)
+                    return (
+                      <td key={j} className={`${cls} editing`}>
+                        <CellEditor
+                          t={t}
+                          row={i}
+                          edit={edit}
+                          shown={c}
+                          done={(value) => {
+                            setEditing(null);
+                            if (value != null) useStore.getState().setDoc(editCell(useStore.getState().doc, edit, t.refs[i], value));
+                          }}
+                        />
+                      </td>
+                    );
+                  return (
+                    <td key={j} className={cls} onClick={edit ? () => setEditing({ row: i, col: j }) : undefined}>
+                      {/^https?:\/\//.test(c) ? (
+                        <a href={c} target="_blank" rel="noopener noreferrer" title={c} onClick={(e) => e.stopPropagation()}>
+                          {c.replace(/^https?:\/\/(www\.)?/, '')}
+                        </a>
+                      ) : (
+                        c
+                      )}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
             {!t.rows.length && (
@@ -60,5 +89,50 @@ export function ListsPanel() {
         </table>
       </div>
     </section>
+  );
+}
+
+/**
+ * The input for one list cell. Enter or leaving the cell keeps the value, Escape drops it; an
+ * Enter that confirms a Japanese conversion belongs to the IME, not to the cell.
+ */
+function CellEditor({ t, row, edit, shown, done }: { t: Table; row: number; edit: CellEdit; shown: string; done: (value: string | null) => void }) {
+  const doc = useStore((s) => s.doc);
+  // Enter ends the edit and takes the input away, which blurs it: the value is kept only once.
+  const left = useRef(false);
+  if (edit.kind === 'signal') {
+    const e = doc.edges.find((x) => x.id === t.refs[row][0]);
+    return (
+      <select autoFocus defaultValue={e?.signal} onChange={(ev) => done(ev.target.value)} onBlur={() => done(null)} onKeyDown={(ev) => ev.key === 'Escape' && done(null)}>
+        {allSignals()
+          .filter((s) => s.cable)
+          .map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+      </select>
+    );
+  }
+  // A number column may show a word ("未設定") where there is no number yet.
+  const start = edit.kind === 'number' && !/^-?[\d.]+$/.test(shown) ? '' : shown;
+  const finish = (value: string | null) => {
+    if (left.current) return;
+    left.current = true;
+    done(value === start ? null : value);
+  };
+  return (
+    <input
+      autoFocus
+      defaultValue={start}
+      inputMode={edit.kind === 'number' ? 'decimal' : undefined}
+      onFocus={(ev) => ev.currentTarget.select()}
+      onBlur={(ev) => finish(ev.currentTarget.value)}
+      onKeyDown={(ev) => {
+        if (ev.nativeEvent.isComposing) return;
+        if (ev.key === 'Enter') finish(ev.currentTarget.value);
+        else if (ev.key === 'Escape') finish(null);
+      }}
+    />
   );
 }

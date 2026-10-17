@@ -49,6 +49,68 @@ export interface Table {
   numeric?: string[];
   /** The last row is a total. */
   total?: boolean;
+  /** Columns that can be edited in place, by heading, and what each writes to on the board. */
+  edit?: Record<string, CellEdit>;
+}
+
+/**
+ * How a list cell writes back: the field of the devices or cables behind its row. A row that
+ * stands for several (one model in five places) changes all of them, unless `single` says the
+ * value only makes sense for one (a quantity).
+ */
+export interface CellEdit {
+  on: 'node' | 'edge';
+  field: string;
+  kind?: 'text' | 'number' | 'signal';
+  single?: boolean;
+}
+
+/** Fields left out of the board when emptied, rather than kept as an empty string. */
+const OPTIONAL = new Set(['vendor', 'url', 'ip', 'host', 'spec', 'cableId', 'qty', 'watts']);
+
+/** Whether a cell of this table can be edited: never in a total row, and `single` columns on one-item rows only. */
+export function editable(t: Table, row: number, col: number): CellEdit | null {
+  const edit = t.edit?.[t.head[col]];
+  if (!edit || (t.total && row === t.rows.length - 1) || !t.refs[row]?.length) return null;
+  return edit.single && t.refs[row].length > 1 ? null : edit;
+}
+
+/** The board with one list cell's new value written to everything behind its row. */
+export function editCell(doc: Doc, edit: CellEdit, ids: string[], raw: string): Doc {
+  const text = raw.trim();
+  let value: unknown = text;
+  if (edit.kind === 'number') {
+    const n = Number(text.normalize('NFKC'));
+    if (text && !Number.isFinite(n)) return doc;
+    value = text ? n : edit.field === 'length' ? null : undefined;
+  } else if (!text && OPTIONAL.has(edit.field)) value = undefined;
+  const hit = new Set(ids);
+  if (edit.on === 'edge') {
+    return {
+      ...doc,
+      edges: doc.edges.map((e) => {
+        if (!hit.has(e.id)) return e;
+        // Typing the automatic number back in leaves the cable on automatic numbering.
+        if (edit.field === 'cableId' && value === cableIds(doc).get(e.id) && !e.cableId) return e;
+        return { ...e, [edit.field]: value };
+      }),
+    };
+  }
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => {
+      if (!hit.has(n.id) || n.type !== 'device') return n;
+      if (edit.field === 'text') {
+        // The list shows the name without its "x2": a quantity that came from the name stays.
+        const units = unitsOf(n);
+        if (!text || text === units.name) return n;
+        return { ...n, text, qty: n.qty ?? (units.count > 1 ? units.count : undefined) };
+      }
+      // Power is listed for all the units a device stands for; it is kept per unit.
+      if (edit.field === 'watts' && typeof value === 'number') return { ...n, watts: value / unitsOf(n).count };
+      return { ...n, [edit.field]: value };
+    }),
+  };
 }
 
 /**
@@ -187,6 +249,17 @@ export function equipmentTable(doc: Doc, withUrl = true): Table {
     refs: [...list.map((g) => g.ids), ...(list.length ? [[]] : [])],
     numeric: ['No', '数量', '消費電力(W)'],
     total: list.length > 0,
+    edit: {
+      区分: { on: 'node', field: 'vendor' },
+      カテゴリ: { on: 'node', field: 'category' },
+      名称: { on: 'node', field: 'text' },
+      メーカー: { on: 'node', field: 'maker' },
+      型番: { on: 'node', field: 'model' },
+      数量: { on: 'node', field: 'qty', kind: 'number', single: true },
+      '消費電力(W)': { on: 'node', field: 'watts', kind: 'number', single: true },
+      備考: { on: 'node', field: 'note' },
+      URL: { on: 'node', field: 'url' },
+    },
   };
 }
 
@@ -242,6 +315,17 @@ export function cableTable(doc: Doc, withUrl = true): Table {
     refs: [...list.map((e) => [e.id]), ...(list.length ? [[]] : [])],
     numeric: ['長さ(m)'],
     total: list.length > 0,
+    edit: {
+      ケーブルID: { on: 'edge', field: 'cableId' },
+      種別: { on: 'edge', field: 'signal', kind: 'signal' },
+      '品名・規格': { on: 'edge', field: 'spec' },
+      '長さ(m)': { on: 'edge', field: 'length', kind: 'number' },
+      ラベル: { on: 'edge', field: 'label' },
+      メーカー: { on: 'edge', field: 'maker' },
+      型番: { on: 'edge', field: 'model' },
+      備考: { on: 'edge', field: 'note' },
+      URL: { on: 'edge', field: 'url' },
+    },
   };
 }
 
@@ -256,6 +340,14 @@ export function networkTable(doc: Doc): Table {
     widths: [20, 16, 14, 12, 14, 12, 16],
     rows: list.map((d) => [unitsOf(d).name, d.host ?? '', d.ip ?? '', d.maker, d.model, placeOf(doc, d), d.note]),
     refs: list.map((d) => [d.id]),
+    edit: {
+      名称: { on: 'node', field: 'text' },
+      ホスト名: { on: 'node', field: 'host' },
+      'IP アドレス': { on: 'node', field: 'ip' },
+      メーカー: { on: 'node', field: 'maker' },
+      型番: { on: 'node', field: 'model' },
+      備考: { on: 'node', field: 'note' },
+    },
   };
 }
 
@@ -290,6 +382,12 @@ export function cableSummaryTable(doc: Doc): Table {
     refs: [...list.map((g) => g.ids), ...(list.length ? [[]] : [])],
     numeric: ['長さ(m)', '本数', '合計長(m)'],
     total: list.length > 0,
+    edit: {
+      '品名・規格': { on: 'edge', field: 'spec' },
+      メーカー: { on: 'edge', field: 'maker' },
+      型番: { on: 'edge', field: 'model' },
+      '長さ(m)': { on: 'edge', field: 'length', kind: 'number' },
+    },
   };
 }
 
