@@ -42,6 +42,110 @@ function Field({ label, value, onChange, multiline, wrap, type = 'text', placeho
   );
 }
 
+/** The category whose devices supply power, and so take a capacity. */
+const SUPPLY_CATEGORY = '電源';
+/** The catch-all, also what the library calls a preset without a category. */
+const OTHER_CATEGORY = 'その他';
+
+/**
+ * Category picker. A plain datalist only offers what matches the text already in the box, so a
+ * device that has a category could never be moved to another one; this list shows every category
+ * on focus (the board's own first, then the library's) and narrows only once something is typed.
+ */
+function CategoryField({ id, value, onChange }: { id: string; value: string; onChange: (v: string, record?: boolean) => void }) {
+  const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState(false);
+  const [hi, setHi] = useState(-1);
+  const dirty = useRef(false);
+  const used = useStore(
+    useShallow((s) => {
+      const count = new Map<string, number>();
+      // While typing, this device's own half-typed text is not a category in use.
+      for (const x of s.doc.nodes) if (x.type === 'device' && x.category.trim() && !(typed && x.id === id)) count.set(x.category.trim(), (count.get(x.category.trim()) ?? 0) + 1);
+      return [...count].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], 'ja')).map(([c, k]) => `${c}\t${k}`);
+    }),
+  );
+  const onBoard = used.map((u) => ({ name: u.split('\t')[0], count: Number(u.split('\t')[1]) }));
+  // その他 closes the list, for whatever fits nowhere else.
+  const library = [...[...new Set(PRESETS.map((p) => p.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja')), OTHER_CATEGORY].filter((c) => !onBoard.some((b) => b.name === c));
+  const q = typed ? value.trim().toLowerCase() : '';
+  const match = (c: string): boolean => !q || c.toLowerCase().includes(q);
+  const groups = [
+    { title: 'このボードで使用中', items: onBoard.filter((c) => match(c.name)) },
+    { title: '標準のカテゴリ', items: library.filter(match).map((name) => ({ name, count: 0 })) },
+  ].filter((g) => g.items.length);
+  const flat = groups.flatMap((g) => g.items.map((i) => i.name));
+  const pick = (c: string) => {
+    onChange(c, true);
+    setOpen(false);
+    setTyped(false);
+  };
+  return (
+    <label className="field combo">
+      <span>カテゴリ</span>
+      <input
+        value={value}
+        placeholder="選ぶか入力"
+        role="combobox"
+        aria-expanded={open}
+        onFocus={() => {
+          dirty.current = false;
+          setOpen(true);
+          setTyped(false);
+          setHi(-1);
+        }}
+        onClick={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onChange={(e) => {
+          if (!dirty.current) {
+            dirty.current = true;
+            useStore.getState().checkpoint();
+          }
+          onChange(e.target.value);
+          setTyped(true);
+          setOpen(true);
+          setHi(-1);
+        }}
+        onKeyDown={(e) => {
+          // Keys pressed while the IME is still composing belong to the IME.
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            setOpen(true);
+            const step = e.key === 'ArrowDown' ? 1 : -1;
+            setHi((h) => (flat.length ? (h + step + flat.length) % flat.length : -1));
+          } else if (e.key === 'Enter' && open && hi >= 0 && flat[hi]) {
+            e.preventDefault();
+            pick(flat[hi]);
+          } else if (e.key === 'Escape' && open) {
+            e.stopPropagation();
+            setOpen(false);
+          }
+        }}
+      />
+      {open && groups.length > 0 && (
+        // mousedown, not click: picking must happen before the input's blur closes the list.
+        <div className="combo-list" onMouseDown={(e) => e.preventDefault()}>
+          {groups.map((g) => (
+            <div key={g.title}>
+              <div className="combo-head">{g.title}</div>
+              {g.items.map((c) => {
+                const i = flat.indexOf(c.name);
+                return (
+                  <button key={c.name} type="button" className={`${c.name === value.trim() ? 'on' : ''}${i === hi ? ' hi' : ''}`} onMouseEnter={() => setHi(i)} onClick={() => pick(c.name)}>
+                    <span>{c.name}</span>
+                    {c.count > 0 && <em>{c.count}台</em>}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+    </label>
+  );
+}
+
 function Colors({ value, onPick, sticky }: { value: string; onPick: (c: (typeof COLOR_KEYS)[number]) => void; sticky?: boolean }) {
   const palette = sticky ? STICKY : PALETTE;
   return (
@@ -138,7 +242,9 @@ function DevicePanel({ n }: { n: DeviceNode }) {
       nodes: d.nodes.map((x) => (x.id === n.id ? { ...n, ports: n.ports.filter((p) => p.id !== id) } : x)),
       edges: d.edges.filter((e) => !((e.from.node === n.id && e.from.port === id) || (e.to.node === n.id && e.to.port === id))),
     }));
-  const supplies = n.ports.some((p) => p.side === 'right' && p.signal === 'power');
+  // Supplying power is what the 電源 category means (UPS, taps, distribution boards); a capacity
+  // already typed in stays in view whatever the category, so it is never hidden from the user.
+  const supplies = n.category.trim() === SUPPLY_CATEGORY;
   // Network settings only matter for things on the network: shown for a device with a LAN port or
   // settings already typed in, and one click away for the rest (a Wi-Fi device, say).
   const [asked, setNetworked] = useState(false);
@@ -151,7 +257,6 @@ function DevicePanel({ n }: { n: DeviceNode }) {
     const other = ip && s.doc.nodes.find((x) => x.id !== n.id && x.type === 'device' && x.ip?.trim().replace(/\/\d+$/, '').toLowerCase() === ip);
     return other ? other.text.split('\n')[0] : '';
   });
-  const categories = useStore(useShallow((s) => [...new Set([...PRESETS.map((p) => p.category), ...s.doc.nodes.map((x) => (x.type === 'device' ? x.category : ''))].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ja'))));
   const move = (id: string, dir: -1 | 1) => {
     const port = n.ports.find((p) => p.id === id)!;
     const same = n.ports.filter((p) => p.side === port.side);
@@ -165,13 +270,8 @@ function DevicePanel({ n }: { n: DeviceNode }) {
       <Field wrap label="名称（改行できます）" value={n.text} onChange={(v) => patch({ text: v })} />
       <div className="grid2">
         <Field label="数量" type="number" placeholder={`${quantityOf(n.text).count}（名前から）`} value={n.qty == null ? '' : String(n.qty)} onChange={(v) => patch({ qty: num(v) && num(v)! >= 1 ? Math.round(num(v)!) : undefined })} />
-        <Field label="カテゴリ" list="keito-categories" value={n.category} onChange={(v) => patch({ category: v })} />
+        <CategoryField id={n.id} value={n.category} onChange={(v, record) => patch({ category: v }, record)} />
       </div>
-      <datalist id="keito-categories">
-        {categories.map((c) => (
-          <option key={c} value={c} />
-        ))}
-      </datalist>
       <div className="grid2">
         <Field label="メーカー" value={n.maker} onChange={(v) => patch({ maker: v })} />
         <Field
@@ -215,7 +315,6 @@ function DevicePanel({ n }: { n: DeviceNode }) {
       )}
       <div className="grid2">
         <Field label="消費電力 (W)" type="number" value={n.watts == null ? '' : String(n.watts)} onChange={(v) => patch({ watts: num(v) })} />
-        {/* Only something with outlets of its own can supply power. */}
         {(supplies || n.capacity != null) && <Field label="給電容量 (W)" type="number" placeholder="UPS・タップ" value={n.capacity == null ? '' : String(n.capacity)} onChange={(v) => patch({ capacity: num(v) })} />}
       </div>
       <Field wrap label="備考" value={n.note} onChange={(v) => patch({ note: v })} />

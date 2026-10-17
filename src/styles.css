@@ -586,6 +586,61 @@ code {
   min-height: 70px;
   font-family: inherit;
 }
+.field.combo {
+  position: relative;
+}
+.combo-list {
+  position: absolute;
+  top: 100%;
+  /* The field sits in the inspector's right-hand column: the list opens leftwards, inside the panel. */
+  right: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: 220px;
+  max-height: 260px;
+  overflow: auto;
+  margin-top: 2px;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  z-index: 20;
+}
+.field .combo-head {
+  padding: 6px 8px 3px;
+  font-size: 10.5px;
+  color: var(--sub);
+}
+.combo-list button {
+  display: flex;
+  width: 100%;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  background: none;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.combo-list button span {
+  font-size: inherit;
+  color: inherit;
+}
+.combo-list button em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--sub);
+}
+.combo-list button.hi {
+  background: #f1f5f9;
+}
+.combo-list button.on {
+  color: var(--accent);
+  font-weight: 600;
+}
 .hint {
   color: var(--sub);
   font-size: 11.5px;
