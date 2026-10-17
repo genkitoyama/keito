@@ -295,7 +295,17 @@ function DevicePanel({ n }: { n: DeviceNode }) {
         ) : (
           <p className="error">Web のアドレス（https://…）として読めません。</p>
         ))}
-      <Field label="手配先・担当（機材リストの区分）" placeholder={group ? `${group}（色分けから）` : '例: 自社 / レンタル / 先方支給'} value={n.vendor ?? ''} onChange={(v) => patch({ vendor: v || undefined })} />
+      <Field label="手配先・担当（機材リストの区分）" placeholder="例: 自社 / レンタル / 先方支給" value={n.vendor ?? ''} onChange={(v) => patch({ vendor: v || undefined })} />
+      {/* What the board's colour key says is only a guess (the colours may mean something else),
+          so it is offered, never written in unasked. */}
+      {group && group !== (n.vendor?.trim() ?? '') && (
+        <p className="suggest">
+          <span>{n.vendor?.trim() ? <>色分けでは「{group}」</> : <>空欄のときは色分けの「{group}」を表に使います</>}</span>
+          <button className="mini" onClick={() => patch({ vendor: group }, true)}>
+            入れる
+          </button>
+        </p>
+      )}
       <label className="field">
         <span>色分け</span>
         <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />
