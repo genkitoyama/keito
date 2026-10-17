@@ -145,12 +145,15 @@ function writeSheet(ws: Worksheet, t: Table, doc: Doc, lists: Map<string, string
   ws.pageSetup = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: `${HEAD_ROW}:${HEAD_ROW}`, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } };
 }
 
-export async function workbook(doc: Doc): Promise<Blob> {
+/** The lists as the workbook's sheets have them, in its order (the equipment list with a status column). */
+export const sheetTables = (doc: Doc): Table[] => [withColumn(equipmentTable(doc), '金額(円)', STATUS), cableTable(doc), cableSummaryTable(doc), powerTable(doc), networkTable(doc), checkTable(doc)];
+
+async function build(doc: Doc) {
   const { default: ExcelJS } = await import('exceljs');
   const wb = new ExcelJS.Workbook();
   wb.creator = 'keito';
   wb.created = new Date();
-  const tables = [withColumn(equipmentTable(doc), '金額(円)', STATUS), cableTable(doc), cableSummaryTable(doc), powerTable(doc), networkTable(doc), checkTable(doc)];
+  const tables = sheetTables(doc);
   // The dropdowns' words live on a hidden last sheet, one column per list: too many for a formula.
   const words = Object.entries(choices(doc)).filter(([, w]) => w.length);
   const letter = (k: number): string => String.fromCharCode(65 + k);
@@ -161,6 +164,171 @@ export async function workbook(doc: Doc): Promise<Blob> {
     sheet.getCell(1, k + 1).value = h;
     w.forEach((x, i) => (sheet.getCell(i + 2, k + 1).value = x));
   });
-  const buf = await wb.xlsx.writeBuffer();
-  return new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  return { ExcelJS, wb };
+}
+
+const XLSX_TYPE = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+
+export async function workbook(doc: Doc): Promise<Blob> {
+  const { wb } = await build(doc);
+  return new Blob([await wb.xlsx.writeBuffer()], { type: XLSX_TYPE });
+}
+
+/** The lists whose rows carry over when a workbook is brought up to date; the others are made afresh. */
+const KEPT = ['機材リスト', 'ケーブルリスト', 'ケーブル集計', 'ネットワーク'];
+/** Columns the board never fills: what the sheet says in them is the sheet's to keep. */
+const SHEET_OWNED = [STATUS];
+const KEY = 'keito ID';
+const REMOVED = '削除された行';
+
+export interface UpdateReport {
+  added: number;
+  changed: number;
+  removed: number;
+  /** Columns added in the sheet by hand, carried over as they were. */
+  extra: string[];
+}
+
+/** What a cell reads as, whatever form its value takes (a formula's result, a link's text …). */
+function shown(v: unknown): string {
+  if (v == null) return '';
+  if (v instanceof Date) return v.toLocaleDateString('ja-JP');
+  if (typeof v !== 'object') return String(v);
+  const o = v as { result?: unknown; text?: unknown; richText?: { text: string }[]; error?: string };
+  if ('result' in o) return shown(o.result);
+  if (o.richText) return o.richText.map((r) => r.text).join('');
+  if ('text' in o) return shown(o.text);
+  return o.error ?? '';
+}
+
+/** A value fit to copy into another row: a formula would point at the wrong cells, so its result goes instead. */
+const plain = (v: unknown): unknown => (v && typeof v === 'object' && 'formula' in (v as object) ? ((v as { result?: unknown }).result ?? null) : v);
+
+interface OldRow {
+  sheet: string;
+  values: Map<string, unknown>;
+  ids: string[];
+  used: boolean;
+}
+
+/** Header row and columns of a sheet keito wrote, found by its hidden key column. */
+function layout(ws: Worksheet): { row: number; cols: Map<string, number> } | null {
+  for (let r = 1; r <= Math.min(12, ws.rowCount); r++) {
+    const cols = new Map<string, number>();
+    ws.getRow(r).eachCell((c, j) => {
+      const h = shown(c.value).trim();
+      if (h) cols.set(h, j);
+    });
+    if (cols.has(KEY)) return { row: r, cols };
+  }
+  return null;
+}
+
+/**
+ * A workbook written before, brought up to date with the board. What the board owns (names,
+ * models, quantities, prices, cables) is written afresh; what was added in the sheet (purchase
+ * status, columns of its own such as order dates) is carried over row by row, matched by the
+ * hidden keito IDs. New rows are green, changed cells yellow, and rows whose devices or cables
+ * have left the board move to a sheet of their own, status and all.
+ */
+export async function updateWorkbook(doc: Doc, previous: ArrayBuffer): Promise<{ blob: Blob; report: UpdateReport }> {
+  const { ExcelJS, wb } = await build(doc);
+  const old = new ExcelJS.Workbook();
+  await old.xlsx.load(previous);
+  const report: UpdateReport = { added: 0, changed: 0, removed: 0, extra: [] };
+  const leftover: OldRow[] = [];
+  let found = false;
+
+  for (const name of KEPT) {
+    const was = old.getWorksheet(name);
+    const now = wb.getWorksheet(name);
+    const before = was && layout(was);
+    const after = now && layout(now);
+    if (!was || !now || !before || !after) continue;
+    found = true;
+    // Rows of the earlier sheet, by every id they stand for.
+    const rows: OldRow[] = [];
+    const byId = new Map<string, OldRow>();
+    for (let r = before.row + 1; r <= was.rowCount; r++) {
+      const ids = shown(was.getCell(r, before.cols.get(KEY)!).value).split(/\s+/).filter(Boolean);
+      if (!ids.length) continue;
+      const values = new Map<string, unknown>();
+      for (const [h, j] of before.cols) if (h !== KEY) values.set(h, was.getCell(r, j).value);
+      const row: OldRow = { sheet: name, values, ids, used: false };
+      rows.push(row);
+      for (const id of ids) if (!byId.has(id)) byId.set(id, row);
+    }
+    // Columns made in the sheet by hand go after the board's, beyond the hidden key.
+    const extra = [...before.cols.keys()].filter((h) => h !== KEY && !after.cols.has(h));
+    const keyCol = after.cols.get(KEY)!;
+    extra.forEach((h, k) => {
+      const c = now.getCell(after.row, keyCol + 1 + k);
+      c.value = h;
+      c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      c.fill = fill('FF475569');
+      now.getColumn(keyCol + 1 + k).width = Math.min(40, Math.max(10, textWidth(h) + 4));
+      if (!report.extra.includes(h)) report.extra.push(h);
+    });
+
+    for (let r = after.row + 1; r <= now.rowCount; r++) {
+      const ids = shown(now.getCell(r, keyCol).value).split(/\s+/).filter(Boolean);
+      if (!ids.length) continue;
+      const match = ids.map((id) => byId.get(id)).find((x) => x && !x.used) ?? ids.map((id) => byId.get(id)).find(Boolean);
+      if (!match) {
+        report.added++;
+        for (let j = 1; j < keyCol; j++) now.getCell(r, j).fill = fill('FFDCFCE7');
+        continue;
+      }
+      match.used = true;
+      let touched = false;
+      for (const [h, j] of after.cols) {
+        if (h === KEY || !match.values.has(h)) continue;
+        const cell = now.getCell(r, j);
+        const prev = match.values.get(h);
+        if (SHEET_OWNED.includes(h)) {
+          if (shown(cell.value) === '' && shown(prev) !== '') cell.value = plain(prev) as never;
+        } else if (shown(prev) !== shown(cell.value)) {
+          cell.fill = fill('FFFEF9C3');
+          cell.note = `前回: ${shown(prev) || '（空）'}`;
+          touched = true;
+        }
+      }
+      if (touched) report.changed++;
+      extra.forEach((h, k) => (now.getCell(r, keyCol + 1 + k).value = plain(match.values.get(h)) as never));
+    }
+    leftover.push(...rows.filter((x) => !x.used));
+  }
+  if (!found) throw new Error('keito で書き出した Excel ファイルではありません（keito ID の列が見つかりません）');
+
+  // Rows that left the board, kept with what the sheet said about them (an order already placed …).
+  report.removed = leftover.length;
+  if (leftover.length) {
+    const ws = wb.addWorksheet(REMOVED, { properties: { tabColor: { argb: 'FFDC2626' } } });
+    ws.getCell(1, 1).value = '図から消えた行（前回のファイルにあったもの）';
+    ws.getCell(1, 1).font = { size: 14, bold: true, color: { argb: INK } };
+    let r = 3;
+    for (const name of KEPT) {
+      const rows = leftover.filter((x) => x.sheet === name);
+      if (!rows.length) continue;
+      ws.getCell(r, 1).value = name;
+      ws.getCell(r, 1).font = { bold: true };
+      r++;
+      const heads = [...rows[0].values.keys()];
+      heads.forEach((h, j) => {
+        const c = ws.getCell(r, j + 1);
+        c.value = h;
+        c.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        c.fill = fill('FF334155');
+        ws.getColumn(j + 1).width = Math.max(ws.getColumn(j + 1).width ?? 8, Math.min(40, textWidth(h) + 4));
+      });
+      r++;
+      for (const row of rows) {
+        heads.forEach((h, j) => (ws.getCell(r, j + 1).value = plain(row.values.get(h)) as never));
+        r++;
+      }
+      r++;
+    }
+    // It lands after the hidden sheet of choices, which leaves it last among the visible tabs.
+  }
+  return { blob: new Blob([await wb.xlsx.writeBuffer()], { type: XLSX_TYPE }), report };
 }

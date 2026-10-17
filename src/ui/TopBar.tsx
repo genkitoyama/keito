@@ -69,7 +69,6 @@ export function TopBar() {
       </button>
       <span className="sep" />
       <button onClick={openFile} data-tip="ファイルを開く（.keito.json / .yaml）">開く</button>
-      <button onClick={() => void saveFile()} data-tip="画像込みの 1 ファイルに書き出す（⌘S）">書き出し</button>
       <span className={`save-state ${saving}`} title={mode === 'server' ? 'boards フォルダに自動保存' : 'このブラウザ内に自動保存'}>
         {saving === 'error' ? '保存できていません' : saving === 'saving' ? '保存中…' : mode === 'server' ? 'フォルダに保存済み' : 'ブラウザに保存済み'}
       </span>

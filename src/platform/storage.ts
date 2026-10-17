@@ -228,6 +228,18 @@ export function pickTextFile(accept: string): Promise<{ name: string; text: stri
   });
 }
 
+/** Ask for one file of the given kinds; null when the dialog is dismissed. */
+export function pickFile(accept: string): Promise<File | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.onchange = () => resolve(input.files?.[0] ?? null);
+    input.oncancel = () => resolve(null);
+    input.click();
+  });
+}
+
 export const safeName = (s: string): string => s.replace(/[\\/:*?"<>|\s]+/g, '_') || 'board';
 
 export interface LoadedImage {

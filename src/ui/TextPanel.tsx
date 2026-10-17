@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { generateYaml, promptFor } from '../model/ai';
 import { DSL_GUIDE, fromYaml, toYaml } from '../model/dsl';
 import { useStore } from '../model/store';
-import { download, getSetting, safeName, setSetting } from '../platform/storage';
+import { getSetting, setSetting } from '../platform/storage';
 
 export function TextPanel() {
   const st = useStore.getState;
@@ -66,7 +66,6 @@ export function TextPanel() {
               </label>
               <span className="grow" />
               <button onClick={() => navigator.clipboard.writeText(yaml)}>コピー</button>
-              <button onClick={() => download(`${safeName(st().doc.meta.title)}.yaml`, yaml, 'text/yaml')}>.yaml 保存</button>
               <button onClick={() => apply(false)}>図に反映</button>
               <button className="primary" onClick={() => apply(true)}>反映して閉じる</button>
             </div>

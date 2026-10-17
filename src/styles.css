@@ -868,6 +868,95 @@ textarea.code {
   min-width: 0;
   filter: drop-shadow(0 2px 8px rgba(15, 23, 42, 0.2));
 }
+.seg.wrap {
+  flex-wrap: wrap;
+}
+/* The export window's previews: the workbook (a sheet and its tabs) and the board as text. */
+.preview.workbook {
+  flex-direction: column;
+  padding: 0;
+  background: #fff;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  font-size: 12px;
+}
+.workbook .sheet {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.workbook th {
+  background: #334155;
+  color: #fff;
+}
+.workbook tbody tr:nth-child(even) td {
+  background: #f8fafc;
+}
+.workbook tr.total td,
+.workbook tr.subtotal td {
+  font-weight: 700;
+  background: #eef2f6;
+}
+.workbook tr.subtotal.over td {
+  background: #fdecec;
+}
+.workbook tr.subtotal td:last-child {
+  color: #15803d;
+}
+.workbook tr.subtotal.over td:last-child {
+  color: #b91c1c;
+}
+.workbook tr.subtotal.unknown td:last-child {
+  color: var(--sub);
+  font-weight: 400;
+}
+.workbook tr.warn td:first-child {
+  color: #dc2626;
+  font-weight: 700;
+}
+.workbook tr.note td:first-child {
+  color: #b45309;
+}
+.workbook .num {
+  text-align: right;
+}
+.sheet-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 8px;
+  background: #f1f5f9;
+  border-top: 1px solid var(--line);
+  overflow-x: auto;
+}
+.sheet-tabs button {
+  flex: none;
+  border: 0;
+  border-radius: 0 0 6px 6px;
+  background: transparent;
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--sub);
+}
+.sheet-tabs button.on {
+  background: #fff;
+  color: #15803d;
+  font-weight: 700;
+  box-shadow: inset 0 2px 0 #15803d;
+}
+.sheet-tabs small {
+  margin-left: 6px;
+  color: var(--sub);
+  font-weight: 400;
+}
+.preview.code-preview {
+  display: block;
+  overflow: auto;
+  margin: 0;
+  background: #0f172a;
+  color: #e2e8f0;
+  font: 12px/1.55 ui-monospace, Menlo, monospace;
+  white-space: pre;
+}
 .preview.checker {
   background: repeating-conic-gradient(#e2e8f0 0% 25%, #f8fafc 0% 50%) 0 0 / 20px 20px;
 }
