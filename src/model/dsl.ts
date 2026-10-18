@@ -72,12 +72,12 @@ shapes:                    # フローチャート・付箋
     fill: solid            # 任意。tint(既定・淡色) solid(ベタ塗り。red で真っ赤) outline(白地) none(透過)
     dash: true             # 任意。枠を点線に（cables / flows でも dash: true で点線）
 flows:                     # 矢印コネクタ（shapes / devices どちらも可）
-  - { from: s1, to: s2, label: はい }
+  - { from: s1, to: s2, label: はい }   # toSide: left などで入る辺を固定（同じ辺に入る線は手前で合流する。fromSide も可）
 images:                    # 埋め込み画像。データ本体は id で引き継がれる（src に data URL / URL も可）
   - { id: img1, name: logo, pos: [x, y], size: [w, h] }
 legends:                   # 凡例。使っている線の色が自動で並ぶ。names で行の呼び名を付けられる
   - { id: legend1, pos: [x, y], title: 凡例, names: { "#ea7a2e": 映像系統 } }
-junctions:                 # 分岐点（線が枝分かれする点）。cables の from / to に id だけを書いてつなぐ
+junctions:                 # 分岐点（古いボードの形式。新しくは書かない。同じ to に向かう線は図で自動的に合流する）
   - { id: j1, pos: [x, y] }
 sequences:
   - id: seq1
@@ -108,6 +108,18 @@ const portKey = (name: string): string => name.normalize('NFKC').toLowerCase();
  * A cable end as `device.port`. Ports are named, not numbered, so when a device has several
  * ports of one name the reference says which: `pc1.IN#2` is the second port called IN.
  */
+const SIDES = ['left', 'right', 'top', 'bottom'] as const;
+
+/** `fromSide` / `toSide`: the side of its box a port-less end is held to. */
+function sidesOf(e: Edge): Obj {
+  return { ...(e.from.side && !e.from.port ? { fromSide: e.from.side } : {}), ...(e.to.side && !e.to.port ? { toSide: e.to.side } : {}) };
+}
+function holdSides(e: Edge, v: Record<string, unknown>): void {
+  const side = (x: unknown) => SIDES.find((s) => s === str(x));
+  if (side(v.fromSide) && !e.from.port) e.from = { ...e.from, side: side(v.fromSide) };
+  if (side(v.toSide) && !e.to.port) e.to = { ...e.to, side: side(v.toSide) };
+}
+
 function refOf(doc: Doc, end: EdgeEnd): string {
   const n = doc.nodes.find((x) => x.id === end.node);
   const port = n?.type === 'device' && end.port ? n.ports.find((p) => p.id === end.port) : undefined;
@@ -168,7 +180,7 @@ export function toYaml(doc: Doc): string {
   const cables = doc.edges.filter((e) => e.signal !== 'flow');
   if (cables.length) {
     out.cables = cables.map((e) => {
-      const o: Obj = { from: refOf(doc, e.from), to: refOf(doc, e.to), type: e.signal };
+      const o: Obj = { from: refOf(doc, e.from), to: refOf(doc, e.to), type: e.signal, ...sidesOf(e) };
       put(o, 'length', e.length);
       put(o, 'cableId', e.cableId);
       if (e.showId != null) o.showId = e.showId;
@@ -214,7 +226,7 @@ export function toYaml(doc: Doc): string {
   const flows = doc.edges.filter((e) => e.signal === 'flow');
   if (flows.length) {
     out.flows = flows.map((e) => {
-      const o: Obj = { from: refOf(doc, e.from), to: refOf(doc, e.to) };
+      const o: Obj = { from: refOf(doc, e.from), to: refOf(doc, e.to), ...sidesOf(e) };
       put(o, 'label', e.label);
       if (e.arrow !== 'end') o.arrow = e.arrow;
       if (e.color) o.color = e.color;
@@ -513,6 +525,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     // Hand-placed bends only make sense while the layout they were drawn for is kept.
     const bends = relayout ? [] : arr(v.route).map((p) => nums(p, 2)).filter((p): p is number[] => !!p);
     if (bends.length >= 2) e.route = bends.map(([x, y]) => ({ x, y }));
+    holdSides(e, v);
     edges.push(e);
   });
   arr(root.flows).forEach((v, i) => {
@@ -527,6 +540,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     // Hand-placed bends, as for cables (and dropped the same way by a fresh layout).
     const bends = relayout ? [] : arr(v.route).map((p) => nums(p, 2)).filter((p): p is number[] => !!p);
     if (bends.length >= 2) e.route = bends.map(([x, y]) => ({ x, y }));
+    holdSides(e, v);
     edges.push(e);
   });
 

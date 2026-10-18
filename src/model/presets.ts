@@ -338,9 +338,10 @@ export function makeEdge(taken: Set<string>, from: Edge['from'], to: Edge['to'],
  * same signal on the right side, or a new one when all are taken — so hooking a
  * dozen devices up to a UPS never means adding ports by hand.
  */
-export function claimPort(doc: Doc, nodeId: string, signal: string, side: Port['side']): { end: EdgeEnd; doc: Doc } {
+/** `held`: the side a port-less end is held to (kept when there is no port to take). */
+export function claimPort(doc: Doc, nodeId: string, signal: string, side: Port['side'], held?: EdgeEnd['side']): { end: EdgeEnd; doc: Doc } {
   const n = doc.nodes.find((x) => x.id === nodeId);
-  if (!n || n.type !== 'device' || signal === 'flow') return { end: { node: nodeId }, doc };
+  if (!n || n.type !== 'device' || signal === 'flow') return { end: { node: nodeId, ...(held ? { side: held } : {}) }, doc };
   const used = new Set<string | undefined>();
   for (const e of doc.edges) {
     if (e.from.node === nodeId) used.add(e.from.port);
@@ -361,25 +362,6 @@ export const JUNCTION = 12;
 
 /** A legend block with its top-left corner at (x, y); its height follows its rows once it is on a board. */
 export const makeLegend = (taken: Set<string>, x: number, y: number): Node => ({ id: freshId(taken, 'legend'), type: 'legend', x, y, w: 200, h: 64, text: '凡例' });
-
-/**
- * Put a junction dot on a line at `at`. The line keeps its identity up to the dot; a second line
- * of the same kind carries on from the dot to where the original ended.
- */
-export function splitEdge(doc: Doc, edgeId: string, at: { x: number; y: number }): { doc: Doc; junction: string } | null {
-  const edge = doc.edges.find((e) => e.id === edgeId);
-  if (!edge) return null;
-  const taken = allIds(doc);
-  const id = freshId(taken, 'j');
-  taken.add(id);
-  const dot: Node = { id, type: 'junction', x: Math.round(at.x - JUNCTION / 2), y: Math.round(at.y - JUNCTION / 2), w: JUNCTION, h: JUNCTION, text: '分岐' };
-  const rest: Edge = { ...makeEdge(taken, { node: id }, edge.to, edge.signal), arrow: edge.arrow, color: edge.color, dash: edge.dash, spec: edge.spec, maker: edge.maker, model: edge.model, url: edge.url, tag: edge.tag };
-  const { route: _route, labelAt: _labelAt, ...head } = edge;
-  return {
-    junction: id,
-    doc: { ...doc, nodes: [...doc.nodes, dot], edges: [...doc.edges.map((e) => (e.id === edgeId ? { ...head, to: { node: id } } : e)), rest] },
-  };
-}
 
 /** The kind of line a junction carries, taken from any line already on it. */
 export const junctionSignal = (doc: Doc, node: string): string | undefined => doc.edges.find((e) => e.from.node === node || e.to.node === node)?.signal;

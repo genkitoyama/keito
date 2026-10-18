@@ -20,15 +20,16 @@ import {
   portAt,
   portPos,
   routeEdges,
+  sideOf,
   sidePoint,
   simplify,
   snap,
 } from '../model/geometry';
-import { type CreateKind, allIds, claimPort, junctionSignal, makeEdge, makeImage, makeNode, splitEdge } from '../model/presets';
+import { type CreateKind, allIds, claimPort, junctionSignal, makeEdge, makeImage, makeNode } from '../model/presets';
 import { SEQUENCE_SAMPLE, seqLayout, seqScale } from '../model/sequence';
 import { STRONG } from '../model/signals';
 import { copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
-import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
+import { type Doc, type Edge, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
 import { canvasOf, isOutput, isScreen } from '../model/screens';
 import { FLOW_PARTS, makeFlowPart } from '../model/flow';
@@ -45,7 +46,10 @@ type Drag =
   | { kind: 'marquee'; start: Pt; base: string[] }
   | { kind: 'resize'; id: string; corner: Corner; start: Pt; orig: Rect; moved: boolean; lock?: number }
   | { kind: 'connect'; from: EdgeEnd; at: Pt; side?: Dir; sx: number; sy: number };
-type Ghost = null | { kind: 'marquee'; rect: Rect } | { kind: 'connect'; a: Pt; b: Pt };
+type ConnectDrag = Extract<Drag, { kind: 'connect' }>;
+type ReconnectDrag = Extract<Drag, { kind: 'reconnect' }>;
+/** While a line is pulled: what letting go here would make (`plan`), else a plain rubber band. */
+type Ghost = null | { kind: 'marquee'; rect: Rect } | { kind: 'connect'; a: Pt; b: Pt; plan: Plan | null };
 
 const SIDES: Dir[] = ['left', 'right', 'top', 'bottom'];
 const MIN = { w: 40, h: 30 };
@@ -191,11 +195,20 @@ export function Canvas() {
   const editing = useStore((s) => s.editing);
   const [hover, setHover] = useState<string | null>(null);
   const [hoverSide, setHoverSide] = useState<Dir | null>(null);
+  /** The box a line was just connected on: no dots on it until the pointer has left it. */
+  const [hush, setHush] = useState<string | null>(null);
   const [ghost, setGhost] = useState<Ghost>(null);
   const [guides, setGuides] = useState<{ x?: number; y?: number }>({});
   const [busy, setBusy] = useState(false);
   const [space, setSpace] = useState(false);
   const drag = useRef<Drag | null>(null);
+  /** The plan last shown, kept while the target stays the same so its routes are not worked out again. */
+  const lastPlan = useRef<Plan | null>(null);
+  const keepPlan = (plan: Plan | null): Plan | null => {
+    const was = lastPlan.current;
+    if (plan && was && plan.key === was.key) return was;
+    return (lastPlan.current = plan);
+  };
   const lastClick = useRef({ id: '', t: 0 });
 
   const world = (e: { clientX: number; clientY: number }): Pt => {
@@ -470,15 +483,22 @@ export function Canvas() {
         // Frames need to be fully enclosed, otherwise every marquee inside one would grab it.
         return n.type === 'frame' ? contains(rect, r) && contains(rect, { x: r.x + r.w, y: r.y + r.h }) : intersects(rect, r);
       });
-      s.select([...new Set([...d.base, ...hit.map((n) => n.id)])]);
+      // Lines the frame passes over are taken too (to delete them, say); a line drawn as tags by its tags.
+      const routes = routeEdges(s.doc);
+      const lines = s.doc.edges.filter((x) =>
+        isTagged(s.doc, x) ? edgeTags(s.doc, x, SCREEN).some((t) => intersects(rect, t)) : (routes.get(x.id) ?? []).some((q, i, pts) => i > 0 && segmentHits(pts[i - 1], q, rect)),
+      );
+      s.select([...new Set([...d.base, ...hit.map((n) => n.id), ...lines.map((x) => x.id)])]);
       return;
     }
     if (d.kind === 'connect') {
-      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 4) setGhost({ kind: 'connect', a: d.at, b: p });
+      if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) <= 4) return;
+      // Nothing to land on: a box of the same kind will be made there (from a shape).
+      setGhost({ kind: 'connect', a: d.at, b: p, plan: keepPlan(planConnect(s.doc, d, p, s.view.k) ?? planSpawn(s.doc, d, p)) });
       return;
     }
     if (d.kind === 'reconnect') {
-      setGhost({ kind: 'connect', a: d.other, b: p });
+      setGhost({ kind: 'connect', a: d.other, b: p, plan: keepPlan(planReconnect(s.doc, d, p, s.view.k)) });
       return;
     }
     if (d.kind === 'label') {
@@ -601,6 +621,14 @@ export function Canvas() {
     const d = drag.current;
     drag.current = null;
     setGhost(null);
+    lastPlan.current = null;
+    // The pointer was held by the canvas, so the box it left from never heard it go: its dots
+    // would stay lit. They come back as soon as the pointer moves onto a box again.
+    if (d?.kind === 'connect' || d?.kind === 'reconnect') {
+      setHoverSide(null);
+      setHover(null);
+      setHush(nodeAt(st().doc, world(e))?.id ?? null);
+    }
     setGuides({});
     setBusy(false);
     if (d?.kind === 'segment') {
@@ -615,23 +643,8 @@ export function Canvas() {
     }
     if (d?.kind === 'reconnect') {
       const s = st();
-      const p = world(e);
-      const edge = s.doc.edges.find((x) => x.id === d.id);
-      if (!edge) return;
-      const keep = d.end === 'from' ? edge.to : edge.from;
-      const over = nodeAt(s.doc, p);
-      let hit: EdgeEnd | null = portAt(s.doc, p) ?? (over && over.type !== 'frame' ? { node: over.id } : null);
-      let base = s.doc;
-      if (!hit) {
-        // Dropped on another line: branch off it through a new junction dot.
-        const line = edgeNear(base, p, 8 / s.view.k, d.id);
-        const cut = line && splitEdge(base, line.edge.id, line.at);
-        if (cut) [base, hit] = [cut.doc, { node: cut.junction }];
-      }
-      if (!hit || hit.node === keep.node) return;
-      // Dropped on a device body: take a free port of the cable's type on the matching side.
-      const claimed = hit.port ? { end: hit, doc: base } : claimPort(base, hit.node, edge.signal, d.end === 'from' ? 'right' : 'left');
-      s.setDoc({ ...claimed.doc, edges: claimed.doc.edges.map((x) => (x.id === d.id ? { ...x, [d.end]: claimed.end, route: undefined } : x)) });
+      const plan = planReconnect(s.doc, d, world(e), s.view.k);
+      if (plan) s.setDoc(plan.doc);
       return;
     }
     if (d?.kind !== 'connect') return;
@@ -642,42 +655,16 @@ export function Canvas() {
       return;
     }
     const p = world(e);
-    const source = s.doc.nodes.find((n) => n.id === d.from.node)!;
-    const over = nodeAt(s.doc, p);
-    let to: EdgeEnd | null = portAt(s.doc, p) ?? (over && over.type !== 'frame' ? { node: over.id } : null);
-    if (to && to.node === d.from.node) to = null;
-    let base = s.doc;
-    if (!to) {
-      // Dropped on a line: branch off it through a new junction dot.
-      const line = edgeNear(base, p, 8 / s.view.k);
-      const touches = line && (line.edge.from.node === d.from.node || line.edge.to.node === d.from.node);
-      const cut = line && !touches ? splitEdge(base, line.edge.id, line.at) : null;
-      if (cut) [base, to] = [cut.doc, { node: cut.junction }];
-    }
-    const taken = allIds(base);
-    if (to) {
-      let from = d.from;
-      const isDot = (end: EdgeEnd) => base.nodes.find((n) => n.id === end.node)?.type === 'junction';
-      // Cables run output → input regardless of which end the drag started from.
-      if (portOf(base, from)?.side === 'left' && portOf(base, to)?.side !== 'left') [from, to] = [to, from];
-      else if (isDot(from) && portOf(base, to)?.side === 'right') [from, to] = [to, from];
-      const signal = portOf(base, from)?.signal ?? portOf(base, to)?.signal ?? junctionSignal(base, to.node) ?? junctionSignal(base, from.node) ?? 'flow';
-      // An end dropped on a device body takes a free port of that signal (a new one if all are used),
-      // so a row of devices can be plugged into a UPS without managing its outlets by hand.
-      let next = base;
-      if (!from.port) ({ end: from, doc: next } = claimPort(next, from.node, signal, 'right'));
-      if (!to.port) ({ end: to, doc: next } = claimPort(next, to.node, signal, 'left'));
-      const edge = makeEdge(taken, from, to, signal);
-      s.setDoc({ ...next, edges: [...next.edges, edge] });
-      s.select([edge.id]);
-    } else if (canConnect(source) && Math.hypot(p.x - d.at.x, p.y - d.at.y) > 30) {
-      // Dropping on empty canvas puts the next shape right there.
-      const kind: CreateKind = source.type === 'shape' ? source.shape : source.type;
-      const n = makeNode(kind, snap(p.x), snap(p.y), taken, '', source.type === 'text' ? undefined : source.color);
-      const edge = makeEdge(taken, d.from, { node: n.id }, 'flow');
-      s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, n], edges: [...doc.edges, edge] }));
-      s.select([n.id]);
-      s.setEditing(n.id);
+    const plan = planConnect(s.doc, d, p, s.view.k);
+    const made = plan ? null : planSpawn(s.doc, d, p);
+    if (plan) {
+      s.setDoc(plan.doc);
+      s.select([plan.edge]);
+    } else if (made?.made) {
+      // Dropping on empty canvas puts the next shape right there, ready to be named.
+      s.setDoc(made.doc);
+      s.select([made.made]);
+      s.setEditing(made.made);
     }
   };
 
@@ -690,7 +677,7 @@ export function Canvas() {
   const others = doc.nodes.filter((n) => n.type !== 'frame' && !isUnderlay(n)).sort((a, b) => Number(isCanvasShape(b)) - Number(isCanvasShape(a)));
   const single = selection.length === 1 ? doc.nodes.find((n) => n.id === selection[0]) : undefined;
   const selectedEdge = selection.length === 1 ? doc.edges.find((e) => e.id === selection[0]) : undefined;
-  const handleNode = doc.nodes.find((n) => n.id === hover && hasHandles(n)) ?? (single && hasHandles(single) ? single : undefined);
+  const handleNode = doc.nodes.find((n) => n.id === hover && n.id !== hush && hasHandles(n)) ?? (single && hasHandles(single) ? single : undefined);
   const hs = 8 / view.k;
   const idle = tool === 'select' && !editing && !busy;
   const cursor = space || tool === 'pan' ? 'grab' : tool === 'select' ? 'default' : 'crosshair';
@@ -701,7 +688,10 @@ export function Canvas() {
       key={n.id}
       onPointerDown={(e) => onNodeDown(e, n)}
       onPointerEnter={() => setHover(n.id)}
-      onPointerLeave={() => setHover((h) => (h === n.id ? null : h))}
+      onPointerLeave={() => {
+        setHover((h) => (h === n.id ? null : h));
+        setHush((h) => (h === n.id ? null : h));
+      }}
       style={{ cursor: tool === 'select' && !space ? 'move' : undefined }}
     >
       <NodeView n={editing === n.id && canConnect(n) ? { ...n, text: '' } : n} theme={SCREEN} doc={doc} />
@@ -834,7 +824,7 @@ export function Canvas() {
 
           {guides.x != null && <line x1={guides.x} y1={-1e5} x2={guides.x} y2={1e5} stroke="#f43f5e" strokeWidth={1 / view.k} pointerEvents="none" />}
           {guides.y != null && <line x1={-1e5} y1={guides.y} x2={1e5} y2={guides.y} stroke="#f43f5e" strokeWidth={1 / view.k} pointerEvents="none" />}
-          {ghost?.kind === 'connect' && <line x1={ghost.a.x} y1={ghost.a.y} x2={ghost.b.x} y2={ghost.b.y} stroke={ACCENT} strokeWidth={2 / view.k} strokeDasharray={`${6 / view.k} ${4 / view.k}`} pointerEvents="none" />}
+          {ghost?.kind === 'connect' && <ConnectGhost ghost={ghost} doc={doc} k={view.k} />}
           {ghost?.kind === 'marquee' && <rect x={ghost.rect.x} y={ghost.rect.y} width={ghost.rect.w} height={ghost.rect.h} fill="rgba(37,99,235,0.08)" stroke={ACCENT} strokeWidth={1 / view.k} pointerEvents="none" />}
         </g>
       </svg>
@@ -857,6 +847,159 @@ export function Canvas() {
  * A small link mark on what is shared with other boards of the project (screen only: an export
  * shows the drawing, not how it is kept).
  */
+/** What letting go of a pulled line would make: the board with the line in it, and what it lands on. */
+interface Plan {
+  doc: Doc;
+  edge: string;
+  /** The box it goes into, and the side it is held to (when let go on one of the box's dots). */
+  box?: string;
+  side?: Dir;
+  /** The line it merges with. */
+  line?: string;
+  /** The box made for it, let go on empty canvas. */
+  made?: string;
+  /** The same key, the same plan: what it lands on, and where. */
+  key: string;
+}
+
+/** How near (screen px) to a box's side dot the end goes in at that side. */
+const SNAP = 18;
+
+/** What an end let go at `p` lands on: a port, a box (at one of its sides, or the side facing the line), or a line to merge with. */
+function dropAt(doc: Doc, p: Pt, k: number, which: 'from' | 'to', skip?: string): { end: EdgeEnd; doc: Doc; box?: string; line?: string } | null {
+  const port = portAt(doc, p);
+  if (port) return { end: port, doc, box: port.node };
+  // A side dot sits on the rim, half outside the box: it is looked for before the box itself.
+  for (let i = doc.nodes.length - 1; i >= 0; i--) {
+    const n = doc.nodes[i];
+    if (!canConnect(n)) continue;
+    const r = nodeRect(n);
+    const side = SIDES.find((d) => {
+      const q = sidePoint(r, d);
+      return Math.hypot(q.x - p.x, q.y - p.y) <= SNAP / k;
+    });
+    if (side) return { end: { node: n.id, side }, doc, box: n.id };
+  }
+  const over = nodeAt(doc, p);
+  if (over && over.type !== 'frame') return { end: { node: over.id }, doc, box: over.id };
+  const line = edgeNear(doc, p, 8 / k, skip);
+  if (!line) return null;
+  return { ...mergeAt(doc, line.edge, which), line: line.edge.id };
+}
+
+const planKey = (t: { end: EdgeEnd; box?: string; line?: string }): string => `${t.end.node}|${t.end.port ?? ''}|${t.end.side ?? ''}|${t.line ?? ''}`;
+
+/** A new line pulled from a dot or a port and let go at `p`. */
+function planConnect(doc: Doc, d: ConnectDrag, p: Pt, k: number): Plan | null {
+  // A line pulled from an input comes from where the line it is dropped on comes from.
+  const which = portOf(doc, d.from)?.side === 'left' ? 'from' : 'to';
+  const t = dropAt(doc, p, k, which);
+  if (!t || t.end.node === d.from.node) return null;
+  const base = t.doc;
+  const merged = t.line ? doc.edges.find((x) => x.id === t.line) : undefined;
+  let to = t.end;
+  // Pulled from a box's dot, the line leaves from that side.
+  let from: EdgeEnd = d.side && !d.from.port ? { ...d.from, side: d.side } : d.from;
+  const isDot = (end: EdgeEnd) => base.nodes.find((n) => n.id === end.node)?.type === 'junction';
+  // Cables run output → input regardless of which end the drag started from.
+  if (portOf(base, from)?.side === 'left' && portOf(base, to)?.side !== 'left') [from, to] = [to, from];
+  else if (isDot(from) && portOf(base, to)?.side === 'right') [from, to] = [to, from];
+  const signal = portOf(base, from)?.signal ?? portOf(base, to)?.signal ?? merged?.signal ?? junctionSignal(base, to.node) ?? junctionSignal(base, from.node) ?? 'flow';
+  // An end dropped on a device body takes a free port of that signal (a new one if all are used),
+  // so a row of devices can be plugged into a UPS without managing its outlets by hand.
+  let next = base;
+  if (!from.port) ({ end: from, doc: next } = claimPort(next, from.node, signal, 'right', from.side));
+  if (!to.port) ({ end: to, doc: next } = claimPort(next, to.node, signal, 'left', to.side));
+  // A line merging into another looks like it, so the two read as one from where they meet.
+  const edge = { ...makeEdge(allIds(base), from, to, signal), ...(merged ? { arrow: merged.arrow, color: merged.color, dash: merged.dash } : {}) };
+  return { doc: { ...next, edges: [...next.edges, edge] }, edge: edge.id, box: t.box, side: t.end.side, line: t.line, key: planKey(t) };
+}
+
+/** One end of a line dragged elsewhere and let go at `p`. */
+function planReconnect(doc: Doc, d: ReconnectDrag, p: Pt, k: number): Plan | null {
+  const edge = doc.edges.find((x) => x.id === d.id);
+  if (!edge) return null;
+  const keep = d.end === 'from' ? edge.to : edge.from;
+  const t = dropAt(doc, p, k, d.end, d.id);
+  if (!t || t.end.node === keep.node) return null;
+  // Dropped on a device body: take a free port of the cable's type on the matching side.
+  const claimed = t.end.port ? { end: t.end, doc: t.doc } : claimPort(t.doc, t.end.node, edge.signal, d.end === 'from' ? 'right' : 'left', t.end.side);
+  const next = { ...claimed.doc, edges: claimed.doc.edges.map((x) => (x.id === d.id ? { ...x, [d.end]: claimed.end, route: undefined } : x)) };
+  return { doc: next, edge: d.id, box: t.box, side: t.end.side, line: t.line, key: planKey(t) };
+}
+
+/** Let go on no box (an area is open ground): back on the box it came from, it is called off. */
+function onEmpty(doc: Doc, p: Pt): boolean {
+  const over = nodeAt(doc, p);
+  return !over || over.type === 'frame';
+}
+
+/** A line pulled from a box and let go on empty canvas: a box of the same kind there, at its end. */
+function planSpawn(doc: Doc, d: ConnectDrag, p: Pt): Plan | null {
+  const source = doc.nodes.find((n) => n.id === d.from.node);
+  if (!source || !canConnect(source) || !onEmpty(doc, p) || Math.hypot(p.x - d.at.x, p.y - d.at.y) <= 30) return null;
+  const taken = allIds(doc);
+  const kind: CreateKind = source.type === 'shape' ? source.shape : source.type;
+  const n = makeNode(kind, snap(p.x), snap(p.y), taken, '', source.type === 'text' ? undefined : source.color);
+  taken.add(n.id);
+  const edge = makeEdge(taken, d.side ? { ...d.from, side: d.side } : d.from, { node: n.id }, 'flow');
+  return { doc: { ...doc, nodes: [...doc.nodes, n], edges: [...doc.edges, edge] }, edge: edge.id, made: n.id, key: `+${snap(p.x)},${snap(p.y)}` };
+}
+
+/**
+ * A line being pulled, as it will be: the line itself routed as it will run (faint), what it
+ * lands on lit up — the box (its dots, the one it goes in at enlarged), or the line it merges
+ * with — and on empty canvas the box that will be made there.
+ */
+function ConnectGhost({ ghost, doc, k }: { ghost: Extract<Ghost, { kind: 'connect' }>; doc: Doc; k: number }) {
+  const { plan } = ghost;
+  if (!plan) {
+    return (
+      <g pointerEvents="none">
+        <line x1={ghost.a.x} y1={ghost.a.y} x2={ghost.b.x} y2={ghost.b.y} stroke={ACCENT} strokeWidth={2 / k} strokeDasharray={`${6 / k} ${4 / k}`} />
+      </g>
+    );
+  }
+  const edge = plan.doc.edges.find((e) => e.id === plan.edge);
+  const box = plan.box ? doc.nodes.find((n) => n.id === plan.box) : undefined;
+  const made = plan.made ? plan.doc.nodes.find((n) => n.id === plan.made) : undefined;
+  const m = made && nodeRect(made);
+  const line = plan.line ? routeEdges(doc).get(plan.line) : undefined;
+  const r = box && nodeRect(box);
+  return (
+    <g pointerEvents="none">
+      {line && <path d={pathD(line, 8)} fill="none" stroke={ACCENT} strokeOpacity={0.22} strokeWidth={10 / k} strokeLinecap="round" strokeLinejoin="round" />}
+      {r && box && box.type !== 'device' && <rect x={r.x - 3 / k} y={r.y - 3 / k} width={r.w + 6 / k} height={r.h + 6 / k} rx={6 / k} fill="none" stroke={ACCENT} strokeOpacity={plan.side ? 0.35 : 0.8} strokeWidth={1.5 / k} />}
+      {r &&
+        box &&
+        canConnect(box) &&
+        SIDES.map((side) => {
+          const q = sidePoint(r, side);
+          const on = plan.side === side;
+          return <circle key={side} cx={q.x} cy={q.y} r={(on ? 7 : 3.5) / k} fill={on ? ACCENT : '#fff'} stroke={ACCENT} strokeWidth={1.5 / k} />;
+        })}
+      {m && <rect x={m.x} y={m.y} width={m.w} height={m.h} rx={6} fill="rgba(37,99,235,0.06)" stroke={ACCENT} strokeOpacity={0.6} strokeWidth={1.5 / k} strokeDasharray={`${5 / k} ${4 / k}`} />}
+      {edge && (
+        <g opacity={0.7}>
+          <EdgeView doc={plan.doc} e={edge} theme={SCREEN} hideLabel />
+        </g>
+      )}
+    </g>
+  );
+}
+
+/**
+ * Merging with a line at one of its ends: that end, held to the side of the box it goes into now,
+ * and the board with the line's own end held there too, so the two keep together as boxes move.
+ */
+function mergeAt(doc: Doc, line: Edge, which: 'from' | 'to'): { doc: Doc; end: EdgeEnd } {
+  const end = line[which];
+  const side = end.port ? undefined : (end.side ?? sideOf(doc, line, which));
+  if (!side) return { doc, end };
+  const held = { ...end, side };
+  return { end: held, doc: { ...doc, edges: doc.edges.map((e) => (e.id === line.id ? { ...e, [which]: held } : e)) } };
+}
+
 function SharedMarks({ doc, k }: { doc: Doc; k: number }) {
   const r = 7 / Math.max(k, 0.35);
   return (
@@ -967,6 +1110,15 @@ function EdgeHandles({ pts, k, manual, onSegment, onEnd }: {
       <circle cx={b.x} cy={b.y} r={5.5 / k} fill="#fff" stroke={ACCENT} strokeWidth={2 / k} style={{ cursor: 'grab' }} onPointerDown={(e) => onEnd(e, 'to', a)} />
     </g>
   );
+}
+
+/** Whether the segment a–b passes through the rectangle (lines run square, so a box test does for the rest). */
+function segmentHits(a: Pt, b: Pt, r: Rect): boolean {
+  const x0 = Math.min(a.x, b.x);
+  const x1 = Math.max(a.x, b.x);
+  const y0 = Math.min(a.y, b.y);
+  const y1 = Math.max(a.y, b.y);
+  return x0 <= r.x + r.w && x1 >= r.x && y0 <= r.y + r.h && y1 >= r.y;
 }
 
 function distToSegment(p: Pt, a: Pt, b: Pt): number {

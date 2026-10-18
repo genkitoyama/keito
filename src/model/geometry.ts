@@ -67,6 +67,7 @@ export function anchorOf(node: Node, end: EdgeEnd, toward: Pt): Anchor {
     const p = portPos(node, end.port);
     if (p) return { x: p.x, y: p.y, dir: p.side, rect };
   }
+  if (end.side && node.type !== 'junction') return { ...sidePoint(rect, end.side), dir: end.side, rect };
   const c = center(rect);
   const dx = (toward.x - c.x) / Math.max(1, rect.w);
   const dy = (toward.y - c.y) / Math.max(1, rect.h);
@@ -156,6 +157,22 @@ const orthogonal = (pts: Pt[]): boolean => pts.every((p, i) => i === 0 || Math.a
 
 const routeCache = new WeakMap<Doc, Map<string, Pt[]>>();
 
+/** How far out from a shared end merging lines meet, before running in together. */
+const MERGE = 22;
+
+/** The meeting point of lines merging into `end`: out in front of it, facing the same way. */
+function meetingPoint(end: Anchor): Anchor {
+  const dx = end.dir === 'left' ? -MERGE : end.dir === 'right' ? MERGE : 0;
+  const dy = end.dir === 'top' ? -MERGE : end.dir === 'bottom' ? MERGE : 0;
+  const x = end.x + dx;
+  const y = end.y + dy;
+  // The box it belongs to reaches out to it, so a line coming round the back still goes round the box.
+  const r = end.rect;
+  const x0 = Math.min(r.x, x);
+  const y0 = Math.min(r.y, y);
+  return { x, y, dir: end.dir, rect: { x: x0, y: y0, w: Math.max(r.x + r.w, x) - x0, h: Math.max(r.y + r.h, y) - y0 } };
+}
+
 /** Routed polyline for every edge of the doc (memoised per doc snapshot). */
 export function routeEdges(doc: Doc): Map<string, Pt[]> {
   const hit = routeCache.get(doc);
@@ -197,12 +214,23 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
     return [{ e, index, a, b, pa, pb, ea, eb, tagged: isTagged(doc, e) }];
   });
   const manual = (e: Edge) => !!e.route && e.route.length >= 2;
+  // Lines into the same place (one port, or one side of a box) merge in front of it: each runs to a
+  // meeting point out from the end, and from there they go in together under a single arrowhead.
+  const into = new Map<string, (typeof drawn)[number][]>();
+  for (const d of drawn) {
+    if (d.tagged || manual(d.e) || d.a === d.b || d.b.type === 'junction') continue;
+    const k = `${d.b.id}|${Math.round(d.eb.x)},${Math.round(d.eb.y)}|${d.eb.dir}`;
+    into.set(k, [...(into.get(k) ?? []), d]);
+  }
+  const meets = new Map<string, Anchor>();
+  for (const list of into.values()) if (list.length > 1) for (const d of list) meets.set(d.e.id, meetingPoint(d.eb));
   const facing = (l: Anchor, r: Anchor) => l.dir === 'right' && r.dir === 'left' && r.x - l.x >= CLEAR * 2;
   const runs: Run[] = [];
   // A line drawn as tags leaves a chip beside each port; bends keep off those too.
   const chips: Rect[] = [];
-  for (const { e, a, b, ea, eb, tagged } of drawn) {
-    if (tagged) chips.push(chip(ea, `XXX-00 → ${b.text}`), chip(eb, `⚡ ${a.text} ${e.label}`));
+  for (const { e, a, b, ea, eb: end, tagged } of drawn) {
+    const eb = meets.get(e.id) ?? end;
+    if (tagged) chips.push(chip(ea, `XXX-00 → ${b.text}`), chip(end, `⚡ ${a.text} ${e.label}`));
     else if (a !== b && !manual(e) && Math.abs(ea.y - eb.y) >= 0.5) {
       if (facing(ea, eb)) runs.push({ id: e.id, l: ea, r: eb });
       else if (facing(eb, ea)) runs.push({ id: e.id, l: eb, r: ea });
@@ -228,19 +256,23 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
         continue;
       }
     }
+    // A merging line is routed to its meeting point and goes on from there with the others.
+    const meet = meets.get(e.id);
+    const to = meet ?? eb;
+    const end = (pts: Pt[]): Pt[] => (meet ? simplify([...pts, { x: eb.x, y: eb.y }]) : pts);
     const x = bends.get(e.id);
     if (x !== undefined) {
-      out.set(e.id, [{ x: ea.x, y: ea.y }, { x, y: ea.y }, { x, y: eb.y }, { x: eb.x, y: eb.y }]);
+      out.set(e.id, end([{ x: ea.x, y: ea.y }, { x, y: ea.y }, { x, y: to.y }, { x: to.x, y: to.y }]));
       continue;
     }
-    let pts = route(ea, eb, lane);
+    let pts = route(ea, to, lane);
     // The plain elbow would cut through a node: find a way around. Lines drawn as tags have no run to fix.
     if (a !== b && !tagged && collides(pts, obstacles)) {
       // Neighbouring lines keep slightly different clearances so they don't sit on top of each other.
-      const around = routeAround(ea, eb, obstacles, 8 + (index % 3) * 4);
+      const around = routeAround(ea, to, obstacles, 8 + (index % 3) * 4);
       if (around) pts = simplify(around);
     }
-    out.set(e.id, pts);
+    out.set(e.id, end(pts));
   }
   routeCache.set(doc, out);
   return out;
@@ -435,6 +467,17 @@ export function nearestT(pts: Pt[], p: Pt): number {
     acc += l;
   }
   return at / total;
+}
+
+/** The side of its box a line's end goes into, as drawn (the way its last stretch runs). */
+export function sideOf(doc: Doc, edge: Edge, which: 'from' | 'to'): Dir | undefined {
+  const pts = routeEdges(doc).get(edge.id);
+  if (!pts || pts.length < 2) return undefined;
+  const [end, before] = which === 'to' ? [pts[pts.length - 1], pts[pts.length - 2]] : [pts[0], pts[1]];
+  const dx = before.x - end.x;
+  const dy = before.y - end.y;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? 'left' : 'right';
+  return dy < 0 ? 'top' : 'bottom';
 }
 
 /** The drawn line passing closest to `p` within `tol`, with the point on it. Lines drawn as tags have no run to hit. */

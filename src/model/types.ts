@@ -163,6 +163,8 @@ export type NodeType = Node['type'];
 export interface EdgeEnd {
   node: string;
   port?: string;
+  /** A port-less end held to one side of its box (lines merging there keep together); else the side facing the other end. */
+  side?: 'left' | 'right' | 'top' | 'bottom';
 }
 export interface Edge {
   id: string;

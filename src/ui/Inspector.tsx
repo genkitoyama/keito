@@ -652,7 +652,7 @@ function NodePanel({ n }: { n: Node }) {
         <p className="hint">
           {lines} 本の線がここでつながっています。
           <br />
-          点を選ぶと出る ● をドラッグすると、ここから別の機材へ線を引けます。線の上に線をドロップしても分岐点ができます。
+          点を選ぶと出る ● をドラッグすると、ここから別の機材へ線を引けます。
         </p>
       </>
     );
@@ -970,6 +970,7 @@ export function Inspector() {
   const doc = useStore((s) => s.doc);
   const selection = useStore((s) => s.selection);
   const remove = () => useStore.getState().removeIds(selection);
+  const lines = doc.edges.filter((e) => selection.includes(e.id)).length;
   let body;
   if (selection.length === 0) body = <MetaPanel />;
   else if (selection.length === 1) {
@@ -980,14 +981,15 @@ export function Inspector() {
     body = (
       <>
         <h3>{selection.length} 個を選択中</h3>
-        <div className="grid2">
+        {lines > 0 && <p className="hint">{lines === selection.length ? `線 ${lines} 本` : `うち線 ${lines} 本`}。Delete キーか下の「削除」で消せます。</p>}
+        {selection.length - lines >= 2 && <div className="grid2">
           <button onClick={() => align('left')}>左揃え</button>
           <button onClick={() => align('top')}>上揃え</button>
           <button onClick={() => align('hcenter')}>左右中央</button>
           <button onClick={() => align('vcenter')}>上下中央</button>
           <button onClick={() => align('hspace')}>横に等間隔</button>
           <button onClick={() => align('vspace')}>縦に等間隔</button>
-        </div>
+        </div>}
       </>
     );
   }
