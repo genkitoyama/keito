@@ -4,6 +4,7 @@ import { type Panel, emptyDoc, useStore } from '../model/store';
 import { tidy } from '../model/tidy';
 import { kindOf } from '../model/kinds';
 import { openBoards } from './Boards';
+import { ICON } from './icons';
 import type { Doc } from '../model/types';
 import { download, inlineImages, pickTextFile, safeName } from '../platform/storage';
 
@@ -64,8 +65,8 @@ export function TopBar() {
         削除
       </button>
       <span className="sep" />
-      <button disabled={!canUndo} onClick={() => st().undo()} data-tip="元に戻す（⌘Z）" aria-label="元に戻す">↶</button>
-      <button disabled={!canRedo} onClick={() => st().redo()} data-tip="やり直す（⇧⌘Z）" aria-label="やり直す">↷</button>
+      <button disabled={!canUndo} onClick={() => st().undo()} data-tip="元に戻す（⌘Z）" aria-label="元に戻す" className="icon">{ICON.undo}</button>
+      <button disabled={!canRedo} onClick={() => st().redo()} data-tip="やり直す（⇧⌘Z）" aria-label="やり直す" className="icon">{ICON.redo}</button>
       <span className="sep" />
       <button disabled={viewing} onClick={() => st().setDoc(tidy(st().doc))} data-tip="整頓: 機材の高さをそろえて線をまっすぐにし、折れ位置を並べ直す（⌘Z で戻せます）">
         整頓

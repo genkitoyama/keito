@@ -1756,3 +1756,16 @@ body.row-dragging .lists td.editable:hover {
 .place-hint span {
   color: #94a3b8;
 }
+
+/* Undo / redo: drawn arrows, the height of the text buttons beside them. */
+.topbar button.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  height: 30px;
+}
+.topbar button.icon .ico {
+  width: 17px;
+  height: 17px;
+}

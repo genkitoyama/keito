@@ -19,6 +19,8 @@ export const SHAPES: { id: ShapeKind; label: string; icon: ReactNode }[] = [
 export const shapeIcon = (id: ShapeKind): ReactNode => SHAPES.find((s) => s.id === id)?.icon;
 
 export const ICON = {
+  undo: ico(<path d="M7 11.5L3 7.5l4-4M3 7.5h9a4.5 4.5 0 0 1 0 9H9" />),
+  redo: ico(<path d="M13 11.5l4-4-4-4M17 7.5H8a4.5 4.5 0 0 0 0 9h3" />),
   hand: ico(
     <g transform="scale(0.8333)" strokeWidth="1.9">
       <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8" />
