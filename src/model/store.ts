@@ -15,6 +15,16 @@ import { type Doc, type Edge, type Node, type Revision, type UserPreset, emptyMe
 
 export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
 export type Panel = null | 'lists' | 'text' | 'export' | 'library' | 'boards';
+/**
+ * Something picked from the toolbar or a library, waiting to be put where the user clicks (its
+ * outline follows the pointer). `place` puts it centred on a point of the board.
+ */
+export interface Placing {
+  label: string;
+  size: { w: number; h: number };
+  place(at: { x: number; y: number }): void;
+}
+
 export interface View {
   x: number;
   y: number;
@@ -107,6 +117,8 @@ interface State {
   deleteRevision(id: string): void;
   /** Devices saved for reuse, shared by all boards. */
   presets: UserPreset[];
+  placing: Placing | null;
+  setPlacing(placing: Placing | null): void;
   /** Save a device on the board as a preset (replacing one of the same name, maker and model). */
   savePreset(deviceId: string): void;
   deletePreset(id: string): void;
@@ -149,6 +161,8 @@ export const useStore = create<State>((set, get) => ({
   viewing: null,
   presets: [],
   others: [],
+  placing: null,
+  setPlacing: (placing) => set({ placing, ...(placing ? { tool: 'select' as Tool } : {}) }),
 
   checkpoint: () => set((s) => ({ past: [...s.past.slice(-HISTORY), s.doc], future: [] })),
   setDoc: (doc, record = true) => {
@@ -181,7 +195,8 @@ export const useStore = create<State>((set, get) => ({
       return doc ? { doc, past: [...s.past, s.doc], future: s.future.slice(1), selection: [], editing: null } : s;
     }),
   select: (selection) => set({ selection }),
-  setTool: (tool) => set({ tool }),
+  // Arming a tool puts away whatever was waiting to be placed.
+  setTool: (tool) => set({ tool, placing: null }),
   setView: (view) => set({ view }),
   setEditing: (editing) => set({ editing }),
   setPanel: (panel) => set({ panel }),
@@ -530,7 +545,7 @@ function show(doc: Doc): void {
   baseKept = false;
   keeping = null;
   clearTimeout(settleTimer);
-  useStore.setState({ doc: shown, viewing: null, past: [], future: [], selection: [], editing: null, others: [] });
+  useStore.setState({ doc: shown, viewing: null, past: [], future: [], selection: [], editing: null, others: [], placing: null });
   showInUrl(doc.id);
   requestAnimationFrame(useStore.getState().fit);
   void readProject();

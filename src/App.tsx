@@ -62,7 +62,8 @@ function useHotkeys() {
       else if (mod) handled = false;
       else if (key === 'backspace' || key === 'delete') s.removeIds(s.selection);
       else if (key === 'escape') {
-        if (s.panel) s.setPanel(null);
+        if (s.placing) s.setPlacing(null);
+        else if (s.panel) s.setPanel(null);
         else if (s.tool !== 'select') s.setTool('select');
         else s.select([]);
       } else if (key === 'enter' && editable) s.setEditing(only);

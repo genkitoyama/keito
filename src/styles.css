@@ -1734,3 +1734,25 @@ body.row-dragging .lists td.editable:hover {
 .shared-suggest span {
   flex: 1;
 }
+
+/* While something waits to be placed: what a click (or a drag) will do. */
+.place-hint {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  background: #1e293b;
+  color: #fff;
+  font-size: 12px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.18);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.place-hint span {
+  color: #94a3b8;
+}

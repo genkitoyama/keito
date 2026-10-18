@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { insertImages, insertNode, viewCenter } from '../canvas/Canvas';
-import { intersects, isUnderlay, nodeRect, snap } from '../model/geometry';
-import { COMMON, FURNITURE, type Furniture, PRESETS, type Preset, SOFTWARE, allIds, freshId, makeDevice, makeFurniture, makeLegend } from '../model/presets';
+import type { MouseEvent as RMouseEvent } from 'react';
+import { boxSize, insertImages, insertNode, placeDrag, viewCenter } from '../canvas/Canvas';
+import { intersects, isUnderlay, nodeRect, nodeSize, snap } from '../model/geometry';
+import { COMMON, type CreateKind, FURNITURE, type Furniture, PRESETS, type Preset, SOFTWARE, allIds, freshId, makeDevice, makeFurniture, makeLegend } from '../model/presets';
 import { kindOf } from '../model/kinds';
 import { SCREENS, type ScreenPreset, isOutput, isScreen, makeScreen, pxRatio } from '../model/screens';
 import { FLOW_PARTS, type FlowPart, makeFlowPart } from '../model/flow';
-import type { DeviceNode, UserPreset } from '../model/types';
+import type { DeviceNode, Node, Pt, UserPreset } from '../model/types';
 import { type Tool, useStore } from '../model/store';
 import { getSetting, setSetting } from '../platform/storage';
 import { ICON, ico, shapeIcon } from './icons';
@@ -27,27 +28,46 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: ReactNode }[] = [
 ];
 export const TOOL_KEYS: Record<string, Tool> = Object.fromEntries(TOOLS.map((t) => [t.key.toLowerCase(), t.tool]));
 
-function addDevice(p: Preset | UserPreset) {
-  const s = useStore.getState();
-  const c = viewCenter();
-  // Step sideways until the spot is free so repeated clicks don't stack.
-  let x = snap(c.x - 90);
-  const y = snap(c.y - 60);
-  while (s.doc.nodes.some((n) => Math.abs(n.x - x) < 20 && Math.abs(n.y - y) < 20)) x += 220;
-  const taken = allIds(s.doc);
+/**
+ * Props for a library button: dragged onto the board, its thing goes where it is let go; clicked,
+ * it waits under the pointer to be put where the board is clicked (Enter on the button does the same).
+ */
+function placeable(label: string, sample: () => Node, add: (at: Pt) => void) {
+  const make = () => ({ label, size: nodeSize(sample()), place: add });
+  return {
+    onPointerDown: placeDrag(make),
+    onClick: (e: RMouseEvent) => {
+      if (e.detail === 0) useStore.getState().setPlacing(make());
+    },
+  };
+}
+
+function deviceOf(p: Preset | UserPreset, x: number, y: number, taken: Set<string>): DeviceNode {
   // One of the user's own presets comes back exactly as it was saved.
-  const d: DeviceNode =
-    'key' in p
-      ? makeDevice(p, x, y, taken)
-      : { id: freshId(taken, 'dev'), type: 'device', x, y, h: 0, w: p.w, text: p.name, maker: p.maker, model: p.model, category: p.category, note: p.note, ports: p.ports.map((q) => ({ ...q })), watts: p.watts, capacity: p.capacity, url: p.url, color: p.color };
+  return 'key' in p
+    ? makeDevice(p, x, y, taken)
+    : { id: freshId(taken, 'dev'), type: 'device', x, y, h: 0, w: p.w, text: p.name, maker: p.maker, model: p.model, category: p.category, note: p.note, ports: p.ports.map((q) => ({ ...q })), watts: p.watts, capacity: p.capacity, url: p.url, color: p.color };
+}
+
+const deviceProps = (p: Preset | UserPreset) => placeable(p.name, () => deviceOf(p, 0, 0, new Set()), (at) => addDevice(p, at));
+
+function addDevice(p: Preset | UserPreset, at?: Pt) {
+  const s = useStore.getState();
+  const size = nodeSize(deviceOf(p, 0, 0, new Set()));
+  const c = at ?? viewCenter();
+  let x = snap(c.x - size.w / 2);
+  const y = snap(c.y - size.h / 2);
+  // Without a spot given: step sideways until the spot is free so repeated adds don't stack.
+  if (!at) while (s.doc.nodes.some((n) => Math.abs(n.x - x) < 20 && Math.abs(n.y - y) < 20)) x += 220;
+  const d = deviceOf(p, x, y, allIds(s.doc));
   s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, d] }));
   s.select([d.id]);
   s.setTool('select');
 }
 
-function addLegend() {
+function addLegend(at?: Pt) {
   const s = useStore.getState();
-  const c = viewCenter();
+  const c = at ?? viewCenter();
   const n = makeLegend(allIds(s.doc), snap(c.x - 100), snap(c.y - 40));
   s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, n] }));
   s.select([n.id]);
@@ -64,29 +84,31 @@ function pickImages() {
 
 const MINE = 'マイプリセット';
 
-function addFurniture(f: Furniture) {
+function addFurniture(f: Furniture, at?: Pt) {
   const s = useStore.getState();
-  const c = viewCenter();
+  const c = at ?? viewCenter();
   const n = makeFurniture(f, 0, 0, allIds(s.doc), s.doc.scale);
   // Centred on the view, then stepped aside until it overlaps nothing placed (the room's outline,
   // areas and underlays aside), so repeated clicks set pieces side by side.
   let x = snap(c.x - n.w / 2);
   const y = snap(c.y - n.h / 2);
   const placed = s.doc.nodes.filter((o) => o.type !== 'frame' && !isUnderlay(o)).map(nodeRect);
-  for (let i = 0; i < 40 && placed.some((r) => intersects(r, { x, y, w: n.w, h: n.h })); i++) x += snap(n.w / 2) || 10;
+  // Put where it was let go, it stays there; added from the centre, it steps aside.
+  for (let i = 0; !at && i < 40 && placed.some((r) => intersects(r, { x, y, w: n.w, h: n.h })); i++) x += snap(n.w / 2) || 10;
   s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, { ...n, x, y }] }));
   s.select([n.id]);
   s.setTool('select');
 }
 
-function addScreen(p: ScreenPreset) {
+function addScreen(p: ScreenPreset, at?: Pt) {
   const s = useStore.getState();
-  const c = viewCenter();
+  const c = at ?? viewCenter();
   const n = makeScreen(p, 0, 0, allIds(s.doc), pxRatio(s.doc));
   // An output goes on the canvas under the view's centre if there is one, at its top-left free spot.
   let x = snap(c.x - n.w / 2);
   let y = snap(c.y - n.h / 2);
-  const canvas = p.role !== 'canvas' ? s.doc.nodes.find((o) => isScreen(o) && o.screen.role === 'canvas' && c.x >= o.x && c.x <= o.x + o.w && c.y >= o.y && c.y <= o.y + o.h) : undefined;
+  // (Put where it was let go, it stays there.)
+  const canvas = p.role !== 'canvas' && !at ? s.doc.nodes.find((o) => isScreen(o) && o.screen.role === 'canvas' && c.x >= o.x && c.x <= o.x + o.w && c.y >= o.y && c.y <= o.y + o.h) : undefined;
   if (canvas) {
     x = canvas.x;
     y = canvas.y;
@@ -106,14 +128,14 @@ function addScreen(p: ScreenPreset) {
   s.setTool('select');
 }
 
-function addFlowPart(p: FlowPart) {
+function addFlowPart(p: FlowPart, at?: Pt) {
   const s = useStore.getState();
-  const c = viewCenter();
+  const c = at ?? viewCenter();
   const n = makeFlowPart(p, 0, 0, allIds(s.doc));
   let x = snap(c.x - n.w / 2);
   const y = snap(c.y - n.h / 2);
   const placed = s.doc.nodes.filter((o) => o.type !== 'frame').map(nodeRect);
-  for (let i = 0; i < 40 && placed.some((r) => intersects(r, { x, y, w: n.w, h: n.h })); i++) x += 200;
+  for (let i = 0; !at && i < 40 && placed.some((r) => intersects(r, { x, y, w: n.w, h: n.h })); i++) x += 200;
   s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, { ...n, x, y }] }));
   s.select([n.id]);
   s.setTool('select');
@@ -126,7 +148,7 @@ function FlowLibrary() {
       <div className="library-list">
         <div className="library-cat">
           {FLOW_PARTS.map((p) => (
-            <button key={p.key} className="item" onClick={() => addFlowPart(p)}>
+            <button key={p.key} className="item" {...placeable(p.name, () => makeFlowPart(p, 0, 0, new Set()), (at) => addFlowPart(p, at))}>
               <span className="label">
                 <span>{p.name}</span>
                 <small>{p.hint}</small>
@@ -152,7 +174,7 @@ function ScreenLibrary() {
               <span className="name">{c}</span>
             </div>
             {SCREENS.filter((p) => p.category === c).map((p) => (
-              <button key={p.key} className="item" onClick={() => addScreen(p)}>
+              <button key={p.key} className="item" {...placeable(p.name, () => makeScreen(p, 0, 0, new Set(), pxRatio(useStore.getState().doc)), (at) => addScreen(p, at))}>
                 <span className="label">{p.name}</span>
                 <small>
                   {p.w} × {p.h}
@@ -186,7 +208,7 @@ function FurnitureLibrary() {
             {list
               .filter((f) => f.category === c)
               .map((f) => (
-                <button key={f.key} className="item" onClick={() => addFurniture(f)}>
+                <button key={f.key} className="item" {...placeable(f.name, () => makeFurniture(f, 0, 0, new Set(), useStore.getState().doc.scale), (at) => addFurniture(f, at))}>
                   <span className="label">{f.name}</span>
                   <small>
                     {f.w} × {f.d}
@@ -266,7 +288,7 @@ function Library() {
           {allClosed ? '開く' : 'しまう'}
         </button>
       </div>
-      <button className="library-blank" data-tip={`名前もポートも自分で決める、まっさらな${kind.library?.label ?? '機材'}を置きます`} onClick={() => addDevice(blank)}>
+      <button className="library-blank" data-tip={`名前もポートも自分で決める、まっさらな${kind.library?.label ?? '機材'}を置きます`} {...deviceProps(blank)}>
         ＋ 空の{kind.library?.label ?? '機材'}を置く
       </button>
       <div className="library-list">
@@ -274,7 +296,7 @@ function Library() {
           section(MINE, mine.length, () =>
             mine.map((p) => (
               <div key={p.id} className="my-preset">
-                <button className="item" onClick={() => addDevice(p)}>
+                <button className="item" {...deviceProps(p)}>
                   <span className="label">
                     <span>{p.name}</span>
                     {(p.maker || p.model) && <small>{[p.maker, p.model].filter(Boolean).join(' ')}</small>}
@@ -299,7 +321,7 @@ function Library() {
           const items = list.filter((p) => (p.category || 'その他') === c);
           return section(c, items.length, () =>
             items.map((p) => (
-              <button key={p.key} className="item" onClick={() => addDevice(p)}>
+              <button key={p.key} className="item" {...deviceProps(p)}>
                 <span className="label">{p.name}</span>
                 <small>
                   {p.in.length}in / {p.out.length}out
@@ -335,8 +357,19 @@ export function Toolbar() {
             className={tool === t.tool ? 'on' : ''}
             data-tip={`${t.label}（${t.key}）`}
             aria-label={t.label}
-            // Clicking drops the shape straight onto the board, ready to type; the key arms the tool for click-to-place.
-            onClick={() => (t.tool === 'select' || t.tool === 'pan' ? st().setTool(t.tool) : insertNode(t.tool))}
+            // Select and pan switch at once. A box tool is armed, to put a box where the board is clicked
+            // (or drawn out to a size); dragged onto the board, the box goes where it is let go.
+            {...(t.tool === 'select' || t.tool === 'pan'
+              ? { onClick: () => st().setTool(t.tool) }
+              : {
+                  onPointerDown: placeDrag(
+                    () => ({ label: t.label, size: boxSize(t.tool as CreateKind) ?? { w: 40, h: 40 }, place: (at) => insertNode(t.tool as CreateKind, at) }),
+                    () => st().setTool(tool === t.tool ? 'select' : t.tool),
+                  ),
+                  onClick: (e: RMouseEvent) => {
+                    if (e.detail === 0) st().setTool(tool === t.tool ? 'select' : t.tool);
+                  },
+                })}
           >
             {t.icon}
           </button>
@@ -345,7 +378,7 @@ export function Toolbar() {
           {ico(<path d="M3 4h14v12H3zM3 13l4-4 3 3 3-4 4 5M7 7.5h.01" />)}
         </button>
         {kind.library && (
-          <button data-tip="凡例（使っている線の色の一覧。色を変えると追従します）" aria-label="凡例を置く" onClick={addLegend}>
+          <button data-tip="凡例（使っている線の色の一覧。色を変えると追従します）" aria-label="凡例を置く" {...placeable('凡例', () => makeLegend(new Set(), 0, 0), (at) => addLegend(at))}>
             {ico(<path d="M3 6h5M3 10h5M3 14h5M11 6h6M11 10h6M11 14h4" />)}
           </button>
         )}

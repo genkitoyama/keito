@@ -28,7 +28,7 @@ import {
 import { type CreateKind, allIds, claimPort, junctionSignal, makeEdge, makeImage, makeNode } from '../model/presets';
 import { SEQUENCE_SAMPLE, seqLayout, seqScale } from '../model/sequence';
 import { STRONG } from '../model/signals';
-import { copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
+import { type Placing, copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
 import { type Doc, type Edge, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
 import { canvasOf, isOutput, isScreen } from '../model/screens';
@@ -45,11 +45,12 @@ type Drag =
   | { kind: 'label'; id: string; start: Pt; moved: boolean }
   | { kind: 'marquee'; start: Pt; base: string[] }
   | { kind: 'resize'; id: string; corner: Corner; start: Pt; orig: Rect; moved: boolean; lock?: number }
-  | { kind: 'connect'; from: EdgeEnd; at: Pt; side?: Dir; sx: number; sy: number };
+  | { kind: 'connect'; from: EdgeEnd; at: Pt; side?: Dir; sx: number; sy: number }
+  | { kind: 'place'; start: Pt };
 type ConnectDrag = Extract<Drag, { kind: 'connect' }>;
 type ReconnectDrag = Extract<Drag, { kind: 'reconnect' }>;
 /** While a line is pulled: what letting go here would make (`plan`), else a plain rubber band. */
-type Ghost = null | { kind: 'marquee'; rect: Rect } | { kind: 'connect'; a: Pt; b: Pt; plan: Plan | null };
+type Ghost = null | { kind: 'marquee'; rect: Rect } | { kind: 'size'; rect: Rect } | { kind: 'connect'; a: Pt; b: Pt; plan: Plan | null };
 
 const SIDES: Dir[] = ['left', 'right', 'top', 'bottom'];
 const MIN = { w: 40, h: 30 };
@@ -85,13 +86,68 @@ export function zoomBy(f: number): void {
   s.setView({ k, x: width / 2 - ((width / 2 - v.x) * k) / v.k, y: height / 2 - ((height / 2 - v.y) * k) / v.k });
 }
 
-/** Add a node centred on `at` (default: a free spot near the view centre) and start typing into it. */
-export function insertNode(kind: CreateKind, at?: Pt): void {
+/** World point under a point of the window, if it is over the board. */
+export function worldAt(clientX: number, clientY: number): Pt | null {
+  const el = document.getElementById('canvas');
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  if (clientX < r.left || clientX > r.right || clientY < r.top || clientY > r.bottom) return null;
+  const v = st().view;
+  return { x: (clientX - r.left - v.x) / v.k, y: (clientY - r.top - v.y) / v.k };
+}
+
+/** The tools that put a box on the board. */
+export const placesBox = (tool: string): tool is CreateKind => tool !== 'select' && tool !== 'pan';
+
+/** The size a new box of a kind comes in (none for a sequence diagram, which sizes itself). */
+export function boxSize(kind: CreateKind): { w: number; h: number } | null {
+  if (kind === 'sequence') return null;
+  const n = makeNode(kind, 0, 0, new Set());
+  return { w: n.w, h: n.h };
+}
+
+/**
+ * Pointer handling for a toolbar or library button whose thing goes onto the board: dragged
+ * there, it is put where it is let go; clicked, it waits (outlined under the pointer) to be put
+ * where the board is clicked next — `click` overrides that (a tool button arms its tool).
+ */
+export function placeDrag(make: () => Placing, click?: () => void) {
+  return (e: RPointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const sx = e.clientX;
+    const sy = e.clientY;
+    let dragging = false;
+    const move = (ev: PointerEvent) => {
+      if (dragging || Math.hypot(ev.clientX - sx, ev.clientY - sy) <= 5) return;
+      dragging = true;
+      st().setPlacing(make());
+    };
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      if (!dragging) return click ? click() : st().setPlacing(make());
+      const at = worldAt(ev.clientX, ev.clientY);
+      const placing = st().placing;
+      st().setPlacing(null);
+      if (at && placing) placing.place(at);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+}
+
+/**
+ * Add a node centred on `at` (default: a free spot near the view centre) and start typing into
+ * it; with `rect` it takes that place and size (drawn out with the tool).
+ */
+export function insertNode(kind: CreateKind, at?: Pt, rect?: Rect): void {
   const s = st();
   const p = at ?? viewCenter();
   const n = makeNode(kind, snap(p.x), snap(p.y), allIds(s.doc), kind === 'sequence' ? SEQUENCE_SAMPLE : '');
   n.x = snap(n.x);
   n.y = snap(n.y);
+  if (rect && kind !== 'sequence') Object.assign(n, { x: snap(rect.x), y: snap(rect.y), w: Math.max(MIN.w, snap(rect.w)), h: Math.max(MIN.h, snap(rect.h)) });
   if (!at && kind !== 'frame') {
     // Toolbar inserts step down until they no longer cover an existing node.
     const taken = s.doc.nodes.filter((m) => m.type !== 'frame').map(nodeRect);
@@ -193,6 +249,9 @@ export function Canvas() {
   const selection = useStore((s) => s.selection);
   const tool = useStore((s) => s.tool);
   const editing = useStore((s) => s.editing);
+  const placing = useStore((s) => s.placing);
+  /** Where the pointer is on the board, while something waits to be placed (its outline follows). */
+  const [pointer, setPointer] = useState<Pt | null>(null);
   const [hover, setHover] = useState<string | null>(null);
   const [hoverSide, setHoverSide] = useState<Dir | null>(null);
   /** The box a line was just connected on: no dots on it until the pointer has left it. */
@@ -297,7 +356,13 @@ export function Canvas() {
     }
     if (e.button !== 0) return;
     const p = world(e);
-    if (tool !== 'select') return insertNode(tool, p);
+    if (st().placing) {
+      const what = st().placing!;
+      st().setPlacing(null);
+      return what.place(p);
+    }
+    // A box tool: a click puts one there, a drag draws it out to the size wanted.
+    if (placesBox(tool)) return begin(e, { kind: 'place', start: p });
     // Double-click on empty canvas drops a box and starts typing, like a whiteboard.
     if (doubleClick('canvas')) return insertNode('rect', p);
     const base = e.shiftKey ? st().selection : [];
@@ -306,7 +371,8 @@ export function Canvas() {
   };
 
   const onNodeDown = (e: RPointerEvent, n: Node) => {
-    if (e.button !== 0 || tool !== 'select' || space) return;
+    // While something waits to be placed, a click on a box goes through to the board (into an area, say).
+    if (e.button !== 0 || tool !== 'select' || space || st().placing) return;
     e.stopPropagation();
     const s = st();
     if (doubleClick(n.id) && hasText(n)) {
@@ -355,7 +421,7 @@ export function Canvas() {
   };
 
   const onEdgeDown = (e: RPointerEvent, id: string) => {
-    if (e.button !== 0 || tool !== 'select' || space) return;
+    if (e.button !== 0 || tool !== 'select' || space || st().placing) return;
     e.stopPropagation();
     const s = st();
     if (doubleClick(id)) {
@@ -383,7 +449,7 @@ export function Canvas() {
   };
 
   const onLabelDown = (e: RPointerEvent, id: string) => {
-    if (e.button !== 0 || tool !== 'select' || space) return;
+    if (e.button !== 0 || tool !== 'select' || space || st().placing) return;
     e.stopPropagation();
     const s = st();
     if (doubleClick(id)) {
@@ -467,6 +533,7 @@ export function Canvas() {
 
   const onMove = (e: RPointerEvent) => {
     const d = drag.current;
+    if (st().placing || placesBox(st().tool)) setPointer(world(e));
     if (!d) return;
     const s = st();
     if (d.kind === 'pan') {
@@ -489,6 +556,11 @@ export function Canvas() {
         isTagged(s.doc, x) ? edgeTags(s.doc, x, SCREEN).some((t) => intersects(rect, t)) : (routes.get(x.id) ?? []).some((q, i, pts) => i > 0 && segmentHits(pts[i - 1], q, rect)),
       );
       s.select([...new Set([...d.base, ...hit.map((n) => n.id), ...lines.map((x) => x.id)])]);
+      return;
+    }
+    if (d.kind === 'place') {
+      const rect = { x: Math.min(d.start.x, p.x), y: Math.min(d.start.y, p.y), w: Math.abs(p.x - d.start.x), h: Math.abs(p.y - d.start.y) };
+      setGhost(tool !== 'sequence' && (rect.w > 8 / s.view.k || rect.h > 8 / s.view.k) ? { kind: 'size', rect } : null);
       return;
     }
     if (d.kind === 'connect') {
@@ -631,6 +703,14 @@ export function Canvas() {
     }
     setGuides({});
     setBusy(false);
+    if (d?.kind === 'place') {
+      // Worked out from the pointer itself: a quick drag may end before its outline was ever drawn.
+      const p = world(e);
+      const rect = { x: Math.min(d.start.x, p.x), y: Math.min(d.start.y, p.y), w: Math.abs(p.x - d.start.x), h: Math.abs(p.y - d.start.y) };
+      const sized = tool !== 'sequence' && (rect.w > 8 / st().view.k || rect.h > 8 / st().view.k);
+      if (placesBox(tool)) insertNode(tool, sized ? center(rect) : d.start, sized ? rect : undefined);
+      return;
+    }
     if (d?.kind === 'segment') {
       // Bends that ended up on a straight run are dropped; a route with none left is automatic again.
       const s = st();
@@ -680,7 +760,9 @@ export function Canvas() {
   const handleNode = doc.nodes.find((n) => n.id === hover && n.id !== hush && hasHandles(n)) ?? (single && hasHandles(single) ? single : undefined);
   const hs = 8 / view.k;
   const idle = tool === 'select' && !editing && !busy;
-  const cursor = space || tool === 'pan' ? 'grab' : tool === 'select' ? 'default' : 'crosshair';
+  const cursor = space || tool === 'pan' ? 'grab' : tool === 'select' && !placing ? 'default' : 'crosshair';
+  // What waits to be placed, outlined under the pointer: a library item, or the box an armed tool makes.
+  const waiting = placing ? { label: placing.label, size: placing.size } : placesBox(tool) && boxSize(tool) && !busy ? { label: '', size: boxSize(tool)! } : null;
   const preview = idle && handleNode && canConnect(handleNode) && hoverSide ? spawnRect(doc, handleNode, hoverSide) : null;
 
   const nodeGroup = (n: Node) => (
@@ -710,7 +792,7 @@ export function Canvas() {
         void insertImages([...e.dataTransfer.files], world(e));
       }}
     >
-      <svg ref={svgRef} width="100%" height="100%" style={{ cursor }} onPointerDown={onBackgroundDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onDoubleClick={onDoubleClick}>
+      <svg ref={svgRef} width="100%" height="100%" style={{ cursor }} onPointerDown={onBackgroundDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={() => setPointer(null)} onDoubleClick={onDoubleClick}>
         <defs>
           <pattern id="dots" width={20 * view.k} height={20 * view.k} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
             <circle cx={1} cy={1} r={1} fill="#cbd5e1" />
@@ -825,12 +907,29 @@ export function Canvas() {
           {guides.x != null && <line x1={guides.x} y1={-1e5} x2={guides.x} y2={1e5} stroke="#f43f5e" strokeWidth={1 / view.k} pointerEvents="none" />}
           {guides.y != null && <line x1={-1e5} y1={guides.y} x2={1e5} y2={guides.y} stroke="#f43f5e" strokeWidth={1 / view.k} pointerEvents="none" />}
           {ghost?.kind === 'connect' && <ConnectGhost ghost={ghost} doc={doc} k={view.k} />}
+          {waiting && pointer && !ghost && (
+            <g pointerEvents="none">
+              <rect x={pointer.x - waiting.size.w / 2} y={pointer.y - waiting.size.h / 2} width={waiting.size.w} height={waiting.size.h} rx={4 / view.k} fill="rgba(37,99,235,0.06)" stroke={ACCENT} strokeOpacity={0.7} strokeWidth={1.5 / view.k} strokeDasharray={`${5 / view.k} ${4 / view.k}`} />
+              {waiting.label && (
+                <text x={pointer.x} y={pointer.y - waiting.size.h / 2 - 6 / view.k} fontSize={11 / view.k} fill={ACCENT} textAnchor="middle" fontFamily={SCREEN.font}>
+                  {waiting.label}
+                </text>
+              )}
+            </g>
+          )}
+          {ghost?.kind === 'size' && <rect x={ghost.rect.x} y={ghost.rect.y} width={ghost.rect.w} height={ghost.rect.h} rx={4 / view.k} fill="rgba(37,99,235,0.06)" stroke={ACCENT} strokeWidth={1.5 / view.k} strokeDasharray={`${5 / view.k} ${4 / view.k}`} pointerEvents="none" />}
           {ghost?.kind === 'marquee' && <rect x={ghost.rect.x} y={ghost.rect.y} width={ghost.rect.w} height={ghost.rect.h} fill="rgba(37,99,235,0.08)" stroke={ACCENT} strokeWidth={1 / view.k} pointerEvents="none" />}
         </g>
       </svg>
       {editing && <TextEditor key={editing} id={editing} />}
       {/* Keyed by the selection so an open menu never carries over to another object. */}
       {idle && selection.length > 0 && <QuickBar key={selection.join(',')} />}
+      {(placing || placesBox(tool)) && !busy && (
+        <div className="place-hint">
+          {placing ? `「${placing.label}」: 置きたい所をクリック` : tool === 'sequence' ? '置きたい所をクリック' : '置きたい所をクリック、ドラッグで大きさを決めて置く'}
+          <span>Esc でやめる</span>
+        </div>
+      )}
       <div className="zoom">
         <button onClick={() => zoomBy(1 / 1.25)} title="縮小">−</button>
         <button onClick={() => st().setView({ ...view, k: 1 })} title="100%">{Math.round(view.k * 100)}%</button>
