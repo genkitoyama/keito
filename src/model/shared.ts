@@ -8,7 +8,8 @@ import type { DeviceNode, Doc, Node, ShapeNode } from './types';
  * opened (taking in what changed elsewhere meanwhile, say by the command line).
  *
  * A piece of software names the device it runs on (`runsOn`) and takes its host name and address;
- * a screen output names the device port that feeds it (`feed`) and takes its name as its source.
+ * a screen output names the device port that feeds it (`feed`) and takes its name as its source;
+ * a rack lists devices it holds (`rack.items[].shared`) under their names.
  */
 
 export type ShareNode = (DeviceNode | ShapeNode) & { shared?: string; sharedAt?: number };
@@ -97,6 +98,15 @@ export function pull(doc: Doc, entries: Entry[]): Doc {
       const host = deviceOf(entries, next.runsOn);
       const want = host ? { host: host.host?.trim() || deviceName(host), ip: host.ip } : null;
       if (want && (want.host !== next.host || want.ip !== next.ip)) next = { ...next, ...want };
+    }
+    // What a rack holds may be devices of a system board: their names follow the devices'.
+    if (next.type === 'shape' && next.rack?.items.some((i) => i.shared)) {
+      const rack = next.rack;
+      const items = rack.items.map((i) => {
+        const d = i.shared ? deviceOf(entries, i.shared) : undefined;
+        return d && deviceName(d) && deviceName(d) !== i.name ? { ...i, name: deviceName(d) } : i;
+      });
+      if (items.some((i, k) => i !== rack.items[k])) next = { ...next, rack: { ...rack, items } };
     }
     if (next.type === 'shape' && next.screen?.feed) {
       const src = deviceOf(entries, next.screen.feed.shared);

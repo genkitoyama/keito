@@ -10,8 +10,8 @@ import { docBounds, nodeRect } from './geometry';
 import { allIds, freshId, makeNode, randomId } from './presets';
 import { SAMPLE_YAML } from './sample';
 import { registerSignals } from './signals';
-import { type Entry, type ShareNode, catalog, newKey, pull, stamp, takeFrom } from './shared';
-import { type Doc, type Edge, type Node, type Revision, type UserPreset, emptyMeta } from './types';
+import { type Entry, type ShareNode, catalog, deviceName, newKey, pull, stamp, takeFrom } from './shared';
+import { type DeviceNode, type Doc, type Edge, type Node, type Revision, type UserPreset, emptyMeta } from './types';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
 export type Panel = null | 'lists' | 'text' | 'export' | 'library' | 'boards';
@@ -135,6 +135,8 @@ interface State {
   feedFrom(nodeId: string, source: Entry | null, port?: string): void;
   /** Open another board with one of its nodes selected and in view. */
   openAt(boardId: string, nodeId: string): void;
+  /** Add a device of another board to what a rack holds (its name follows the device's). */
+  rackDevice(nodeId: string, device: Entry): void;
 }
 
 let backend: Backend | null = null;
@@ -376,6 +378,16 @@ export const useStore = create<State>((set, get) => ({
         nodes: d.nodes.map((n) => (n.id === nodeId && n.type === 'shape' && n.screen ? { ...n, screen: { ...n.screen, feed: key ? { shared: key, port } : undefined } } : n)),
       }));
       pullIn();
+    }),
+  rackDevice: (nodeId, device) =>
+    void run(async (b) => {
+      if (get().viewing) return;
+      const key = await shareKey(b, device);
+      if (!key) return;
+      get().mutate((d) => ({
+        ...d,
+        nodes: d.nodes.map((n) => (n.id === nodeId && n.type === 'shape' && n.rack ? { ...n, rack: { ...n.rack, items: [...n.rack.items, { name: deviceName(device.node as DeviceNode), u: 1, shared: key }] } } : n)),
+      }));
     }),
   openAt: (boardId, nodeId) =>
     void run(async (b) => {

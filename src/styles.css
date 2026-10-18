@@ -1769,3 +1769,22 @@ body.row-dragging .lists td.editable:hover {
   width: 17px;
   height: 17px;
 }
+
+/* What a rack holds, one row per item: name, units, order. */
+.rack-fields select {
+  width: 100%;
+  margin-top: 2px;
+}
+.rack-fields .port-row input.units {
+  flex: none;
+  width: 44px;
+}
+.rack-fields .unit {
+  align-self: center;
+  font-size: 11px;
+  color: var(--muted, #64748b);
+}
+.rack-fields .linked {
+  align-self: center;
+  font-size: 11px;
+}

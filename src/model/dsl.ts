@@ -6,7 +6,7 @@ import { VIDEO_STANDARDS, currentSignal, customSignals, isBuiltInSignal, isSigna
 import { cableKind } from './standards';
 import { upgradeOrder } from './lists';
 import { upgradeDoc } from './video';
-import type { ColorKey, CustomSignal, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FlowSpec, FrameNode, Node, ScreenSpec, ShapeKind } from './types';
+import type { ColorKey, CustomSignal, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FlowSpec, FrameNode, Node, RackSpec, ScreenSpec, ShapeKind } from './types';
 import { PALETTE } from './signals';
 
 /** Schema reference shown in the editor and given to the AI. */
@@ -14,6 +14,7 @@ export const DSL_GUIDE = `# keito YAML 書式
 title: 図のタイトル
 kind: system               # 任意。ボードの種類 system（システム図）/ software（ソフトウェア構成図）/ sequence / flow（体験フロー）/ layout（配置図）/ screen（画面レイアウト図）/ free
                            # 配置図は 1 m = 100（pos・size の単位）。shapes の dims: true で寸法を表示、images の under: true で下敷き
+                           # ラックは shapes に rack: { units: 42, items: [{ name: L2スイッチ, u: 1 }, { name: メインPC, u: 4, shared: システム図の機材の shared キー }] }（上から順）
                            # 体験フローは shapes に flow: { role: start|state|branch|end, action: 入ったときにすること }、flows のラベルがきっかけ
                            # 画面レイアウト図は pos・size × 4 = コンテンツの px。shapes に screen: { role: canvas|display|projector|led, native: [1920, 1080], output: PC1 HDMI 1, feed: { shared: 機材の shared キー, port: HDMI 1 } }
 project: 案件名            # 任意
@@ -213,6 +214,7 @@ export function toYaml(doc: Doc): string {
         if (s.fill && s.fill !== 'tint') o.fill = s.fill;
         if (s.dash) o.dash = true;
         if (s.dims) o.dims = true;
+        if (s.rack) o.rack = { units: s.rack.units, items: s.rack.items.map((i) => ({ name: i.name, u: i.u, ...(i.shared ? { shared: i.shared } : {}) })) };
         if (s.screen) o.screen = { ...s.screen };
         if (s.flow) o.flow = { ...s.flow };
         put(o, 'shared', s.shared);
@@ -299,6 +301,16 @@ function sharing(v: Record<string, unknown>, old: Node | undefined): { shared?: 
   const shared = str(v.shared) || undefined;
   const at = old && (old.type === 'device' || old.type === 'shape') && old.shared === shared ? old.sharedAt : undefined;
   return shared ? { shared, ...(at ? { sharedAt: at } : {}) } : {};
+}
+
+/** `rack: { units: 42, items: [{ name, u, shared }] }` on a rack of a layout board. */
+function readRack(v: unknown): RackSpec | undefined {
+  if (!isObj(v)) return undefined;
+  const units = typeof v.units === 'number' && v.units >= 1 ? Math.min(60, Math.round(v.units)) : 42;
+  const items = arr(v.items)
+    .filter(isObj)
+    .map((i) => ({ name: str(i.name), u: typeof i.u === 'number' && i.u >= 1 ? Math.min(60, Math.round(i.u)) : 1, ...(str(i.shared) ? { shared: str(i.shared) } : {}) }));
+  return { units, items };
 }
 
 /** `screen: { role, native, output, feed }` on a shape of a screen layout board. */
@@ -422,7 +434,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     else if (kind === 'text') nodes.push({ ...base, type: 'text', fontSize, bold });
     else {
       const fill = ['solid', 'outline', 'none'].includes(str(v.fill)) ? (str(v.fill) as FillStyle) : undefined;
-      nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined, dims: v.dims === true || undefined, screen: readScreen(v.screen), flow: readFlow(v.flow), fontSize, bold, ...sharing(v, prevById.get(id)) });
+      nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined, dims: v.dims === true || undefined, rack: readRack(v.rack), screen: readScreen(v.screen), flow: readFlow(v.flow), fontSize, bold, ...sharing(v, prevById.get(id)) });
     }
     if (v.area) areaHint.set(id, str(v.area));
   });

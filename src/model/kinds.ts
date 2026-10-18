@@ -11,7 +11,7 @@ import type { Doc } from './types';
 export type BoardKind = NonNullable<Doc['kind']>;
 
 /** The lists a board can have, by key (see lists.ts). */
-export type ListKey = 'equipment' | 'cables' | 'summary' | 'power' | 'network' | 'comms' | 'fixtures' | 'outputs' | 'transitions' | 'check';
+export type ListKey = 'equipment' | 'cables' | 'summary' | 'power' | 'network' | 'comms' | 'fixtures' | 'racks' | 'outputs' | 'transitions' | 'check';
 
 export interface KindSpec {
   id: BoardKind;
@@ -74,7 +74,7 @@ export const KINDS: Record<BoardKind, KindSpec> = {
     tools: ['select', 'pan', 'rect', 'ellipse', 'round', 'cloud', 'sticky', 'text', 'frame'],
     library: { label: '什器', search: '什器を検索…', set: 'furniture' },
     lines: (s) => s.id === 'flow',
-    lists: ['fixtures'],
+    lists: ['fixtures', 'racks'],
     listsLabel: '配置物一覧',
     cableOptions: false,
   },

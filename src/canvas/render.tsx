@@ -1,3 +1,4 @@
+import { type RackNode, rackLines, rackUse } from '../model/rack';
 import type { ReactNode } from 'react';
 import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isCanvasShape, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { LEGEND, shownRows } from '../model/legend';
@@ -544,10 +545,28 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
               {dims}
             </text>
           )}
+          {n.rack && n.rack.items.length > 0 && <RackContents n={n as RackNode} theme={theme} />}
         </g>
       );
     }
   }
+}
+
+/** What a rack holds, listed beside it: each item with its units, then what is free. */
+function RackContents({ n, theme }: { n: RackNode; theme: Theme }) {
+  const lines = rackLines(n.rack);
+  const size = 10;
+  const over = rackUse(n.rack).free < 0;
+  return (
+    <text x={n.x + n.w + 6} y={n.y + size} fontFamily={theme.font} fontSize={size} fill="#334155">
+      <tspan fontWeight={600}>{n.rack.units}U</tspan>
+      {lines.map((l, i) => (
+        <tspan key={i} x={n.x + n.w + 6} dy={size * 1.35} fill={i === lines.length - 1 ? (over ? '#dc2626' : '#64748b') : undefined}>
+          {l}
+        </tspan>
+      ))}
+    </text>
+  );
 }
 
 /** A line's label; may run over several lines when the user's own text does. */

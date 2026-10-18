@@ -374,6 +374,8 @@ export interface Furniture {
   /** Width and depth in millimetres. */
   w: number;
   d: number;
+  /** A 19-inch rack of this many units: what goes in it can be listed. */
+  rack?: number;
   shape: ShapeKind;
   color: ColorKey;
   fill?: 'solid' | 'none';
@@ -387,8 +389,8 @@ export const FURNITURE: Furniture[] = [
   { key: 'desk1200', name: '机', category: '机・椅子', w: 1200, d: 600, shape: 'rect', color: 'white' },
   { key: 'fold1800', name: '折りたたみ机', category: '机・椅子', w: 1800, d: 450, shape: 'rect', color: 'white' },
   { key: 'chair', name: '椅子', category: '机・椅子', w: 450, d: 450, shape: 'ellipse', color: 'gray' },
-  { key: 'rack', name: '19インチラック', category: 'ラック・台', w: 600, d: 1000, shape: 'rect', color: 'gray' },
-  { key: 'halfrack', name: 'ハーフラック', category: 'ラック・台', w: 600, d: 600, shape: 'rect', color: 'gray' },
+  { key: 'rack', name: '19インチラック', category: 'ラック・台', w: 600, d: 1000, shape: 'rect', color: 'gray', rack: 42 },
+  { key: 'halfrack', name: 'ハーフラック', category: 'ラック・台', w: 600, d: 600, shape: 'rect', color: 'gray', rack: 24 },
   { key: 'deskrack', name: '卓上ラック', category: 'ラック・台', w: 550, d: 450, shape: 'rect', color: 'gray' },
   { key: 'case', name: '機材ケース', category: 'ラック・台', w: 800, d: 600, shape: 'rect', color: 'yellow' },
   { key: 'monstand', name: 'モニタースタンド', category: 'ラック・台', w: 1000, d: 600, shape: 'rect', color: 'blue' },
@@ -409,5 +411,5 @@ export const FURNITURE: Furniture[] = [
 /** A piece of furniture as a shape at (x, y), sized by the board's scale (px per metre). */
 export function makeFurniture(f: Furniture, x: number, y: number, taken: Set<string>, scale = 100): Node {
   const px = (mm: number) => Math.max(4, Math.round((mm * scale) / 1000));
-  return { id: freshId(taken, f.key), type: 'shape', shape: f.shape, x, y, w: px(f.w), h: px(f.d), text: f.name, color: f.color, fill: f.fill, dash: f.dash || undefined, dims: true, fontSize: 11 };
+  return { id: freshId(taken, f.key), type: 'shape', shape: f.shape, x, y, w: px(f.w), h: px(f.d), text: f.name, color: f.color, fill: f.fill, dash: f.dash || undefined, dims: true, fontSize: 11, ...(f.rack ? { rack: { units: f.rack, items: [] } } : {}) };
 }

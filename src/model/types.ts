@@ -55,6 +55,21 @@ export interface ShapeNode extends Base, Shareable {
   screen?: ScreenSpec;
   /** On an experience flow board: what part of the flow this is (see flow.ts). */
   flow?: FlowSpec;
+  /** A 19-inch rack on a layout board: its size and what goes in it (see rack.ts). */
+  rack?: RackSpec;
+}
+export interface RackSpec {
+  /** Height in rack units. */
+  units: number;
+  /** What is mounted in it, top first. */
+  items: RackItem[];
+}
+export interface RackItem {
+  name: string;
+  /** Units it takes (1 U = 44.45 mm). */
+  u: number;
+  /** The device of a system board it is (its shared key): its name follows that device's. */
+  shared?: string;
 }
 export interface FlowSpec {
   role: 'start' | 'state' | 'branch' | 'end';

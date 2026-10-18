@@ -7,11 +7,13 @@ import { cableIds, colourKey, idShown, ipIssues, labelStacked, lengthShown, quan
 import { PRESETS, SOFTWARE, freshId } from '../model/presets';
 import { type BoardKind, KINDS, KIND_ORDER, kindOf } from '../model/kinds';
 import { ROLE_LABEL, placeRegion, regionOf } from '../model/screens';
+import { rackUse } from '../model/rack';
+import { catalog } from '../model/shared';
 import { FLOW_LABEL } from '../model/flow';
 import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
-import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type FlowSpec, type Rect, type ScreenSpec, type ShapeKind } from '../model/types';
+import { type Arrow, type DeviceNode, type RackItem, type RackSpec, type Doc, type DocMeta, type Edge, type Node, type Port, type FlowSpec, type Rect, type ScreenSpec, type ShapeKind } from '../model/types';
 import { FILLS, FillPreview, SHAPES, sizesFor } from './icons';
 import { textHeightFor, textWeight } from '../canvas/render';
 import { useShallow } from 'zustand/react/shallow';
@@ -558,6 +560,67 @@ function RealSize({ n }: { n: Extract<Node, { type: 'shape' }> }) {
   );
 }
 
+/**
+ * What a rack holds, top first: names and units, in order by hand; devices of the project's
+ * system boards can be added (their names then follow the devices').
+ */
+function RackFields({ n, rack }: { n: Extract<Node, { type: 'shape' }>; rack: RackSpec }) {
+  const st = useStore.getState;
+  const set = (items: RackItem[], record = true) => st().updateNode(n.id, { rack: { ...rack, items } }, record);
+  const item = (i: number, p: Partial<RackItem>, record = true) => set(rack.items.map((x, k) => (k === i ? { ...x, ...p } : x)), record);
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= rack.items.length) return;
+    const items = [...rack.items];
+    [items[i], items[j]] = [items[j], items[i]];
+    set(items);
+  };
+  const { used, free } = rackUse(rack);
+  const others = useStore((s) => s.others);
+  const doc = useStore((s) => s.doc);
+  // Gear of the project's system boards not in this rack yet.
+  const inRack = new Set(rack.items.map((i) => i.shared).filter(Boolean));
+  const gear = doc.meta.project?.trim() ? catalog(others.filter((d) => (d.kind ?? 'system') === 'system')).filter((e) => e.node.type === 'device' && !(e.node.shared && inRack.has(e.node.shared))) : [];
+  return (
+    <div className="rack-fields">
+      <h4>
+        ラックの中身（上から）
+        <button className="mini" onClick={() => set([...rack.items, { name: '', u: 1 }])}>
+          ＋追加
+        </button>
+      </h4>
+      <MmField label="ラックの大きさ (U)" value={String(rack.units)} onCommit={(v) => st().updateNode(n.id, { rack: { ...rack, units: Math.max(1, Math.min(60, Math.round(Number(v.normalize('NFKC')) || rack.units))) } }, true)} />
+      {rack.items.map((x, i) => (
+        <div className="port-row" key={i}>
+          <PortName value={x.name} onChange={(v) => item(i, { name: v }, false)} />
+          <input className="units" type="number" min={1} max={60} value={x.u} title="U 数" onChange={(e) => item(i, { u: Math.max(1, Math.min(60, Math.round(Number(e.target.value) || 1))) })} />
+          <span className="unit">U</span>
+          {x.shared && <span className="linked" data-tip="システム図の機材。名前はそちらに合わせて変わります">🔗</span>}
+          <button className="mini" onClick={() => move(i, -1)} title="上へ">↑</button>
+          <button className="mini" onClick={() => move(i, 1)} title="下へ">↓</button>
+          <button className="mini danger" onClick={() => set(rack.items.filter((_, k) => k !== i))} title="外す">×</button>
+        </div>
+      ))}
+      {gear.length > 0 && (
+        <select value="" onChange={(e) => {
+          const g = gear.find((x) => `${x.board}|${x.node.id}` === e.target.value);
+          if (g) st().rackDevice(n.id, g);
+        }}>
+          <option value="">システム図の機材から追加…</option>
+          {gear.map((g) => (
+            <option key={`${g.board}|${g.node.id}`} value={`${g.board}|${g.node.id}`}>
+              {g.node.text.split('\n')[0]}
+            </option>
+          ))}
+        </select>
+      )}
+      <p className={free < 0 ? 'error' : 'hint'}>
+        {used}U 使用 ／ {free >= 0 ? `空き ${free}U` : `${-free}U 足りません`}（全 {rack.units}U）
+      </p>
+    </div>
+  );
+}
+
 /** Scale a picture to its real width (a floor plan known to be 24 m across), by the board's scale. */
 function RealWidth({ n }: { n: Extract<Node, { type: 'image' }> }) {
   const scale = useStore((s) => s.doc.scale || 100);
@@ -715,6 +778,13 @@ function NodePanel({ n }: { n: Node }) {
         </>
       )}
       {n.type === 'shape' && !n.screen && (layout || n.dims) && <RealSize n={n} />}
+      {n.type === 'shape' && n.rack && <RackFields n={n} rack={n.rack} />}
+      {/* A rack put before racks could list their contents. */}
+      {n.type === 'shape' && !n.rack && layout && /ラック/.test(n.text) && (
+        <button className="wide" onClick={() => patch({ rack: { units: /ハーフ/.test(n.text) ? 24 : 42, items: [] } }, true)}>
+          ラックの中身を書く
+        </button>
+      )}
       {n.type === 'shape' && (
         <label className="field">
           <span>形</span>

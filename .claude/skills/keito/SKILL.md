@@ -25,7 +25,7 @@ keito のボードは `boards/<タイトル>__<id>/board.json` に保存され�
 - `software`（ソフトウェア構成図）: アプリ・サーバー・DB などの部品と通信。線の `type` は http / websocket / osc / mqtt / tcp / udp / ndi / file / data、ポートは `spec`（例 `7000/udp`）、`ip` / `host` は動作ホスト。`lists <ボード> comms` で通信一覧。
 - `sequence`: シーケンス図だけ。ソースは keito の短い書き方のほか、Mermaid（`sequenceDiagram`）や PlantUML（`@startuml`）をそのまま書いてよい。
 - `flow`（体験フロー）: shapes に `flow: { role: start|state|branch|end, action: 入ったときにすること }`、flows（矢印）の `label` がきっかけ。`lists <ボード> transitions` で状態遷移表、`check` で抜けの確認。
-- `layout`（配置図）: 1 m = 100（pos・size の単位）。什器は shapes に `dims: true`。下敷き画像は images の `under: true`。`lists <ボード> fixtures` で配置物一覧。
+- `layout`（配置図）: 1 m = 100（pos・size の単位）。什器は shapes に `dims: true`。下敷き画像は images の `under: true`。`lists <ボード> fixtures` で配置物一覧。ラックの中身は shapes に `rack: { units: 42, items: [{ name: L2スイッチ, u: 1 }, …] }`（上から順、システム図の機材なら `shared` に機材の shared キー）、`lists <ボード> racks` でラック表。
 - `screen`（画面レイアウト図）: pos・size × 4 = コンテンツの px。shapes に `screen: { role: canvas|display|projector|led, native: [w, h], output: 送出元 }`。出力はキャンバスの上に置く。`lists <ボード> outputs` で出力一覧。
 - `free`: 図形とメモだけ。
 - 新しく作るときは `new <タイトル> --kind <種類> --project <案件名>`。同じ案件のボードは案件名をそろえる。

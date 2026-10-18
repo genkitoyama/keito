@@ -33,7 +33,7 @@ const HELP = `keito — 系統図ボードをコマンドラインから読み�
   new <タイトル> [ファイル|-] [--kind 種類] [--project 案件名]
                                  YAML から新しいボードを作る（YAML なしで空のボード）。種類: system / software / sequence / flow / layout / screen / free
   lists <ボード> [表] [--csv|--json]
-                                 表を表示。表: equipment / cables / summary / power / network / comms（通信一覧）/ fixtures（配置物一覧）/ outputs（出力一覧）/ transitions（状態遷移表）/ check
+                                 表を表示。表: equipment / cables / summary / power / network / comms（通信一覧）/ fixtures（配置物一覧）/ racks（ラック表）/ outputs（出力一覧）/ transitions（状態遷移表）/ check
                                  （既定はボードの種類の最初の表）
   check <ボード>                  チェック表。要修正があれば終了コード 1
   xlsx <ボード> [-o ファイル] [--update 前回.xlsx]

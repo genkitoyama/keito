@@ -5,6 +5,7 @@ import { cableKind } from './standards';
 import type { ListKey } from './kinds';
 import { ROLE_LABEL, canvasOf, isOutput, overlaps, regionOf } from './screens';
 import { FLOW_LABEL, flowIssues, flowName, isFlow, transitions } from './flow';
+import { racksOf, rackUse } from './rack';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node } from './types';
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
@@ -696,6 +697,35 @@ export function fixturesTable(doc: Doc): Table {
   };
 }
 
+/** The racks of a layout board and what goes in each, top first, with the units left. */
+export function racksTable(doc: Doc): Table {
+  const rows: string[][] = [];
+  const refs: string[][] = [];
+  const rowClass: (string | undefined)[] = [];
+  for (const r of racksOf(doc)) {
+    const name = oneLine(r.text) || 'ラック';
+    r.rack.items.forEach((item, i) => {
+      rows.push([name, String(i + 1), item.name.trim(), String(item.u)]);
+      refs.push([r.id]);
+      rowClass.push(undefined);
+    });
+    const { free } = rackUse(r.rack);
+    rows.push([name, '', free >= 0 ? `空き（全 ${r.rack.units}U）` : `${-free}U 足りません（全 ${r.rack.units}U）`, String(free)]);
+    refs.push([r.id]);
+    rowClass.push(free < 0 ? 'over' : 'subtotal');
+  }
+  return {
+    title: 'ラック表',
+    head: ['ラック', '順', '名称', 'U数'],
+    widths: [20, 6, 30, 8],
+    rows,
+    refs,
+    rowClass,
+    numeric: ['順', 'U数'],
+    empty: '什器ライブラリの 19インチラック・ハーフラックを置き、右のパネルで中身を並べると、ここにラックごとに並びます。',
+  };
+}
+
 /**
  * Outputs of a screen layout board: each output's region of the canvas in content pixels, its own
  * resolution and how much the region is scaled to fit it, what feeds it, and what it overlaps.
@@ -763,6 +793,7 @@ export const TABLES: Record<ListKey, { label: string; make: (doc: Doc) => Table 
   network: { label: 'ネットワーク', make: networkTable },
   comms: { label: '通信一覧', make: commsTable },
   fixtures: { label: '配置物一覧', make: fixturesTable },
+  racks: { label: 'ラック表', make: racksTable },
   outputs: { label: '出力一覧', make: outputsTable },
   transitions: { label: '状態遷移表', make: transitionsTable },
   check: { label: 'チェック', make: checkTable },
