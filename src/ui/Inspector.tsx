@@ -281,7 +281,7 @@ function DevicePanel({ n }: { n: DeviceNode }) {
   const st = useStore.getState;
   const patch = (p: Partial<DeviceNode>, record = false) => st().updateNode(n.id, p, record);
   const link = safeUrl(n.url);
-  const saved = useStore((s) => s.presets.some((p) => p.name === n.text && p.maker === n.maker && p.model === n.model));
+  const saved = useStore((s) => s.presets.some((p) => p.name === n.text && p.maker === n.maker && p.model === n.model && !!p.software === (kindOf(s.doc).id === 'software')));
   const setPort = (id: string, p: Partial<Port>, record: boolean) => patch({ ports: n.ports.map((x) => (x.id === id ? { ...x, ...p } : x)) }, record);
   const addPort = (side: Port['side']) => {
     // A name of its own (IN, IN 2, IN 3 …), so a cable can always tell its port from the others.

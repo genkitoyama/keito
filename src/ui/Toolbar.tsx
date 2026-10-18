@@ -254,7 +254,8 @@ function Library() {
   const list = source.filter((p) => p.key !== blankKey && (q || every || software || COMMON.has(p.key)) && hit(`${p.name}${p.category}${p.key}`));
   const blank = source.find((p) => p.key === blankKey)!;
   const cats = [...new Set(list.map((p) => p.category || 'その他'))];
-  const mine = useStore((s) => s.presets).filter((p) => hit(`${p.name}${p.category}${p.maker}${p.model}`));
+  // The user's own presets of this library's kind: their gear on a system board, their software on a software board.
+  const mine = useStore((s) => s.presets).filter((p) => !!p.software === software && hit(`${p.name}${p.category}${p.maker}${p.model}`));
   const all = [...(mine.length ? [MINE] : []), ...cats];
   const allClosed = !all.some((c) => opened.includes(c));
   const section = (name: string, count: number, body: () => ReactNode) => {

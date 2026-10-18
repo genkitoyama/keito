@@ -3,7 +3,7 @@ import { drawingOf, entryFor, fingerprint, thin } from './history';
 import { create } from 'zustand';
 import { type Backend, type BoardInfo, Conflict, connect, externalize, localBoards } from '../platform/storage';
 import { fromYaml } from './dsl';
-import { type BoardKind, KINDS } from './kinds';
+import { type BoardKind, KINDS, kindOf } from './kinds';
 import { SEQUENCE_SAMPLE } from './sequence';
 import { readBoard } from './load';
 import { docBounds, nodeRect } from './geometry';
@@ -285,9 +285,12 @@ export const useStore = create<State>((set, get) => ({
   savePreset: (deviceId) => void run(async (b) => {
     const d = get().doc.nodes.find((n) => n.id === deviceId);
     if (d?.type !== 'device') return;
-    const same = (p: UserPreset): boolean => p.name === d.text && p.maker === d.maker && p.model === d.model;
+    // Gear and software are kept apart: a PC saved from a system board is no part of a software board.
+    const software = kindOf(get().doc).id === 'software';
+    const same = (p: UserPreset): boolean => p.name === d.text && p.maker === d.maker && p.model === d.model && !!p.software === software;
     const preset: UserPreset = {
       id: get().presets.find(same)?.id ?? randomId(),
+      ...(software ? { software } : {}),
       name: d.text,
       category: d.category,
       maker: d.maker,

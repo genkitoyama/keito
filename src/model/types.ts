@@ -226,6 +226,8 @@ export interface DocMeta {
 /** A device the user saved to reuse: everything about it except where it sits. */
 export interface UserPreset {
   id: string;
+  /** Saved from a software board: a piece of software, offered in the parts library only (else gear). */
+  software?: boolean;
   name: string;
   category: string;
   maker: string;
