@@ -1924,8 +1924,14 @@ body.row-dragging .lists td.editable:hover {
 .comments-panel .comment.on {
   background: var(--accent-soft);
 }
-.comments-panel .comment input {
-  margin-top: 2px;
+.comments-panel .settle {
+  flex-shrink: 0;
+  align-self: center;
+}
+.settled {
+  color: #16a34a;
+  font-weight: 700;
+  margin-right: auto;
 }
 .comments-panel .swatch {
   width: 10px;

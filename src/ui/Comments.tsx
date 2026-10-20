@@ -34,20 +34,22 @@ export function CommentsPanel() {
     const [first, ...rest] = n.text.trim().split('\n');
     return (
       <li key={n.id} className={`comment${selection.includes(n.id) ? ' on' : ''}${n.done ? ' done' : ''}`} onClick={() => go(n)}>
-        <input
-          type="checkbox"
-          checked={!!n.done}
-          disabled={viewing}
-          title={n.done ? '未解決に戻す' : '解決済みにする'}
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => settle(n, e.target.checked)}
-        />
         <span className="swatch" style={{ background: STICKY[n.color].fill, borderColor: STICKY[n.color].stroke }} />
         <div className="body">
           <b>{first || '（空の付箋）'}</b>
           {rest.length > 0 && <p>{rest.join('\n')}</p>}
           <small>{when(n.at)}</small>
         </div>
+        <button
+          className={`mini settle${n.done ? '' : ' primary'}`}
+          disabled={viewing}
+          onClick={(e) => {
+            e.stopPropagation();
+            settle(n, !n.done);
+          }}
+        >
+          {n.done ? '未解決に戻す' : '✓ 解決'}
+        </button>
       </li>
     );
   };

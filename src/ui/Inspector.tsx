@@ -589,10 +589,16 @@ function NodePanel({ n }: { n: Node }) {
       )}
       {n.type === 'sticky' && (
         <>
-          <label className="check">
-            <input type="checkbox" checked={!!n.done} onChange={(e) => patch({ done: e.target.checked || undefined }, true)} />
-            解決済みにする（図では薄く表示）
-          </label>
+          {n.done ? (
+            <div className="row">
+              <span className="settled">✓ 解決済み</span>
+              <button onClick={() => patch({ done: undefined }, true)}>未解決に戻す</button>
+            </div>
+          ) : (
+            <button className="primary wide" onClick={() => patch({ done: true }, true)}>
+              ✓ 解決済みにする
+            </button>
+          )}
           <p className="hint">付箋はコメントとして上の「コメント」に一覧で並びます。書き出しには、エクスポートで選んだときだけ入ります。</p>
         </>
       )}

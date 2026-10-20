@@ -30,7 +30,7 @@ import { STRONG } from '../model/signals';
 import { type Placing, copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
 import { type Doc, type Edge, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
-import { EdgeView, HopCaps, INK, NodeView, SCREEN, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
+import { EdgeView, HopCaps, INK, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
@@ -1292,7 +1292,9 @@ function TextEditor({ id }: { id: string }) {
   } else {
     // Same width, size and line height as the SVG text, so nothing jumps on commit.
     const tw = textWidth(node);
-    style = { left: view.x + (node.x + (node.w - tw) / 2) * k, top: view.y + node.y * k, width: tw * k, height: node.h * k, fontSize: textSize(node) * k, fontWeight: textWeight(node) };
+    // A sticky's text sits below its label.
+    const head = node.type === 'sticky' ? STICKY_HEAD : 0;
+    style = { left: view.x + (node.x + (node.w - tw) / 2) * k, top: view.y + (node.y + head) * k, width: tw * k, height: (node.h - head) * k, fontSize: textSize(node) * k, fontWeight: textWeight(node) };
     if (node.type === 'shape' && node.fill === 'solid') style.color = STRONG[node.color].text;
   }
   return (

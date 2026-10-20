@@ -39,11 +39,14 @@ export function textWidth(n: Node): number {
  * rounded up to the grid. Pointed and rounded shapes need more room than their
  * text block, since the text sits in the middle of them.
  */
+/** Room along a sticky's top for its "COMMENT" label: its text is centred in what is left below. */
+export const STICKY_HEAD = 12;
+
 export function textHeightFor(n: Node, text: string): number {
   const size = textSize(n);
   const lines = wrapText(text, textWidth(n), `${textWeight(n)} ${size}px ${SCREEN.font}`).length;
   const shape = n.type === 'shape' ? n.shape : '';
-  const need = (lines * size * TEXT.lineHeight + 22) * (shape === 'diamond' ? 1.7 : shape === 'cloud' ? 1.5 : shape === 'ellipse' ? 1.3 : 1);
+  const need = (lines * size * TEXT.lineHeight + 22 + (n.type === 'sticky' ? STICKY_HEAD : 0)) * (shape === 'diamond' ? 1.7 : shape === 'cloud' ? 1.5 : shape === 'ellipse' ? 1.3 : 1);
   return Math.ceil(need / 10) * 10;
 }
 
@@ -471,7 +474,11 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
               <path d={`M${x + w - f},${y + h} L${x + w},${y + h - f}`} stroke="rgba(0,0,0,0.12)" strokeWidth={0.8} />
             </>
           )}
-          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={textSize(n)} weight={textWeight(n)} theme={theme} />
+          {/* Says what a sticky is for: a comment on the drawing. */}
+          <text x={x + 9} y={y + 14} fontFamily={theme.font} fontSize={8.5} fontWeight={700} letterSpacing="0.1em" fill={mix(c.stroke, '#0f172a', 0.45)}>
+            COMMENT
+          </text>
+          <TextBlock x={cx} y={cy + STICKY_HEAD / 2} w={textWidth(n)} text={n.text} size={textSize(n)} weight={textWeight(n)} theme={theme} />
           {n.done && (
             <g transform={`translate(${x + w - 12},${y + 12})`}>
               <circle r={8} fill="#16a34a" />
