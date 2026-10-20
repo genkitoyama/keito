@@ -111,7 +111,7 @@ header h1,header h2{margin:0;font-size:13pt}header span{color:#64748b;font-size:
 table{width:100%;border-collapse:collapse;table-layout:fixed}
 thead{display:table-header-group}tr{break-inside:avoid}
 th,td{border:.4pt solid #cbd5e1;padding:2.5pt 4pt;text-align:left;vertical-align:top;overflow-wrap:anywhere}
-th{background:#eef2f6;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+th{background:#eef2f6;font-weight:600;vertical-align:bottom;word-break:keep-all;overflow-wrap:anywhere}
 tbody tr:nth-child(even) td{background:#f8fafc}
 .num{text-align:right}tr.total td{font-weight:700;background:#eef2f6;border-top:.8pt solid #334155}tr.member td:first-child{color:#94a3b8}tr.subtotal td{font-weight:700;background:#f4f6f9;border-bottom:.8pt solid #334155}tr.subtotal td:last-child{color:#15803d}tr.subtotal.over td{background:#fdecec}tr.subtotal.over td:last-child{color:#b91c1c}tr.subtotal.unknown td:last-child{color:#64748b;font-weight:400}
 a{color:#1d4ed8;text-decoration:none}
