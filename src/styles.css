@@ -1499,7 +1499,7 @@ body.row-dragging .lists td.editable:hover {
   white-space: nowrap;
 }
 .kind-badge.software {
-  background: #7c3aed;
+  background: #ea580c;
 }
 .kind-badge.sequence {
   background: #0d9488;
@@ -1566,7 +1566,7 @@ body.row-dragging .lists td.editable:hover {
   box-shadow: inset 0 -1px 0 #cbd5e1;
 }
 .board-tabs .board-tab.software {
-  --kind: #7c3aed;
+  --kind: #ea580c;
 }
 .board-tabs .board-tab.sequence {
   --kind: #0d9488;
