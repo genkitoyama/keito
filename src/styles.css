@@ -680,9 +680,12 @@ code {
 .grid2 > * {
   min-width: 0;
 }
-.grid2 input,
+.grid2 input:not([type='checkbox']):not([type='radio']),
 .grid2 select {
   width: 100%;
+}
+.grid2 .check {
+  white-space: nowrap;
 }
 
 .lists {
