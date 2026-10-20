@@ -11,7 +11,7 @@ import { upgradeDoc } from './video';
  */
 export function boardKind(kind: unknown): Doc['kind'] {
   if (kind === 'layout' || kind === 'screen' || kind === 'flow') return 'free';
-  return typeof kind === 'string' && kind in KINDS && kind !== 'system' ? (kind as Doc['kind']) : undefined;
+  return typeof kind === 'string' && Object.hasOwn(KINDS, kind) && kind !== 'system' ? (kind as Doc['kind']) : undefined;
 }
 
 /**
@@ -29,6 +29,9 @@ export function readBoard(v: unknown): Doc | null {
   const old = d as Doc & { scale?: unknown; pxScale?: unknown };
   delete old.scale;
   delete old.pxScale;
+  // A screen board's content canvas lay under its outputs whatever its place in the list: it goes first, so it stays under.
+  const isCanvas = (n: unknown) => (n as { type?: string; screen?: { role?: string } }).type === 'shape' && (n as { screen?: { role?: string } }).screen?.role === 'canvas';
+  if (d.nodes.some(isCanvas)) d.nodes = [...d.nodes.filter(isCanvas), ...d.nodes.filter((n) => !isCanvas(n))];
   // So are the particulars only those boards used: real sizes, racks, screen regions, flow roles; and shared shapes.
   d.nodes = d.nodes.map((n) => {
     if (n.type !== 'shape') return n;

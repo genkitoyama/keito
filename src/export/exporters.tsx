@@ -140,16 +140,21 @@ export function printHtml(html: string): void {
   }, 150);
 }
 
-/** Files packed into one ZIP. Names repeated (two boards of one title) are numbered. */
+/**
+ * Files packed into one ZIP. Names repeated (two boards of one title) are numbered before the
+ * extension ("図_2.png", "図_2.keito.json"); names differing only in case count as the same, as
+ * they would once unpacked on a Mac or Windows.
+ */
 export async function zipFiles(files: { name: string; data: Blob | string }[]): Promise<Blob> {
   const { default: JSZip } = await import('jszip');
   const zip = new JSZip();
   const used = new Set<string>();
   for (const f of files) {
+    const ext = /(\.keito\.json|\.[^.]+)$/.exec(f.name)?.[0] ?? '';
+    const stem = f.name.slice(0, f.name.length - ext.length);
     let name = f.name;
-    const dot = name.indexOf('.') > 0 ? name.indexOf('.') : name.length;
-    for (let i = 2; used.has(name); i++) name = `${f.name.slice(0, dot)}_${i}${f.name.slice(dot)}`;
-    used.add(name);
+    for (let i = 2; used.has(name.toLowerCase()); i++) name = `${stem}_${i}${ext}`;
+    used.add(name.toLowerCase());
     zip.file(name, f.data);
   }
   return zip.generateAsync({ type: 'blob' });

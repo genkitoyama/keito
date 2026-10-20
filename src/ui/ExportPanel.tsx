@@ -6,7 +6,7 @@ import { toYaml } from '../model/dsl';
 import { saveFile } from './TopBar';
 import { sheetTables } from '../export/xlsx';
 import { subset } from '../model/geometry';
-import { useStore } from '../model/store';
+import { loadBoards, useStore } from '../model/store';
 import type { Doc } from '../model/types';
 import { labelOf } from '../model/history';
 import { useProjectTabs } from './BoardTabs';
@@ -53,17 +53,27 @@ export function ExportPanel() {
     setSetting('exportScope', v);
   };
   const order = tabs.map((t) => t.id).join();
+  // An older state on screen exports under its own name or time.
+  const version = useStore((s) => (s.viewing ? labelOf(s.viewing.entry) : undefined));
   const [loaded, setLoaded] = useState<{ order: string; docs: Doc[] }>({ order: '', docs: [] });
   const boards = loaded.docs;
   useEffect(() => {
     if (!all) return;
     let live = true;
-    const docs = order.split(',').map((id) => (id === board.id ? board : others.find((o) => o.id === id))).filter((d): d is Doc => !!d);
-    void Promise.all(docs.map(inlineImages)).then((d) => live && setLoaded({ order, docs: d }));
+    const ids = order.split(',');
+    // The project's boards as last read; any not read yet (just made, or read moments ago) from storage.
+    const missing = ids.filter((id) => id !== board.id && !others.some((o) => o.id === id));
+    void loadBoards(missing).then(async (fresh) => {
+      const docs = ids
+        .map((id) => (id === board.id ? board : (others.find((o) => o.id === id) ?? fresh.find((d) => d.id === id))))
+        .filter((d): d is Doc => !!d && (d.id === board.id || (d.meta.project ?? '').trim() === project));
+      const inlined = await Promise.all(docs.map(inlineImages));
+      if (live) setLoaded({ order, docs: inlined });
+    });
     return () => {
       live = false;
     };
-  }, [all, order, board, others]);
+  }, [all, order, board, others, project]);
   // With something selected, the export can be just that part of the board.
   const selection = useStore((s) => s.selection);
   const [onlySelected, setOnlySelected] = useState(() => selection.length > 0);
@@ -103,7 +113,7 @@ export function ExportPanel() {
   const [scale, setScale] = useState(2);
   const [msg, setMsg] = useState('');
 
-  const tables = useMemo(() => new Map<ListKey, Table>(LISTS.map((k) => [k, compact(TABLES[k].make(doc))])), [doc, kind.id, all]);
+  const tables = useMemo(() => new Map<ListKey, Table>(LISTS.map((k) => [k, compact(TABLES[k].make(doc))])), [doc, LISTS.join()]);
   const chosen = LISTS.filter((k) => lists.includes(k) && tables.get(k)?.rows.length).map((k) => tables.get(k)!);
   // Each board of the project with the chosen lists its kind has, those with rows.
   const parts: PdfPart[] = useMemo(
@@ -114,9 +124,10 @@ export function ExportPanel() {
             tables: LIST_ORDER.filter((k) => lists.includes(k) && kindOf(d).lists.includes(k))
               .map((k) => compact(TABLES[k].make(d)))
               .filter((t) => t.rows.length),
+            version: d.id === board.id ? version : undefined,
           }))
         : [],
-    [all, boards, lists.join()],
+    [all, boards, lists.join(), board.id, version],
   );
   const rowsIn = (t: Table) => t.rows.length - (t.total ? 1 : 0);
   // How many rows a list has on this board, or over all the project's boards.
@@ -137,8 +148,6 @@ export function ExportPanel() {
     return () => watch.disconnect();
   }, [mode]);
   const zoom = width ? Math.min(1, (width - 16) / (PAGE_PX[paper] + 48)) : 0.5;
-  // An older state on screen exports under its own name or time.
-  const version = useStore((s) => (s.viewing ? labelOf(s.viewing.entry) : undefined));
   const html = useMemo(
     () => (all ? bookletHtml(project, parts, paper, zoom) : pdfHtml(doc, { paper, version, tables: chosen }, zoom)),
     [all, parts, project, doc, paper, version, zoom, chosen.map((t) => t.title).join()],
@@ -177,7 +186,7 @@ export function ExportPanel() {
                   このボード
                 </button>
                 <button className={all ? 'on' : ''} onClick={() => setScope('project')} data-tip={`「${project}」のボードすべてを 1 回で`}>
-                  案件まるごと（{tabs.length} 枚）
+                  案件まるごと（{all && loaded.order === order ? boards.length : tabs.length} 枚）
                 </button>
               </div>
             )}

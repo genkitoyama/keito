@@ -5,6 +5,8 @@ import { JUNCTION, freshId, makeEdge, parsePort, presetOf, presetPorts } from '.
 import { VIDEO_STANDARDS, currentSignal, customSignals, isBuiltInSignal, isSignal, registerSignals } from './signals';
 import { cableKind } from './standards';
 import { upgradeOrder } from './lists';
+import { boardKind } from './load';
+import { KINDS } from './kinds';
 import { upgradeDoc } from './video';
 import type { ColorKey, CustomSignal, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FrameNode, Node, ShapeKind } from './types';
 import { PALETTE } from './signals';
@@ -579,7 +581,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   const picked = isObj(root.colors) ? Object.entries(root.colors).filter(([k, v]) => isSignal(k) && HEX.test(str(v))) : null;
   const signalColors = !picked ? prev.signalColors : picked.length ? Object.fromEntries(picked.map(([k, v]) => [k, str(v)])) : undefined;
   // Revision history is not part of the text form; it stays with the board.
-  const KIND_IDS = ['system', 'software', 'sequence', 'free'];
-  const kind = typeof root.kind === 'string' && KIND_IDS.includes(root.kind) ? (root.kind === 'system' ? undefined : (root.kind as Doc['kind'])) : prev.kind;
+  // A kind known now, or an old one that is a free board now (see boardKind); anything else keeps the board's.
+  const kind = typeof root.kind === 'string' && (Object.hasOwn(KINDS, root.kind) || ['layout', 'screen', 'flow'].includes(root.kind)) ? boardKind(root.kind) : prev.kind;
   return { version: 1, id: prev.id, kind, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
 }

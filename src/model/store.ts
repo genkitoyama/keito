@@ -208,10 +208,15 @@ export const useStore = create<State>((set, get) => ({
   },
   openBoard: (id) => void run(async (b) => {
     if (id === get().doc.id) return;
+    // Leaving now would drop the edits that could not be written: they are settled first.
+    if (get().saving === 'conflict') return void alert('このボードはほかの場所で更新されています。先に上の「読み込む」か「この画面で上書き」を選んでください。');
     await quietly(() => settle(b));
     await flush();
     const doc = await b.load(id);
-    if (doc) show(doc);
+    if (doc) return show(doc);
+    // Deleted elsewhere (another tab, the command line): the list stops offering it.
+    set({ boards: await b.list() });
+    alert('そのボードは見つかりませんでした（ほかの場所で削除されたようです）。');
   }),
   newBoard: (doc = emptyDoc()) => void run(async (b) => {
     await quietly(() => settle(b));
@@ -613,6 +618,14 @@ function sharing(fn: () => void): void {
   }
 }
 
+/** Boards read as they are stored, by id (those not found left out): what the project's export takes beside `others`. */
+export async function loadBoards(ids: string[]): Promise<Doc[]> {
+  const b = backend;
+  if (!b) return [];
+  const docs = await Promise.all(ids.map((id) => b.load(id).catch(() => null)));
+  return docs.filter((d): d is Doc => !!d);
+}
+
 let projectRead = 0;
 async function readProject(): Promise<void> {
   const b = backend;
@@ -804,8 +817,13 @@ window.addEventListener('focus', () => {
   const s = useStore.getState();
   // Coming back with nothing unsaved: just look. A conflict is only claimed when something changed.
   if (s.ready && !s.viewing && !s.editing && s.doc === stored) void run(pickUp);
-  // Other boards of the project may have changed too (another tab, browser storage has no events).
-  if (s.ready && !s.viewing) void readProject();
+  // Other boards may have changed too (another tab, browser storage has no events): new ones,
+  // other titles or projects for the tabs, and the project's boards themselves.
+  if (s.ready && !s.viewing)
+    void run(async (b) => {
+      useStore.setState({ boards: await b.list() });
+      await readProject();
+    });
 });
 
 /**
