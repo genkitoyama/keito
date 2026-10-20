@@ -31,9 +31,9 @@ const HELP = `keito — 系統図ボードをコマンドラインから読み�
   show <ボード> [--json]          ボードを YAML（--json で JSON）で表示
   apply <ボード> [ファイル|-]      YAML をボードに反映（- または省略で標準入力）。--relayout で位置を捨てて自動配置
   new <タイトル> [ファイル|-] [--kind 種類] [--project 案件名]
-                                 YAML から新しいボードを作る（YAML なしで空のボード）。種類: system / software / sequence / flow / layout / screen / free
+                                 YAML から新しいボードを作る（YAML なしで空のボード）。種類: system / software / sequence / free
   lists <ボード> [表] [--csv|--json]
-                                 表を表示。表: equipment / cables / summary / power / network / comms（通信一覧）/ fixtures（配置物一覧）/ racks（ラック表）/ outputs（出力一覧）/ transitions（状態遷移表）/ check
+                                 表を表示。表: equipment / cables / summary / power / network / comms（通信一覧）/ check
                                  （既定はボードの種類の最初の表）
   check <ボード>                  チェック表。要修正があれば終了コード 1
   xlsx <ボード> [-o ファイル] [--update 前回.xlsx]
@@ -219,7 +219,7 @@ async function main(): Promise<void> {
     case 'boards': {
       const all = boards.list();
       if (!all.length) return void console.log(`（ボードはありません: ${boards.root}）`);
-      const KIND_LABEL: Record<string, string> = { software: 'ソフトウェア構成図', sequence: 'シーケンス図', flow: '体験フロー', layout: '配置図', screen: '画面レイアウト図', free: '自由ボード' };
+      const KIND_LABEL: Record<string, string> = { software: 'ソフトウェア構成図', sequence: 'シーケンス図', free: '自由ボード' };
       for (const b of all) console.log(`${b.id}\t${b.project ?? '（案件なし）'}\t${KIND_LABEL[b.kind ?? ''] ?? 'システム図'}\t${b.title}\t${new Date(b.updated).toLocaleString('ja-JP')}`);
       return;
     }
@@ -251,7 +251,7 @@ async function main(): Promise<void> {
       const projectArg = option('--project');
       const title = args[0];
       if (!title) fail('タイトルを指定してください');
-      if (kindArg && !['system', 'software', 'sequence', 'flow', 'layout', 'screen', 'free'].includes(kindArg)) fail('種類は system / software / sequence / flow / layout / screen / free のどれかです');
+      if (kindArg && !['system', 'software', 'sequence', 'free'].includes(kindArg)) fail('種類は system / software / sequence / free のどれかです');
       const blank: Doc = { version: 1, id: randomId(), kind: kindArg && kindArg !== 'system' ? (kindArg as Doc['kind']) : undefined, meta: { ...emptyMeta(title), project: projectArg ?? '' }, nodes: [], edges: [] };
       const src = args[1] !== undefined || !process.stdin.isTTY ? await input(args[1]) : '';
       let doc = blank;

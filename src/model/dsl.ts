@@ -6,17 +6,13 @@ import { VIDEO_STANDARDS, currentSignal, customSignals, isBuiltInSignal, isSigna
 import { cableKind } from './standards';
 import { upgradeOrder } from './lists';
 import { upgradeDoc } from './video';
-import type { ColorKey, CustomSignal, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FlowSpec, FrameNode, Node, RackSpec, ScreenSpec, ShapeKind } from './types';
+import type { ColorKey, CustomSignal, DeviceNode, Doc, Edge, EdgeEnd, FillStyle, FrameNode, Node, ShapeKind } from './types';
 import { PALETTE } from './signals';
 
 /** Schema reference shown in the editor and given to the AI. */
 export const DSL_GUIDE = `# keito YAML 書式
 title: 図のタイトル
-kind: system               # 任意。ボードの種類 system（システム図）/ software（ソフトウェア構成図）/ sequence / flow（体験フロー）/ layout（配置図）/ screen（画面レイアウト図）/ free
-                           # 配置図は 1 m = 100（pos・size の単位）。shapes の dims: true で寸法を表示、images の under: true で下敷き
-                           # ラックは shapes に rack: { units: 42, items: [{ name: L2スイッチ, u: 1 }, { name: メインPC, u: 4, shared: システム図の機材の shared キー }] }（上から順）
-                           # 体験フローは shapes に flow: { role: start|state|branch|end, action: 入ったときにすること }、flows のラベルがきっかけ
-                           # 画面レイアウト図は pos・size × 4 = コンテンツの px。shapes に screen: { role: canvas|display|projector|led, native: [1920, 1080], output: PC1 HDMI 1, feed: { shared: 機材の shared キー, port: HDMI 1 } }
+kind: system               # 任意。ボードの種類 system（システム図）/ software（ソフトウェア構成図）/ sequence / free
 project: 案件名            # 任意
 signals:                   # 任意。このボードだけの信号種別
   - { id: hdbt, label: HDBaseT, prefix: HDB, color: "#0d9488" }
@@ -41,7 +37,7 @@ devices:
     qty: 2                 # 任意。この 1 枠が表す台数（省略時は名前末尾の「x2」、なければ 1）
     vendor: 手配先          # 任意。手配先・担当（機材リストの「区分」になる）
     ip: 192.168.0.10       # 任意。IP アドレス / host でホスト名（ネットワーク表に出る）
-    shared: sh_ab12cd34    # 任意。同じ案件のほかのボードと「同じもの」にするキー（同じキーどうしで名前・型番・IP などがそろう）。shapes にも書ける
+    shared: sh_ab12cd34    # 任意。同じ案件のほかのボードと「同じもの」にするキー（同じキーどうしで名前・型番・IP などがそろう）
     runsOn: sh_ab12cd34    # 任意。ソフトウェア構成図の部品が動く機材の shared キー（ホスト名・IP がその機材に合う）
     color: blue            # 任意。機材の色分け（手配元・系統など）
     preset: pc             # 任意。in/out を省略したときの既定ポート
@@ -75,7 +71,7 @@ shapes:                    # フローチャート・付箋
 flows:                     # 矢印コネクタ（shapes / devices どちらも可）
   - { from: s1, to: s2, label: はい }   # toSide: left などで入る辺を固定（同じ辺に入る線は手前で合流する。fromSide も可）
 images:                    # 埋め込み画像。データ本体は id で引き継がれる（src に data URL / URL も可）
-  - { id: img1, name: logo, pos: [x, y], size: [w, h] }
+  - { id: img1, name: logo, pos: [x, y], size: [w, h] }   # under: true で下敷き（一番下に薄く敷き、クリックで選ばれない）
 legends:                   # 凡例。使っている線の色が自動で並ぶ。names で行の呼び名を付けられる
   - { id: legend1, pos: [x, y], title: 凡例, names: { "#ea7a2e": 映像系統 } }
 junctions:                 # 分岐点（古いボードの形式。新しくは書かない。同じ to に向かう線は図で自動的に合流する）
@@ -132,8 +128,6 @@ function refOf(doc: Doc, end: EdgeEnd): string {
 export function toYaml(doc: Doc): string {
   const out: Obj = { title: doc.meta.title };
   if (doc.kind) out.kind = doc.kind;
-  if (doc.scale) out.scale = doc.scale;
-  if (doc.pxScale) out.pxScale = doc.pxScale;
   put(out, 'project', doc.meta.project);
 
   if (doc.powerTags === false) out.powerTags = false;
@@ -213,11 +207,6 @@ export function toYaml(doc: Doc): string {
       if (s.type === 'shape') {
         if (s.fill && s.fill !== 'tint') o.fill = s.fill;
         if (s.dash) o.dash = true;
-        if (s.dims) o.dims = true;
-        if (s.rack) o.rack = { units: s.rack.units, items: s.rack.items.map((i) => ({ name: i.name, u: i.u, ...(i.shared ? { shared: i.shared } : {}) })) };
-        if (s.screen) o.screen = { ...s.screen };
-        if (s.flow) o.flow = { ...s.flow };
-        put(o, 'shared', s.shared);
       }
       o.pos = [r(s.x), r(s.y)];
       o.size = [r(s.w), r(s.h)];
@@ -283,43 +272,13 @@ const DEFAULT_SIZE: Record<string, [number, number]> = {
 };
 
 /**
- * Build a doc from YAML. Nodes without `pos` keep their position from `prev`
- * (matched by id) unless `relayout`; anything still unplaced is auto-laid-out.
- */
-/** `flow: { role, action }` on a shape of an experience flow board. */
-function readFlow(v: unknown): FlowSpec | undefined {
-  if (!isObj(v)) return undefined;
-  const role = ['start', 'state', 'branch', 'end'].includes(str(v.role)) ? (str(v.role) as FlowSpec['role']) : 'state';
-  return { role, ...(str(v.action) ? { action: str(v.action) } : {}) };
-}
-
-/**
  * `shared: key`: the node is one thing with the nodes of that key on the project's other boards.
  * When it was last changed is not written out; it is kept from the node as it was.
  */
 function sharing(v: Record<string, unknown>, old: Node | undefined): { shared?: string; sharedAt?: number } {
   const shared = str(v.shared) || undefined;
-  const at = old && (old.type === 'device' || old.type === 'shape') && old.shared === shared ? old.sharedAt : undefined;
+  const at = old && old.type === 'device' && old.shared === shared ? old.sharedAt : undefined;
   return shared ? { shared, ...(at ? { sharedAt: at } : {}) } : {};
-}
-
-/** `rack: { units: 42, items: [{ name, u, shared }] }` on a rack of a layout board. */
-function readRack(v: unknown): RackSpec | undefined {
-  if (!isObj(v)) return undefined;
-  const units = typeof v.units === 'number' && v.units >= 1 ? Math.min(60, Math.round(v.units)) : 42;
-  const items = arr(v.items)
-    .filter(isObj)
-    .map((i) => ({ name: str(i.name), u: typeof i.u === 'number' && i.u >= 1 ? Math.min(60, Math.round(i.u)) : 1, ...(str(i.shared) ? { shared: str(i.shared) } : {}) }));
-  return { units, items };
-}
-
-/** `screen: { role, native, output, feed }` on a shape of a screen layout board. */
-function readScreen(v: unknown): ScreenSpec | undefined {
-  if (!isObj(v)) return undefined;
-  const role = ['canvas', 'display', 'projector', 'led'].includes(str(v.role)) ? (str(v.role) as ScreenSpec['role']) : 'display';
-  const native = nums(v.native, 2);
-  const feed = isObj(v.feed) && str(v.feed.shared) ? { shared: str(v.feed.shared), port: str(v.feed.port) } : undefined;
-  return { role, ...(native ? { native: [native[0], native[1]] as [number, number] } : {}), ...(str(v.output) ? { output: str(v.output) } : {}), ...(feed ? { feed } : {}) };
 }
 
 /** `listOrder: { equipment: [pc1, sw1], … }`: the hand-made order of each list, as ids. */
@@ -329,6 +288,10 @@ function readOrder(v: unknown): Record<string, string[]> | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
+/**
+ * Build a doc from YAML. Nodes without `pos` keep their position from `prev`
+ * (matched by id) unless `relayout`; anything still unplaced is auto-laid-out.
+ */
 export function fromYaml(src: string, prev: Doc, relayout = false): Doc {
   // Reading the YAML registers its own signal types so cables can use them. The registry is
   // global, so it goes back to what it was afterwards, whether or not the YAML was valid: the
@@ -434,7 +397,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     else if (kind === 'text') nodes.push({ ...base, type: 'text', fontSize, bold });
     else {
       const fill = ['solid', 'outline', 'none'].includes(str(v.fill)) ? (str(v.fill) as FillStyle) : undefined;
-      nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined, dims: v.dims === true || undefined, rack: readRack(v.rack), screen: readScreen(v.screen), flow: readFlow(v.flow), fontSize, bold, ...sharing(v, prevById.get(id)) });
+      nodes.push({ ...base, type: 'shape', shape: SHAPES.includes(kind as ShapeKind) ? (kind as ShapeKind) : 'rect', color: color ?? 'white', fill, dash: v.dash === true || undefined, fontSize, bold });
     }
     if (v.area) areaHint.set(id, str(v.area));
   });
@@ -616,9 +579,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   const picked = isObj(root.colors) ? Object.entries(root.colors).filter(([k, v]) => isSignal(k) && HEX.test(str(v))) : null;
   const signalColors = !picked ? prev.signalColors : picked.length ? Object.fromEntries(picked.map(([k, v]) => [k, str(v)])) : undefined;
   // Revision history is not part of the text form; it stays with the board.
-  const KIND_IDS = ['system', 'software', 'sequence', 'flow', 'layout', 'screen', 'free'];
+  const KIND_IDS = ['system', 'software', 'sequence', 'free'];
   const kind = typeof root.kind === 'string' && KIND_IDS.includes(root.kind) ? (root.kind === 'system' ? undefined : (root.kind as Doc['kind'])) : prev.kind;
-  const scale = typeof root.scale === 'number' && root.scale > 0 ? root.scale : prev.scale;
-  const pxScale = typeof root.pxScale === 'number' && root.pxScale > 0 ? root.pxScale : prev.pxScale;
-  return { version: 1, id: prev.id, kind, scale, pxScale, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
+  return { version: 1, id: prev.id, kind, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
 }

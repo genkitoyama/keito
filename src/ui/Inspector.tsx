@@ -6,19 +6,15 @@ import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
 import { cableIds, colourKey, idShown, ipIssues, labelStacked, lengthShown, quantityOf, unitsOf } from '../model/lists';
 import { PRESETS, SOFTWARE, freshId } from '../model/presets';
 import { type BoardKind, KINDS, KIND_ORDER, kindOf } from '../model/kinds';
-import { ROLE_LABEL, placeRegion, regionOf } from '../model/screens';
-import { rackUse } from '../model/rack';
-import { catalog } from '../model/shared';
-import { FLOW_LABEL } from '../model/flow';
 import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
-import { type Arrow, type DeviceNode, type RackItem, type RackSpec, type Doc, type DocMeta, type Edge, type Node, type Port, type FlowSpec, type Rect, type ScreenSpec, type ShapeKind } from '../model/types';
+import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type ShapeKind } from '../model/types';
 import { FILLS, FillPreview, SHAPES, sizesFor } from './icons';
 import { textHeightFor, textWeight } from '../canvas/render';
 import { useShallow } from 'zustand/react/shallow';
 import { Revisions } from './Revisions';
-import { FeedFrom, RunsOn, SharedSection, sharesHere } from './Shared';
+import { RunsOn, SharedSection } from './Shared';
 
 /** Text input that records one undo step per editing burst instead of per keystroke. */
 function Field({ label, value, onChange, multiline, wrap, type = 'text', placeholder, onPasteText, list }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean; wrap?: boolean; type?: string; placeholder?: string; onPasteText?: (text: string) => boolean; list?: string }) {
@@ -234,7 +230,6 @@ function MetaPanel() {
           ))}
         </select>
       </label>
-      {kind.id === 'layout' && <p className="hint">縮尺は 1 m = 100 px（方眼の点 1 マス = 20 cm、矢印キー 1 回 = 10 cm）。什器は実寸で置かれます。平面図の画像は、選んで「実寸の横幅」を入れると縮尺に合います。</p>}
       <Underlays />
       <Revisions />
       {kind.cableOptions && (
@@ -449,203 +444,8 @@ function PortName({ value, onChange }: { value: string; onChange: (v: string) =>
 }
 
 
-/**
- * A length in millimetres, taken when typing is done (Enter or leaving the field): the board keeps
- * whole pixels, so applying each keystroke would round the number under the cursor.
- */
-function MmField({ label, value, onCommit, position }: { label: string; value: string; onCommit: (v: string) => void; position?: boolean }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const commit = () => {
-    // A size must be positive; a position (X, Y) may be 0 or even negative.
-    const v = Number((draft ?? '').normalize('NFKC'));
-    if (draft !== null && draft.trim() !== '' && (position ? Number.isFinite(v) : v > 0) && draft !== value) onCommit(draft);
-    setDraft(null);
-  };
-  return (
-    <label className="field">
-      <span>{label}</span>
-      <input inputMode="numeric" value={draft ?? value} onFocus={() => setDraft(value)} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={(e) => !e.nativeEvent.isComposing && e.key === 'Enter' && commit()} />
-    </label>
-  );
-}
-
-/**
- * A canvas or an output on a screen layout board: its region in content pixels (where it sits on
- * its canvas), the output's own resolution, and what feeds it.
- */
-function ScreenFields({ n, screen }: { n: Extract<Node, { type: 'shape' }>; screen: ScreenSpec }) {
-  const doc = useStore((s) => s.doc);
-  const r = regionOf(doc, n);
-  const st = useStore.getState;
-  const place = (part: Partial<Rect>) => st().updateNode(n.id, placeRegion(st().doc, n, part), true);
-  const set = (p: Partial<ScreenSpec>) => st().updateNode(n.id, { screen: { ...screen, ...p } }, true);
-  const num = (v: string) => Math.round(Number(v.normalize('NFKC')));
-  const canvas = screen.role === 'canvas';
-  const [native, setNative] = useState<string | null>(null);
-  const shownNative = screen.native ? `${screen.native[0]}×${screen.native[1]}` : '';
-  return (
-    <>
-      <label className="field">
-        <span>種類</span>
-        <select value={screen.role} onChange={(e) => set({ role: e.target.value as ScreenSpec['role'] })}>
-          {(Object.keys(ROLE_LABEL) as ScreenSpec['role'][]).map((k) => (
-            <option key={k} value={k}>
-              {ROLE_LABEL[k]}
-            </option>
-          ))}
-        </select>
-      </label>
-      {!canvas && (
-        <div className="grid2">
-          <MmField position label="X (px)" value={String(r.x)} onCommit={(v) => place({ x: num(v) })} />
-          <MmField position label="Y (px)" value={String(r.y)} onCommit={(v) => place({ y: num(v) })} />
-        </div>
-      )}
-      <div className="grid2">
-        <MmField label="幅 (px)" value={String(r.w)} onCommit={(v) => place({ w: num(v) })} />
-        <MmField label="高さ (px)" value={String(r.h)} onCommit={(v) => place({ h: num(v) })} />
-      </div>
-      {!canvas && (
-        <>
-          <label className="field">
-            <span>機器の解像度（領域と違うとき。例: 1920x1080）</span>
-            <input
-              value={native ?? shownNative}
-              placeholder={`${r.w}×${r.h}（領域どおり）`}
-              onFocus={() => setNative(shownNative)}
-              onChange={(e) => setNative(e.target.value)}
-              onBlur={() => {
-                const m = /^(\d+)\s*[x×*]\s*(\d+)$/i.exec((native ?? '').normalize('NFKC').trim());
-                if (native !== null && native !== shownNative) set({ native: m ? [Number(m[1]), Number(m[2])] : undefined });
-                setNative(null);
-              }}
-            />
-          </label>
-          {screen.native && <p className="hint">拡大率 {Math.round((screen.native[0] / r.w) * 100)}%（領域 {r.w}px → 機器 {screen.native[0]}px）</p>}
-          <FeedFrom n={n} screen={screen} />
-          {screen.feed ? (
-            <p className="hint">送出元: {screen.output || '—'}（機材の名前が変わるとここも変わります）</p>
-          ) : (
-            <Field label="送出元（PC・出力端子）" placeholder="例: PC1 HDMI 1" value={screen.output ?? ''} onChange={(v) => st().updateNode(n.id, { screen: { ...screen, output: v || undefined } })} />
-          )}
-        </>
-      )}
-      {canvas && <p className="hint">この上に出力を並べると、出力の位置がこのキャンバス上の座標（左上が 0, 0）になります。</p>}
-    </>
-  );
-}
-
-/** Width and depth of a shape in millimetres, by the board's scale; and turning it a quarter round. */
-function RealSize({ n }: { n: Extract<Node, { type: 'shape' }> }) {
-  const scale = useStore((s) => s.doc.scale || 100);
-  const mm = (px: number) => String(Math.round((px * 1000) / scale));
-  const px = (v: string) => Math.max(4, Math.round((Number(v.normalize('NFKC')) * scale) / 1000));
-  const patch = (p: Partial<Node>, record = false) => useStore.getState().updateNode(n.id, p, record);
-  return (
-    <>
-      <div className="grid2">
-        <MmField label="幅 (mm)" value={mm(n.w)} onCommit={(v) => patch({ w: px(v) }, true)} />
-        <MmField label="奥行 (mm)" value={mm(n.h)} onCommit={(v) => patch({ h: px(v) }, true)} />
-      </div>
-      <div className="row">
-        <button onClick={() => patch({ w: n.h, h: n.w, x: n.x + (n.w - n.h) / 2, y: n.y + (n.h - n.w) / 2 }, true)} data-tip="幅と奥行を入れ替えて 90° 回します（中心はそのまま）">
-          90° 回す
-        </button>
-        <label className="check">
-          <input type="checkbox" checked={!!n.dims} onChange={(e) => patch({ dims: e.target.checked || undefined }, true)} />
-          寸法を図に出す
-        </label>
-      </div>
-    </>
-  );
-}
-
-/**
- * What a rack holds, top first: names and units, in order by hand; devices of the project's
- * system boards can be added (their names then follow the devices').
- */
-function RackFields({ n, rack }: { n: Extract<Node, { type: 'shape' }>; rack: RackSpec }) {
-  const st = useStore.getState;
-  const set = (items: RackItem[], record = true) => st().updateNode(n.id, { rack: { ...rack, items } }, record);
-  const item = (i: number, p: Partial<RackItem>, record = true) => set(rack.items.map((x, k) => (k === i ? { ...x, ...p } : x)), record);
-  const move = (i: number, dir: -1 | 1) => {
-    const j = i + dir;
-    if (j < 0 || j >= rack.items.length) return;
-    const items = [...rack.items];
-    [items[i], items[j]] = [items[j], items[i]];
-    set(items);
-  };
-  const { used, free } = rackUse(rack);
-  const others = useStore((s) => s.others);
-  const doc = useStore((s) => s.doc);
-  // Gear of the project's system boards not in this rack yet.
-  const inRack = new Set(rack.items.map((i) => i.shared).filter(Boolean));
-  const gear = doc.meta.project?.trim() ? catalog(others.filter((d) => (d.kind ?? 'system') === 'system')).filter((e) => e.node.type === 'device' && !(e.node.shared && inRack.has(e.node.shared))) : [];
-  return (
-    <div className="rack-fields">
-      <h4>
-        ラックの中身（上から）
-        <button className="mini" onClick={() => set([...rack.items, { name: '', u: 1 }])}>
-          ＋追加
-        </button>
-      </h4>
-      <MmField label="ラックの大きさ (U)" value={String(rack.units)} onCommit={(v) => st().updateNode(n.id, { rack: { ...rack, units: Math.max(1, Math.min(60, Math.round(Number(v.normalize('NFKC')) || rack.units))) } }, true)} />
-      {rack.items.map((x, i) => (
-        <div className="port-row" key={i}>
-          <PortName value={x.name} onChange={(v) => item(i, { name: v }, false)} />
-          <input className="units" type="number" min={1} max={60} value={x.u} title="U 数" onChange={(e) => item(i, { u: Math.max(1, Math.min(60, Math.round(Number(e.target.value) || 1))) })} />
-          <span className="unit">U</span>
-          {x.shared && <span className="linked" data-tip="システム図の機材。名前はそちらに合わせて変わります">🔗</span>}
-          <button className="mini" onClick={() => move(i, -1)} title="上へ">↑</button>
-          <button className="mini" onClick={() => move(i, 1)} title="下へ">↓</button>
-          <button className="mini danger" onClick={() => set(rack.items.filter((_, k) => k !== i))} title="外す">×</button>
-        </div>
-      ))}
-      {gear.length > 0 && (
-        <select value="" onChange={(e) => {
-          const g = gear.find((x) => `${x.board}|${x.node.id}` === e.target.value);
-          if (g) st().rackDevice(n.id, g);
-        }}>
-          <option value="">システム図の機材から追加…</option>
-          {gear.map((g) => (
-            <option key={`${g.board}|${g.node.id}`} value={`${g.board}|${g.node.id}`}>
-              {g.node.text.split('\n')[0]}
-            </option>
-          ))}
-        </select>
-      )}
-      <p className={free < 0 ? 'error' : 'hint'}>
-        {used}U 使用 ／ {free >= 0 ? `空き ${free}U` : `${-free}U 足りません`}（全 {rack.units}U）
-      </p>
-    </div>
-  );
-}
-
-/** Scale a picture to its real width (a floor plan known to be 24 m across), by the board's scale. */
-function RealWidth({ n }: { n: Extract<Node, { type: 'image' }> }) {
-  const scale = useStore((s) => s.doc.scale || 100);
-  const [m, setM] = useState('');
-  const apply = () => {
-    const v = Number(m.normalize('NFKC'));
-    if (!(v > 0)) return;
-    const w = Math.round(v * scale);
-    useStore.getState().updateNode(n.id, { w, h: Math.round((n.h * w) / n.w) }, true);
-    setM('');
-  };
-  return (
-    <div className="row real-width">
-      <input placeholder={`実寸の横幅 (m)　今 ${(n.w / scale).toFixed(2)} m`} value={m} onChange={(e) => setM(e.target.value)} onKeyDown={(e) => !e.nativeEvent.isComposing && e.key === 'Enter' && apply()} />
-      <button onClick={apply} disabled={!(Number(m.normalize('NFKC')) > 0)}>
-        縮尺に合わせる
-      </button>
-    </div>
-  );
-}
-
 function NodePanel({ n }: { n: Node }) {
   const patch = (p: Partial<Node>, record = false) => useStore.getState().updateNode(n.id, p, record);
-  const layout = useStore((s) => kindOf(s.doc).id === 'layout');
-  const kind = useStore((s) => s.doc.kind);
   if (n.type === 'device') return <DevicePanel key={n.id} n={n} />;
   if (n.type === 'sequence') {
     return (
@@ -748,7 +548,6 @@ function NodePanel({ n }: { n: Node }) {
           角をドラッグで比率を保ったまま拡縮（Shift で自由変形）。
         </p>
         <button onClick={replace}>画像を差し替え</button>
-        {layout && <RealWidth n={n} />}
         <button className="wide" data-tip="平面図などを一番下に敷き、クリックで選ばれないようにします（戻すのはボード情報から）" onClick={() => patch({ under: true }, true)}>
           下敷きにする
         </button>
@@ -759,32 +558,6 @@ function NodePanel({ n }: { n: Node }) {
     <>
       <h3>{n.type === 'shape' ? '図形' : n.type === 'sticky' ? '付箋' : n.type === 'frame' ? 'エリア枠' : 'テキスト'} <code>{n.id}</code></h3>
       <Field label={n.type === 'frame' ? 'エリア名（機材リストの設置場所になります）' : 'テキスト'} value={n.text} onChange={(v) => patch({ text: v })} multiline={n.type !== 'frame'} />
-      {n.type === 'shape' && n.screen && <ScreenFields n={n} screen={n.screen} />}
-      {n.type === 'shape' && n.flow && (
-        <>
-          <label className="field">
-            <span>フローでの役割</span>
-            <select value={n.flow.role} onChange={(e) => patch({ flow: { ...n.flow!, role: e.target.value as FlowSpec['role'] } }, true)}>
-              {(Object.keys(FLOW_LABEL) as FlowSpec['role'][]).map((k) => (
-                <option key={k} value={k}>
-                  {FLOW_LABEL[k]}
-                </option>
-              ))}
-            </select>
-          </label>
-          {n.flow.role !== 'start' && n.flow.role !== 'end' && (
-            <Field wrap label="入ったときにすること" placeholder="例: 待機ループ映像を再生、照明を暗く" value={n.flow.action ?? ''} onChange={(v) => patch({ flow: { ...n.flow!, action: v || undefined } })} />
-          )}
-        </>
-      )}
-      {n.type === 'shape' && !n.screen && (layout || n.dims) && <RealSize n={n} />}
-      {n.type === 'shape' && n.rack && <RackFields n={n} rack={n.rack} />}
-      {/* A rack put before racks could list their contents. */}
-      {n.type === 'shape' && !n.rack && layout && /ラック/.test(n.text) && (
-        <button className="wide" onClick={() => patch({ rack: { units: /ハーフ/.test(n.text) ? 24 : 42, items: [] } }, true)}>
-          ラックの中身を書く
-        </button>
-      )}
       {n.type === 'shape' && (
         <label className="field">
           <span>形</span>
@@ -817,7 +590,6 @@ function NodePanel({ n }: { n: Node }) {
       {(n.type === 'shape' || n.type === 'sticky' || n.type === 'text' || n.type === 'frame') && <TextStyle n={n} />}
       {n.type === 'frame' && <Colors value={n.color ?? 'gray'} onPick={(color) => patch({ color }, true)} />}
       {(n.type === 'shape' || n.type === 'sticky') && <Colors sticky={n.type === 'sticky'} value={n.color} onPick={(color) => patch({ color }, true)} />}
-      {n.type === 'shape' && sharesHere(n, kind) && <SharedSection n={n} />}
     </>
   );
 }

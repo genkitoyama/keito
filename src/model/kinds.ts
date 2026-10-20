@@ -11,7 +11,7 @@ import type { Doc } from './types';
 export type BoardKind = NonNullable<Doc['kind']>;
 
 /** The lists a board can have, by key (see lists.ts). */
-export type ListKey = 'equipment' | 'cables' | 'summary' | 'power' | 'network' | 'comms' | 'fixtures' | 'racks' | 'outputs' | 'transitions' | 'check';
+export type ListKey = 'equipment' | 'cables' | 'summary' | 'power' | 'network' | 'comms' | 'check';
 
 export interface KindSpec {
   id: BoardKind;
@@ -20,7 +20,7 @@ export interface KindSpec {
   hint: string;
   tools: Tool[];
   /** The library at the side, and what its items are called; none on a board without one. */
-  library: { label: string; search: string; set: 'equipment' | 'software' | 'furniture' | 'screens' | 'flow' } | null;
+  library: { label: string; search: string; set: 'equipment' | 'software' } | null;
   /** The types a line (or a port) can take on this board. */
   lines: (s: Signal) => boolean;
   /** Lists in the order shown; none, no lists button. */
@@ -67,43 +67,10 @@ export const KINDS: Record<BoardKind, KindSpec> = {
     listsLabel: '',
     cableOptions: false,
   },
-  layout: {
-    id: 'layout',
-    label: '配置図',
-    hint: 'バックヤードや会場の平面図。縮尺つきで、机・ラック・機材の位置を実寸で置く',
-    tools: ['select', 'pan', 'rect', 'ellipse', 'round', 'cloud', 'sticky', 'text', 'frame'],
-    library: { label: '什器', search: '什器を検索…', set: 'furniture' },
-    lines: (s) => s.id === 'flow',
-    lists: ['fixtures', 'racks'],
-    listsLabel: '配置物一覧',
-    cableOptions: false,
-  },
-  screen: {
-    id: 'screen',
-    label: '画面レイアウト図',
-    hint: 'LED・モニター・プロジェクターの解像度と並び、コンテンツのどの領域をどの出力に送るか',
-    tools: ['select', 'pan', 'rect', 'sticky', 'text', 'frame'],
-    library: { label: '画面', search: '画面を検索…', set: 'screens' },
-    lines: (s) => s.id === 'flow',
-    lists: ['outputs'],
-    listsLabel: '出力一覧',
-    cableOptions: false,
-  },
-  flow: {
-    id: 'flow',
-    label: '体験フロー',
-    hint: 'インスタレーションの状態と切り替わり（待機 → 検知 → 再生 → 終了）、そのきっかけ',
-    tools: ['select', 'pan', 'cloud', 'sticky', 'text', 'frame'],
-    library: { label: '状態', search: '', set: 'flow' },
-    lines: (s) => s.id === 'flow',
-    lists: ['transitions', 'check'],
-    listsLabel: '状態遷移表',
-    cableOptions: false,
-  },
   free: {
     id: 'free',
     label: '自由ボード',
-    hint: '種類を決めないホワイトボード。打ち合わせのメモやラフに',
+    hint: '種類を決めないホワイトボード。メモやラフ、配置図・画面割り・体験フローなども図形で',
     tools: [...DRAW, 'sequence'],
     library: null,
     lines: (s) => s.id === 'flow',
@@ -113,6 +80,6 @@ export const KINDS: Record<BoardKind, KindSpec> = {
   },
 };
 
-export const KIND_ORDER: BoardKind[] = ['system', 'software', 'sequence', 'flow', 'layout', 'screen', 'free'];
+export const KIND_ORDER: BoardKind[] = ['system', 'software', 'sequence', 'free'];
 
 export const kindOf = (doc: Pick<Doc, 'kind'>): KindSpec => KINDS[doc.kind ?? 'system'] ?? KINDS.system;

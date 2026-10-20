@@ -10,8 +10,8 @@ import { docBounds, nodeRect } from './geometry';
 import { allIds, freshId, makeNode, randomId } from './presets';
 import { SAMPLE_YAML } from './sample';
 import { registerSignals } from './signals';
-import { type Entry, type ShareNode, catalog, deviceName, newKey, pull, stamp, takeFrom } from './shared';
-import { type DeviceNode, type Doc, type Edge, type Node, type Revision, type UserPreset, emptyMeta } from './types';
+import { type Entry, type ShareNode, catalog, newKey, pull, stamp, takeFrom } from './shared';
+import { type Doc, type Edge, type Node, type Revision, type UserPreset, emptyMeta } from './types';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
 export type Panel = null | 'lists' | 'text' | 'export' | 'library' | 'boards';
@@ -131,12 +131,8 @@ interface State {
   unlink(nodeId: string): void;
   /** Software runs on a device of another board (or on none). */
   runOn(nodeId: string, host: Entry | null): void;
-  /** A screen output is fed by a port of a device of another board (or by none). */
-  feedFrom(nodeId: string, source: Entry | null, port?: string): void;
   /** Open another board with one of its nodes selected and in view. */
   openAt(boardId: string, nodeId: string): void;
-  /** Add a device of another board to what a rack holds (its name follows the device's). */
-  rackDevice(nodeId: string, device: Entry): void;
 }
 
 let backend: Backend | null = null;
@@ -360,9 +356,9 @@ export const useStore = create<State>((set, get) => ({
       if (!key) return;
       const fresh = (get().others.find((d) => d.id === target.board)?.nodes.find((n) => n.id === target.node.id) as ShareNode | undefined) ?? target.node;
       // The other board's particulars win: it is the one being linked to.
-      sharing(() => get().mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === nodeId && (n.type === 'device' || n.type === 'shape') ? { ...takeFrom(n, fresh), shared: key, sharedAt: fresh.sharedAt } : n)) })));
+      sharing(() => get().mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === nodeId && n.type === 'device' ? { ...takeFrom(n, fresh), shared: key, sharedAt: fresh.sharedAt } : n)) })));
     }),
-  unlink: (nodeId) => get().mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === nodeId && (n.type === 'device' || n.type === 'shape') ? { ...n, shared: undefined, sharedAt: undefined } : n)) })),
+  unlink: (nodeId) => get().mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === nodeId && n.type === 'device' ? { ...n, shared: undefined, sharedAt: undefined } : n)) })),
   runOn: (nodeId, host) =>
     void run(async (b) => {
       if (get().viewing) return;
@@ -370,27 +366,6 @@ export const useStore = create<State>((set, get) => ({
       if (host && !key) return;
       get().mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === nodeId && n.type === 'device' ? { ...n, runsOn: key } : n)) }));
       pullIn();
-    }),
-  feedFrom: (nodeId, source, port = '') =>
-    void run(async (b) => {
-      if (get().viewing) return;
-      const key = source ? ((await shareKey(b, source)) ?? undefined) : undefined;
-      if (source && !key) return;
-      get().mutate((d) => ({
-        ...d,
-        nodes: d.nodes.map((n) => (n.id === nodeId && n.type === 'shape' && n.screen ? { ...n, screen: { ...n.screen, feed: key ? { shared: key, port } : undefined } } : n)),
-      }));
-      pullIn();
-    }),
-  rackDevice: (nodeId, device) =>
-    void run(async (b) => {
-      if (get().viewing) return;
-      const key = await shareKey(b, device);
-      if (!key) return;
-      get().mutate((d) => ({
-        ...d,
-        nodes: d.nodes.map((n) => (n.id === nodeId && n.type === 'shape' && n.rack ? { ...n, rack: { ...n.rack, items: [...n.rack.items, { name: deviceName(device.node as DeviceNode), u: 1, shared: key }] } } : n)),
-      }));
     }),
   openAt: (boardId, nodeId) =>
     void run(async (b) => {
@@ -681,7 +656,7 @@ async function shareKey(b: Backend, target: Entry): Promise<string | null> {
   try {
     const d = await b.load(target.board);
     const n = d?.nodes.find((x) => x.id === target.node.id);
-    if (!d || !n || (n.type !== 'device' && n.type !== 'shape')) return null;
+    if (!d || !n || n.type !== 'device') return null;
     let next = d;
     if (!n.shared) {
       next = { ...d, nodes: d.nodes.map((x) => (x.id === n.id ? { ...x, shared: key, sharedAt: Date.now() } : x)) };

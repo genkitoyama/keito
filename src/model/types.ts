@@ -35,7 +35,7 @@ interface Shareable {
   /** When the shared particulars were last changed here (ms), to tell which board has the newest. */
   sharedAt?: number;
 }
-export interface ShapeNode extends Base, Shareable {
+export interface ShapeNode extends Base {
   type: 'shape';
   shape: ShapeKind;
   color: ColorKey;
@@ -46,44 +46,6 @@ export interface ShapeNode extends Base, Shareable {
   fill?: FillStyle;
   /** Dashed border. */
   dash?: boolean;
-  /** Drawn to scale (furniture on a layout board): shows its real size, by the board's scale. */
-  dims?: boolean;
-  /**
-   * On a screen layout board: the content canvas, or an output showing a region of it. The region
-   * is where the shape sits (by the board's pixel ratio); `native` is the output's own resolution.
-   */
-  screen?: ScreenSpec;
-  /** On an experience flow board: what part of the flow this is (see flow.ts). */
-  flow?: FlowSpec;
-  /** A 19-inch rack on a layout board: its size and what goes in it (see rack.ts). */
-  rack?: RackSpec;
-}
-export interface RackSpec {
-  /** Height in rack units. */
-  units: number;
-  /** What is mounted in it, top first. */
-  items: RackItem[];
-}
-export interface RackItem {
-  name: string;
-  /** Units it takes (1 U = 44.45 mm). */
-  u: number;
-  /** The device of a system board it is (its shared key): its name follows that device's. */
-  shared?: string;
-}
-export interface FlowSpec {
-  role: 'start' | 'state' | 'branch' | 'end';
-  /** What happens on entering this state ("待機ループ映像を再生"). */
-  action?: string;
-}
-export interface ScreenSpec {
-  role: 'canvas' | 'display' | 'projector' | 'led';
-  /** The output's own resolution in px, when it differs from the region it shows (scaled). */
-  native?: [number, number];
-  /** What feeds it: "PC1 HDMI 1", "LED プロセッサ 出力 1". */
-  output?: string;
-  /** The device port feeding it, by the device's shared key and the port's name; `output` follows it. */
-  feed?: { shared: string; port: string };
 }
 export interface StickyNode extends Base {
   type: 'sticky';
@@ -273,11 +235,7 @@ export interface Doc {
   version: 1;
   id: string;
   /** What the board is (system, software, sequence, free; see kinds.ts); unset is a system board. */
-  kind?: 'system' | 'software' | 'sequence' | 'free' | 'layout' | 'screen' | 'flow';
-  /** Layout boards: how many px of the board make one metre (default 100: a grid step is 10 cm). */
-  scale?: number;
-  /** Screen layout boards: content pixels per pixel of the board (default 4). */
-  pxScale?: number;
+  kind?: 'system' | 'software' | 'sequence' | 'free';
   meta: DocMeta;
   nodes: Node[];
   edges: Edge[];

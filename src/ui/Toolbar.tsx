@@ -2,11 +2,9 @@ import { useState } from 'react';
 import type { ReactNode } from 'react';
 import type { MouseEvent as RMouseEvent } from 'react';
 import { boxSize, insertImages, insertNode, placeDrag, viewCenter } from '../canvas/Canvas';
-import { intersects, isUnderlay, nodeRect, nodeSize, snap } from '../model/geometry';
-import { COMMON, type CreateKind, FURNITURE, type Furniture, PRESETS, type Preset, SOFTWARE, allIds, freshId, makeDevice, makeFurniture, makeLegend } from '../model/presets';
+import { nodeSize, snap } from '../model/geometry';
+import { COMMON, type CreateKind, PRESETS, type Preset, SOFTWARE, allIds, freshId, makeDevice, makeLegend } from '../model/presets';
 import { kindOf } from '../model/kinds';
-import { SCREENS, type ScreenPreset, isOutput, isScreen, makeScreen, pxRatio } from '../model/screens';
-import { FLOW_PARTS, type FlowPart, makeFlowPart } from '../model/flow';
 import type { DeviceNode, Node, Pt, UserPreset } from '../model/types';
 import { type Tool, useStore } from '../model/store';
 import { getSetting, setSetting } from '../platform/storage';
@@ -83,146 +81,6 @@ function pickImages() {
 }
 
 const MINE = 'マイプリセット';
-
-function addFurniture(f: Furniture, at?: Pt) {
-  const s = useStore.getState();
-  const c = at ?? viewCenter();
-  const n = makeFurniture(f, 0, 0, allIds(s.doc), s.doc.scale);
-  // Centred on the view, then stepped aside until it overlaps nothing placed (the room's outline,
-  // areas and underlays aside), so repeated clicks set pieces side by side.
-  let x = snap(c.x - n.w / 2);
-  const y = snap(c.y - n.h / 2);
-  const placed = s.doc.nodes.filter((o) => o.type !== 'frame' && !isUnderlay(o)).map(nodeRect);
-  // Put where it was let go, it stays there; added from the centre, it steps aside.
-  for (let i = 0; !at && i < 40 && placed.some((r) => intersects(r, { x, y, w: n.w, h: n.h })); i++) x += snap(n.w / 2) || 10;
-  s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, { ...n, x, y }] }));
-  s.select([n.id]);
-  s.setTool('select');
-}
-
-function addScreen(p: ScreenPreset, at?: Pt) {
-  const s = useStore.getState();
-  const c = at ?? viewCenter();
-  const n = makeScreen(p, 0, 0, allIds(s.doc), pxRatio(s.doc));
-  // An output goes on the canvas under the view's centre if there is one, at its top-left free spot.
-  let x = snap(c.x - n.w / 2);
-  let y = snap(c.y - n.h / 2);
-  // (Put where it was let go, it stays there.)
-  const canvas = p.role !== 'canvas' && !at ? s.doc.nodes.find((o) => isScreen(o) && o.screen.role === 'canvas' && c.x >= o.x && c.x <= o.x + o.w && c.y >= o.y && c.y <= o.y + o.h) : undefined;
-  if (canvas) {
-    x = canvas.x;
-    y = canvas.y;
-    const outs = s.doc.nodes.filter(isOutput).map(nodeRect);
-    // Next to the outputs already there, left to right, then a row down.
-    for (let i = 0; i < 60 && outs.some((r) => intersects(r, { x: x + 0.5, y: y + 0.5, w: n.w - 1, h: n.h - 1 })); i++) {
-      x += n.w;
-      if (x + n.w > canvas.x + canvas.w + 0.5) {
-        x = canvas.x;
-        y += n.h;
-      }
-    }
-  }
-  // A canvas goes beneath everything, so it never takes the clicks meant for the outputs on it.
-  s.mutate((doc) => ({ ...doc, nodes: p.role === 'canvas' ? [{ ...n, x, y }, ...doc.nodes] : [...doc.nodes, { ...n, x, y }] }));
-  s.select([n.id]);
-  s.setTool('select');
-}
-
-function addFlowPart(p: FlowPart, at?: Pt) {
-  const s = useStore.getState();
-  const c = at ?? viewCenter();
-  const n = makeFlowPart(p, 0, 0, allIds(s.doc));
-  let x = snap(c.x - n.w / 2);
-  const y = snap(c.y - n.h / 2);
-  const placed = s.doc.nodes.filter((o) => o.type !== 'frame').map(nodeRect);
-  for (let i = 0; !at && i < 40 && placed.some((r) => intersects(r, { x, y, w: n.w, h: n.h })); i++) x += 200;
-  s.mutate((doc) => ({ ...doc, nodes: [...doc.nodes, { ...n, x, y }] }));
-  s.select([n.id]);
-  s.setTool('select');
-}
-
-/** The parts of an experience flow. */
-function FlowLibrary() {
-  return (
-    <div className="library">
-      <div className="library-list">
-        <div className="library-cat">
-          {FLOW_PARTS.map((p) => (
-            <button key={p.key} className="item" {...placeable(p.name, () => makeFlowPart(p, 0, 0, new Set()), (at) => addFlowPart(p, at))}>
-              <span className="label">
-                <span>{p.name}</span>
-                <small>{p.hint}</small>
-              </span>
-            </button>
-          ))}
-        </div>
-        <p className="library-note">状態の辺の ● をドラッグすると次の状態を作れます。矢印のラベルに、切り替わるきっかけ（「人を検知」「60 秒経過」など）を書きます。</p>
-      </div>
-    </div>
-  );
-}
-
-/** Canvases and outputs for screen layout boards, in content pixels. */
-function ScreenLibrary() {
-  const cats = [...new Set(SCREENS.map((p) => p.category))];
-  return (
-    <div className="library">
-      <div className="library-list">
-        {cats.map((c) => (
-          <div key={c} className="library-cat">
-            <div className="library-head static">
-              <span className="name">{c}</span>
-            </div>
-            {SCREENS.filter((p) => p.category === c).map((p) => (
-              <button key={p.key} className="item" {...placeable(p.name, () => makeScreen(p, 0, 0, new Set(), pxRatio(useStore.getState().doc)), (at) => addScreen(p, at))}>
-                <span className="label">{p.name}</span>
-                <small>
-                  {p.w} × {p.h}
-                </small>
-              </button>
-            ))}
-          </div>
-        ))}
-        <p className="library-note">まずキャンバス（コンテンツ全体）を置き、その上に出力を並べます。出力はキャンバスの左上から順に詰めて置かれます。数値は px。</p>
-      </div>
-    </div>
-  );
-}
-
-/** Furniture for layout boards, by category, each in its real size. */
-function FurnitureLibrary() {
-  const [q, setQ] = useState('');
-  const list = FURNITURE.filter((f) => !q || `${f.name}${f.category}`.includes(q));
-  const cats = [...new Set(list.map((f) => f.category))];
-  return (
-    <div className="library">
-      <div className="library-top">
-        <input autoFocus placeholder="什器を検索…" value={q} onChange={(e) => setQ(e.target.value)} />
-      </div>
-      <div className="library-list">
-        {cats.map((c) => (
-          <div key={c} className="library-cat">
-            <div className="library-head static">
-              <span className="name">{c}</span>
-            </div>
-            {list
-              .filter((f) => f.category === c)
-              .map((f) => (
-                <button key={f.key} className="item" {...placeable(f.name, () => makeFurniture(f, 0, 0, new Set(), useStore.getState().doc.scale), (at) => addFurniture(f, at))}>
-                  <span className="label">{f.name}</span>
-                  <small>
-                    {f.w} × {f.d}
-                  </small>
-                </button>
-              ))}
-          </div>
-        ))}
-        {!list.length && <p className="library-empty">該当する什器がありません</p>}
-        <p className="library-note">寸法は mm（幅 × 奥行）。置いたあと右のパネルで変えられます。</p>
-      </div>
-    </div>
-  );
-}
 
 function Library() {
   const kind = kindOf(useStore((s) => s.doc));
@@ -393,7 +251,7 @@ export function Toolbar() {
           </>
         )}
       </nav>
-      {panel === 'library' && kind.library && (kind.library.set === 'furniture' ? <FurnitureLibrary /> : kind.library.set === 'screens' ? <ScreenLibrary /> : kind.library.set === 'flow' ? <FlowLibrary /> : <Library />)}
+      {panel === 'library' && kind.library && <Library />}
     </>
   );
 }

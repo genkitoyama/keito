@@ -10,7 +10,6 @@ import {
   contains,
   intersects,
   isUnderlay,
-  isCanvasShape,
   isTagged,
   labelPoint,
   nearestT,
@@ -31,9 +30,7 @@ import { STRONG } from '../model/signals';
 import { type Placing, copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
 import { type Doc, type Edge, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
-import { canvasOf, isOutput, isScreen } from '../model/screens';
-import { FLOW_PARTS, makeFlowPart } from '../model/flow';
-import { EdgeView, HopCaps, INK, NodeView, SCREEN, ScreenOverlaps, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
+import { EdgeView, HopCaps, INK, NodeView, SCREEN, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
@@ -212,19 +209,6 @@ export function spawnFrom(id: string, side: Dir): void {
   const src = s.doc.nodes.find((n) => n.id === id);
   if (!src || !canConnect(src)) return;
   const taken = allIds(s.doc);
-  // In an experience flow the next step is always a state (never another start), at a state's size,
-  // laid out as if it grew from a state centred where this part is.
-  if (src.type === 'shape' && src.flow) {
-    const part = FLOW_PARTS.find((p) => p.key === 'state')!;
-    const made = makeFlowPart(part, 0, 0, taken);
-    const like = { ...src, x: src.x + src.w / 2 - made.w / 2, y: src.y + src.h / 2 - made.h / 2, w: made.w, h: made.h };
-    const n = { ...made, ...spawnRect(s.doc, like, side) };
-    const edge = makeEdge(taken, { node: src.id }, { node: n.id }, 'flow');
-    s.mutate((d) => ({ ...d, nodes: [...d.nodes, n], edges: [...d.edges, edge] }));
-    s.select([n.id]);
-    s.setEditing(n.id);
-    return;
-  }
   const kind: CreateKind = src.type === 'shape' ? src.shape : src.type;
   // The next step inherits the look of the one it grows from.
   const look = src.type === 'shape' ? { fill: src.fill, dash: src.dash } : {};
@@ -402,16 +386,12 @@ export function Canvas() {
     for (const m of now.nodes) {
       if (!ids.has(m.id)) continue;
       orig.set(m.id, { x: m.x, y: m.y });
-      // A frame carries along whatever sits inside it, and a screen board's canvas its outputs
-      // (which keep their regions so).
+      // A frame carries along whatever sits inside it.
       if (m.type === 'frame') {
         for (const c of now.nodes) {
           // ... but never the floor plan laid under the drawing.
           if (c.id !== m.id && !isUnderlay(c) && contains(m, center(nodeRect(c)))) orig.set(c.id, { x: c.x, y: c.y });
         }
-      }
-      if (isScreen(m) && m.screen.role === 'canvas') {
-        for (const c of now.nodes) if (isOutput(c) && canvasOf(now, c)?.id === m.id) orig.set(c.id, { x: c.x, y: c.y });
       }
     }
     // Hand-placed bends travel with a cable when both of its ends are being moved.
@@ -753,8 +733,7 @@ export function Canvas() {
   // An underlay (a floor plan) lies beneath everything and lets the pointer through.
   const underlays = doc.nodes.filter(isUnderlay);
   const frames = doc.nodes.filter((n) => n.type === 'frame');
-  // Canvases of a screen board go first, so their outputs are drawn (and clicked) over them.
-  const others = doc.nodes.filter((n) => n.type !== 'frame' && !isUnderlay(n)).sort((a, b) => Number(isCanvasShape(b)) - Number(isCanvasShape(a)));
+  const others = doc.nodes.filter((n) => n.type !== 'frame' && !isUnderlay(n));
   const single = selection.length === 1 ? doc.nodes.find((n) => n.id === selection[0]) : undefined;
   const selectedEdge = selection.length === 1 ? doc.edges.find((e) => e.id === selection[0]) : undefined;
   const handleNode = doc.nodes.find((n) => n.id === hover && n.id !== hush && hasHandles(n)) ?? (single && hasHandles(single) ? single : undefined);
@@ -832,7 +811,6 @@ export function Canvas() {
           })}
           <HopCaps doc={doc} theme={SCREEN} />
           {others.map(nodeGroup)}
-          <ScreenOverlaps doc={doc} theme={SCREEN} />
           <SharedMarks doc={doc} k={view.k} />
 
           {preview && handleNode && hoverSide && (
@@ -936,8 +914,6 @@ export function Canvas() {
         <button onClick={() => zoomBy(1.25)} title="拡大">＋</button>
         <button onClick={() => st().fit()} title="全体表示 (⇧1)">全体</button>
       </div>
-      {/* A layout board's scale bar: a length that reads as a round number at this zoom. */}
-      {doc.kind === 'layout' && <ScaleBar k={view.k} scale={doc.scale || 100} />}
     </div>
   );
 }
@@ -1104,7 +1080,7 @@ function SharedMarks({ doc, k }: { doc: Doc; k: number }) {
   return (
     <g pointerEvents="none">
       {doc.nodes.map((n) => {
-        if ((n.type !== 'device' && n.type !== 'shape') || !n.shared) return null;
+        if (n.type !== 'device' || !n.shared) return null;
         const b = nodeRect(n);
         // Inside the top-right corner: clear of the resize handle on the corner itself.
         const cx = b.x + b.w - r * 1.6;
@@ -1121,18 +1097,6 @@ function SharedMarks({ doc, k }: { doc: Doc; k: number }) {
         );
       })}
     </g>
-  );
-}
-
-function ScaleBar({ k, scale }: { k: number; scale: number }) {
-  // The longest of 10 cm, 50 cm, 1 m, 2 m, 5 m, 10 m that stays under 160 px on screen.
-  const steps = [0.1, 0.5, 1, 2, 5, 10, 20, 50];
-  const m = [...steps].reverse().find((v) => v * scale * k <= 160) ?? steps[0];
-  return (
-    <div className="scale-bar">
-      <span style={{ width: m * scale * k }} />
-      <small>{m < 1 ? `${m * 100} cm` : `${m} m`}</small>
-    </div>
   );
 }
 

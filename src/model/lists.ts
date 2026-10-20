@@ -3,9 +3,6 @@ import { allSignals, signalOf } from './signals';
 import { safeUrl } from './url';
 import { cableKind } from './standards';
 import type { ListKey } from './kinds';
-import { ROLE_LABEL, canvasOf, isOutput, overlaps, regionOf } from './screens';
-import { FLOW_LABEL, flowIssues, flowName, isFlow, transitions } from './flow';
-import { racksOf, rackUse } from './rack';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node } from './types';
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
@@ -154,7 +151,7 @@ export function editCell(doc: Doc, edit: CellEdit, ids: string[], raw: string): 
     ...doc,
     nodes: doc.nodes.map((n) => {
       if (!hit.has(n.id)) return n;
-      // Furniture and other shapes take only a new name from a list.
+      // Other nodes take only a new name from a list.
       if (n.type !== 'device') return edit.field === 'text' && text && 'text' in n ? ({ ...n, text } as Node) : n;
       if (edit.field === 'text') {
         // The list shows the name without its "x2": a quantity that came from the name stays.
@@ -606,8 +603,6 @@ export function checkTable(doc: Doc): Table {
     const list = unmeasured.map((e) => ids.get(e.id) ?? '').sort(natural);
     found.push({ level: 1, what: '長さが未入力', target: `${unmeasured.length} 本`, detail: list.length > 8 ? `${list.slice(0, 8).join('、')} ほか ${list.length - 8} 本` : list.join('、'), ref: unmeasured.map((e) => e.id) });
   }
-  // An experience flow's own gaps (no start, unreachable states, dead ends …).
-  found.push(...flowIssues(doc));
   found.sort((a, b) => a.level - b.level);
   return {
     title: 'チェック',
@@ -660,130 +655,6 @@ export function commsTable(doc: Doc): Table {
   };
 }
 
-/**
- * What a layout board places, for ordering and setting up: furniture by name and real size, with
- * how many of each and in which areas.
- */
-export function fixturesTable(doc: Doc): Table {
-  const scale = doc.scale || 100;
-  const mm = (px: number) => Math.round((px * 1000) / scale);
-  const groups = new Map<string, { name: string; size: string; ids: string[]; places: Set<string> }>();
-  for (const n of doc.nodes) {
-    if (n.type !== 'shape' || !n.dims) continue;
-    const name = oneLine(n.text) || '（名前なし）';
-    // Turned round, a desk is still the same desk: the size reads larger side first.
-    const [a, b] = [mm(n.w), mm(n.h)].sort((x, y) => y - x);
-    const size = `${a} × ${b}`;
-    const key = `${name}|${size}`;
-    const g = groups.get(key) ?? { name, size, ids: [], places: new Set<string>() };
-    g.ids.push(n.id);
-    const place = placeOf(doc, n);
-    if (place) g.places.add(place);
-    groups.set(key, g);
-  }
-  const list = [...groups.values()].sort(byHand(doc, 'fixtures', (g) => g.ids, (a, b) => a.name.localeCompare(b.name, 'ja') || a.size.localeCompare(b.size, 'ja', { numeric: true })));
-  const total = list.reduce((sum, g) => sum + g.ids.length, 0);
-  return {
-    title: '配置物一覧',
-    head: ['名称', '寸法 (mm)', '数量', '設置場所'],
-    widths: [24, 18, 8, 30],
-    rows: [...list.map((g) => [g.name, g.size, String(g.ids.length), [...g.places].join(' / ')]), ...(list.length ? [['合計', '', String(total), '']] : [])],
-    refs: [...list.map((g) => g.ids), ...(list.length ? [[]] : [])],
-    numeric: ['数量'],
-    total: list.length > 0,
-    reorder: 'fixtures',
-    empty: '什器ライブラリから机やラックを置くと、名前と寸法ごとにここに並びます。',
-    edit: { 名称: { on: 'node', field: 'text' } },
-  };
-}
-
-/** The racks of a layout board and what goes in each, top first, with the units left. */
-export function racksTable(doc: Doc): Table {
-  const rows: string[][] = [];
-  const refs: string[][] = [];
-  const rowClass: (string | undefined)[] = [];
-  for (const r of racksOf(doc)) {
-    const name = oneLine(r.text) || 'ラック';
-    r.rack.items.forEach((item, i) => {
-      rows.push([name, String(i + 1), item.name.trim(), String(item.u)]);
-      refs.push([r.id]);
-      rowClass.push(undefined);
-    });
-    const { free } = rackUse(r.rack);
-    rows.push([name, '', free >= 0 ? `空き（全 ${r.rack.units}U）` : `${-free}U 足りません（全 ${r.rack.units}U）`, String(free)]);
-    refs.push([r.id]);
-    rowClass.push(free < 0 ? 'over' : 'subtotal');
-  }
-  return {
-    title: 'ラック表',
-    head: ['ラック', '順', '名称', 'U数'],
-    widths: [20, 6, 30, 8],
-    rows,
-    refs,
-    rowClass,
-    numeric: ['順', 'U数'],
-    empty: '什器ライブラリの 19インチラック・ハーフラックを置き、右のパネルで中身を並べると、ここにラックごとに並びます。',
-  };
-}
-
-/**
- * Outputs of a screen layout board: each output's region of the canvas in content pixels, its own
- * resolution and how much the region is scaled to fit it, what feeds it, and what it overlaps.
- */
-export function outputsTable(doc: Doc): Table {
-  const blends = overlaps(doc);
-  const outs = doc.nodes.filter(isOutput).sort(byHand(doc, 'outputs', (n) => [n.id], (a, b) => a.y - b.y || a.x - b.x));
-  return {
-    title: '出力一覧',
-    head: ['名称', '種類', '送出元', 'X', 'Y', '幅', '高さ', '機器の解像度', '拡大率', '重なり'],
-    widths: [16, 9, 16, 6, 6, 6, 6, 11, 7, 18],
-    rows: outs.map((n) => {
-      const r = regionOf(doc, n);
-      const native = n.screen.native;
-      const scale = native ? `${Math.round((native[0] / r.w) * 100)}%` : '';
-      const with_ = blends.filter((o) => o.a.id === n.id || o.b.id === n.id).map((o) => `${oneLine((o.a.id === n.id ? o.b : o.a).text)} ${o.px.w}×${o.px.h}`);
-      // An output off every canvas has no region to speak of: its numbers are board positions.
-      if (!canvasOf(doc, n)) with_.unshift('キャンバスの外');
-      return [oneLine(n.text), ROLE_LABEL[n.screen.role], n.screen.output ?? '', String(r.x), String(r.y), String(r.w), String(r.h), native ? `${native[0]}×${native[1]}` : '', scale, with_.join(' / ')];
-    }),
-    refs: outs.map((n) => [n.id]),
-    numeric: ['X', 'Y', '幅', '高さ', '拡大率'],
-    reorder: 'outputs',
-    empty: '画面ライブラリからキャンバスを置き、その上にディスプレイやプロジェクターを並べると、ここに出力ごとの領域が並びます。',
-    edit: { 名称: { on: 'node', field: 'text' } },
-  };
-}
-
-/** An experience flow as a table: each transition from a state, its trigger, and what the next state does. */
-export function transitionsTable(doc: Doc): Table {
-  const moves = transitions(doc);
-  const states = doc.nodes.filter(isFlow);
-  // States in the order of the board's hand order, else top to bottom, left to right.
-  const order = [...states].sort(byHand(doc, 'transitions', (n) => [n.id], (a, b) => a.y - b.y || a.x - b.x));
-  const rows: string[][] = [];
-  const refs: string[][] = [];
-  for (const n of order) {
-    const out = moves.filter((m) => m.from.id === n.id);
-    if (!out.length) {
-      rows.push([flowName(n), FLOW_LABEL[n.flow.role], n.flow.action ?? '', '', '']);
-      refs.push([n.id]);
-    }
-    for (const m of out) {
-      rows.push([flowName(n), FLOW_LABEL[n.flow.role], n.flow.action ?? '', m.trigger, flowName(m.to)]);
-      refs.push([m.id]);
-    }
-  }
-  return {
-    title: '状態遷移表',
-    head: ['状態', '種類', '入ったときにすること', 'きっかけ', '次の状態'],
-    widths: [16, 8, 28, 22, 16],
-    rows,
-    refs,
-    reorder: undefined,
-    empty: '左の「状態」から開始・状態・終了を置き、矢印でつないでラベルにきっかけを書くと、ここに並びます。',
-  };
-}
-
 /** Every list there is, by the key boards name them by (see kinds.ts). */
 export const TABLES: Record<ListKey, { label: string; make: (doc: Doc) => Table }> = {
   equipment: { label: '機材リスト', make: (doc) => equipmentTable(doc) },
@@ -792,9 +663,5 @@ export const TABLES: Record<ListKey, { label: string; make: (doc: Doc) => Table 
   power: { label: '電源系統', make: powerTable },
   network: { label: 'ネットワーク', make: networkTable },
   comms: { label: '通信一覧', make: commsTable },
-  fixtures: { label: '配置物一覧', make: fixturesTable },
-  racks: { label: 'ラック表', make: racksTable },
-  outputs: { label: '出力一覧', make: outputsTable },
-  transitions: { label: '状態遷移表', make: transitionsTable },
   check: { label: 'チェック', make: checkTable },
 };

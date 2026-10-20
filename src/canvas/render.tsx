@@ -1,13 +1,11 @@
-import { type RackNode, rackLines, rackUse } from '../model/rack';
 import type { ReactNode } from 'react';
-import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isCanvasShape, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { LEGEND, shownRows } from '../model/legend';
 import { lineColor, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, ipIssues, labelStacked, lengthShown, powerLoads } from '../model/lists';
 import { SEQ, SEQ_TEXT, parseSequence, seqLayout, seqRows, seqScale } from '../model/sequence';
 import { PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { MONO_FONT, UI_FONT, measure, wrapText } from '../model/text';
-import { overlaps, regionOf } from '../model/screens';
 import { safeUrl } from '../model/url';
 import type { DeviceNode, Doc, Edge, Node, Pt, Rect, SequenceNode } from '../model/types';
 import { assetUrl } from '../platform/storage';
@@ -378,9 +376,6 @@ function cloudPath(x: number, y: number, w: number, h: number): string {
   return `${d} Z`;
 }
 
-/** A length on the board in millimetres, by the board's scale (px per metre). */
-export const mm = (doc: Pick<Doc, 'scale'>, px: number): number => Math.round((px * 1000) / (doc.scale || 100));
-
 export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }) {
   const { x, y } = n;
   const { w, h } = nodeSize(n);
@@ -503,70 +498,14 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
         const rx = n.shape === 'round' ? h / 2 : 4;
         body = <rect x={x} y={y} width={w} height={h} rx={rx} {...paint} />;
       }
-      // Furniture drawn to scale says how big it really is, under its name; a screen, its region
-      // of the canvas in content pixels (and its own resolution when that differs).
-      const region = n.screen && doc ? regionOf(doc, n) : null;
-      const dims = region
-        ? n.screen!.role === 'canvas'
-          ? `${region.w} × ${region.h}`
-          : `${region.x}, ${region.y}　${region.w} × ${region.h}${n.screen!.native ? `（機器 ${n.screen!.native[0]}×${n.screen!.native[1]}）` : ''}`
-        : n.dims && doc
-          ? `${mm(doc, w)} × ${mm(doc, h)}`
-          : n.flow?.action ?? '';
-      const named = n.text.trim() !== '';
-      const caption = Math.min(10.5, textSize(n) * 0.8);
-      // The end of a flow is a ring around a dot.
-      if (n.flow?.role === 'end')
-        return (
-          <g>
-            <circle cx={cx} cy={cy} r={Math.min(w, h) / 2} fill="#fff" stroke={STRONG.gray.fill} strokeWidth={2} />
-            <circle cx={cx} cy={cy} r={Math.min(w, h) / 2 - 6} fill={STRONG.gray.fill} />
-          </g>
-        );
-      // A canvas lies under its outputs: its name and size go above its top-left corner instead.
-      if (n.screen?.role === 'canvas')
-        return (
-          <g>
-            {body}
-            <text x={x} y={y - 6} fontFamily={theme.font} fontSize={textSize(n)} fontWeight={600} fill={'#475569'}>
-              {n.text}
-              <tspan fontWeight={400} fill={'#64748b'} dx={8}>
-                {dims}
-              </tspan>
-            </text>
-          </g>
-        );
       return (
         <g>
           {body}
-          <TextBlock x={cx} y={dims && named ? cy - caption * 0.6 : cy} w={textWidth(n)} text={n.text} size={textSize(n)} weight={textWeight(n)} fill={ink} theme={theme} />
-          {dims && (
-            <text x={cx} y={mid(named ? cy + textSize(n) * 0.75 : cy, caption)} textAnchor="middle" fontFamily={theme.font} fontSize={caption} fill={style === 'solid' ? ink : '#64748b'}>
-              {dims}
-            </text>
-          )}
-          {n.rack && n.rack.items.length > 0 && <RackContents n={n as RackNode} theme={theme} />}
+          <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={textSize(n)} weight={textWeight(n)} fill={ink} theme={theme} />
         </g>
       );
     }
   }
-}
-
-/** What a rack holds, listed beside it: each item with its units, then what is free. */
-function RackContents({ n, theme }: { n: RackNode; theme: Theme }) {
-  const lines = rackLines(n.rack);
-  const size = 10;
-  const over = rackUse(n.rack).free < 0;
-  return (
-    <text x={n.x + n.w + 6} y={n.y + size} fontFamily={theme.font} fontSize={size} fill="#334155">
-      <tspan fontWeight={600}>{n.rack.units}U</tspan>
-      {lines.map((l, i) => (
-        <tspan key={i} x={n.x + n.w + 6} dy={size * 1.35} fill={i === lines.length - 1 ? (over ? '#dc2626' : '#64748b') : undefined}>
-          {l}
-        </tspan>
-      ))}
-    </text>
-  );
 }
 
 /** A line's label; may run over several lines when the user's own text does. */
@@ -773,30 +712,6 @@ export function HopCaps({ doc, theme }: { doc: Doc; theme: Theme }) {
   );
 }
 
-/** Where outputs cover the same content (a projector blend, or a mistake): hatched, with its size in px. */
-export function ScreenOverlaps({ doc, theme }: { doc: Doc; theme: Theme }) {
-  if (doc.kind !== 'screen') return null;
-  const list = overlaps(doc);
-  if (!list.length) return null;
-  return (
-    <g pointerEvents="none">
-      <defs>
-        <pattern id="blend-hatch" width={8} height={8} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-          <line x1={0} y1={0} x2={0} y2={8} stroke="#dc2626" strokeWidth={2} strokeOpacity={0.45} />
-        </pattern>
-      </defs>
-      {list.map((o) => (
-        <g key={`${o.a.id}-${o.b.id}`}>
-          <rect x={o.board.x} y={o.board.y} width={o.board.w} height={o.board.h} fill="url(#blend-hatch)" stroke="#dc2626" strokeWidth={1} strokeDasharray="4 3" />
-          <text x={o.board.x + o.board.w / 2} y={o.board.y + o.board.h - 6} textAnchor="middle" fontFamily={theme.font} fontSize={10} fontWeight={600} fill="#b91c1c">
-            {`重なり ${o.px.w}×${o.px.h}`}
-          </text>
-        </g>
-      ))}
-    </g>
-  );
-}
-
 export function DocView({ doc, theme }: { doc: Doc; theme: Theme }) {
   return (
     <g>
@@ -806,11 +721,9 @@ export function DocView({ doc, theme }: { doc: Doc; theme: Theme }) {
       <HopCaps doc={doc} theme={theme} />
       {doc.nodes
         .filter((n) => n.type !== 'frame' && !isUnderlay(n))
-        .sort((a, b) => Number(isCanvasShape(b)) - Number(isCanvasShape(a)))
         .map((n) => (
           <NodeView key={n.id} n={n} theme={theme} doc={doc} />
         ))}
-      <ScreenOverlaps doc={doc} theme={theme} />
     </g>
   );
 }
