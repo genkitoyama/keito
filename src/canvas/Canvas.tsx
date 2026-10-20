@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as RMouseEvent, ReactNode, PointerEvent as RPointerEvent } from 'react';
 import {
   edgeNear,
@@ -811,7 +811,7 @@ export function Canvas() {
           })}
           <HopCaps doc={doc} theme={SCREEN} />
           {others.map(nodeGroup)}
-          <SharedMarks doc={doc} k={view.k} />
+          <SharedMarks doc={doc} />
 
           {preview && handleNode && hoverSide && (
             <g pointerEvents="none" opacity={0.55}>
@@ -1075,19 +1075,25 @@ function mergeAt(doc: Doc, line: Edge, which: 'from' | 'to'): { doc: Doc; end: E
   return { end: held, doc: { ...doc, edges: doc.edges.map((e) => (e.id === line.id ? { ...e, [which]: held } : e)) } };
 }
 
-function SharedMarks({ doc, k }: { doc: Doc; k: number }) {
-  const r = 7 / Math.max(k, 0.35);
+/**
+ * 🔗 on devices that are the same thing as one on another board of the project. A key no other
+ * board carries (the other copy deleted, or moved to another project) shows nothing. The mark is
+ * part of the drawing, so it grows and shrinks with the box it sits on.
+ */
+function SharedMarks({ doc }: { doc: Doc }) {
+  const others = useStore((s) => s.others);
+  const linked = useMemo(() => new Set(others.flatMap((d) => d.nodes.map((n) => (n.type === 'device' ? n.shared : undefined)).filter(Boolean))), [others]);
+  const r = 7;
   return (
     <g pointerEvents="none">
       {doc.nodes.map((n) => {
-        if (n.type !== 'device' || !n.shared) return null;
+        if (n.type !== 'device' || !n.shared || !linked.has(n.shared)) return null;
         const b = nodeRect(n);
         // Inside the top-right corner: clear of the resize handle on the corner itself.
         const cx = b.x + b.w - r * 1.6;
         const cy = b.y + r * 1.6;
-        const u = r / 7;
         return (
-          <g key={n.id} transform={`translate(${cx},${cy}) scale(${u})`}>
+          <g key={n.id} transform={`translate(${cx},${cy})`}>
             <circle r={7} fill="#fff" stroke={ACCENT} strokeWidth={1.2} />
             <g fill="none" stroke={ACCENT} strokeWidth={1.4} strokeLinecap="round" transform="rotate(-45)">
               <rect x={-4.6} y={-1.8} width={5} height={3.6} rx={1.8} />
