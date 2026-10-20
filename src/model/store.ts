@@ -14,7 +14,7 @@ import { type Entry, type ShareNode, catalog, newKey, pull, stamp, takeFrom } fr
 import { type Doc, type Edge, type Node, type Revision, type UserPreset, emptyMeta } from './types';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
-export type Panel = null | 'lists' | 'text' | 'export' | 'library' | 'boards';
+export type Panel = null | 'lists' | 'text' | 'export' | 'library' | 'boards' | 'comments';
 /**
  * Something picked from the toolbar or a library, waiting to be put where the user clicks (its
  * outline follows the pointer). `place` puts it centred on a point of the board.
@@ -546,7 +546,7 @@ function show(doc: Doc): void {
   void readProject();
 }
 
-function centerOn(nodeId: string): void {
+export function centerOn(nodeId: string): void {
   const { doc, view } = useStore.getState();
   const n = doc.nodes.find((x) => x.id === nodeId);
   const el = document.getElementById('canvas');

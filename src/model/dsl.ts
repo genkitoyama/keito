@@ -63,7 +63,7 @@ cables:
     # 全体は先頭の powerTags: false で線表示に。to をポートなしの機材IDにすると空きポートを自動で使う
 shapes:                    # フローチャート・付箋
   - id: s1
-    shape: rect            # rect round diamond ellipse cloud(コメント用の雲) sticky text
+    shape: rect            # rect round diamond ellipse cloud(雲) sticky(付箋 = コメント。done: true で解決済み) text
     text: 開始
     color: blue            # white gray blue green yellow orange red purple
     fontSize: 18           # 任意。文字サイズ(px)。shape: text は 20 以上で太字の見出しになる
@@ -203,6 +203,7 @@ export function toYaml(doc: Doc): string {
   if (shapes.length) {
     out.shapes = shapes.map((s) => {
       const o: Obj = { id: s.id, shape: s.type === 'shape' ? s.shape : s.type, text: s.text };
+      if (s.type === 'sticky' && s.done) o.done = true;
       if (s.type !== 'text') put(o, 'color', s.color);
       if (s.fontSize) o.fontSize = s.fontSize;
       if (s.bold != null) o.bold = s.bold;
@@ -395,7 +396,11 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     const color = (str(v.color) in PALETTE ? str(v.color) : undefined) as ColorKey | undefined;
     const fontSize = typeof v.fontSize === 'number' && v.fontSize >= 6 && v.fontSize <= 200 ? v.fontSize : undefined;
     const bold = typeof v.bold === 'boolean' ? v.bold : undefined;
-    if (kind === 'sticky') nodes.push({ ...base, type: 'sticky', color: color ?? 'yellow', fontSize, bold });
+    if (kind === 'sticky') {
+      // When it was put on the board is not written out; it is kept from the sticky as it was.
+      const was = prevById.get(id);
+      nodes.push({ ...base, type: 'sticky', color: color ?? 'yellow', fontSize, bold, done: v.done === true || undefined, at: was?.type === 'sticky' ? was.at : Date.now() });
+    }
     else if (kind === 'text') nodes.push({ ...base, type: 'text', fontSize, bold });
     else {
       const fill = ['solid', 'outline', 'none'].includes(str(v.fill)) ? (str(v.fill) as FillStyle) : undefined;

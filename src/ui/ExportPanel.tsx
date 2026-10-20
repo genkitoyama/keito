@@ -7,6 +7,7 @@ import { saveFile } from './TopBar';
 import { sheetTables } from '../export/xlsx';
 import { subset } from '../model/geometry';
 import { loadBoards, useStore } from '../model/store';
+import { withoutComments } from '../model/comments';
 import type { Doc } from '../model/types';
 import { labelOf } from '../model/history';
 import { useProjectTabs } from './BoardTabs';
@@ -110,6 +111,22 @@ export function ExportPanel() {
     return saved ? (saved.split(',') as ListKey[]) : ['equipment', 'cables', 'comms'];
   });
   const [background, setBackground] = useState(true);
+  // Comments (stickies) are notes about the drawing, not part of it: left out unless asked for.
+  const [withComments, setWithComments] = useState(() => getSetting('exportComments') === 'on');
+  const drawn = (d: Doc): Doc => (withComments ? d : withoutComments(d));
+  const commentToggle = (
+    <label className="check">
+      <input
+        type="checkbox"
+        checked={withComments}
+        onChange={(e) => {
+          setWithComments(e.target.checked);
+          setSetting('exportComments', e.target.checked ? 'on' : '');
+        }}
+      />
+      付箋（コメント）も書き出す
+    </label>
+  );
   const [scale, setScale] = useState(2);
   const [msg, setMsg] = useState('');
 
@@ -120,19 +137,19 @@ export function ExportPanel() {
     () =>
       all
         ? boards.map((d) => ({
-            doc: d,
+            doc: drawn(d),
             tables: LIST_ORDER.filter((k) => lists.includes(k) && kindOf(d).lists.includes(k))
               .map((k) => compact(TABLES[k].make(d)))
               .filter((t) => t.rows.length),
             version: d.id === board.id ? version : undefined,
           }))
         : [],
-    [all, boards, lists.join(), board.id, version],
+    [all, boards, lists.join(), board.id, version, withComments],
   );
   const rowsIn = (t: Table) => t.rows.length - (t.total ? 1 : 0);
   // How many rows a list has on this board, or over all the project's boards.
   const countOf = (k: ListKey): number => (all ? boards.filter((d) => kindOf(d).lists.includes(k)).reduce((n, d) => n + rowsIn(compact(TABLES[k].make(d))), 0) : rowsIn(tables.get(k)!));
-  const image = useMemo(() => boardImage(doc, background), [doc, background]);
+  const image = useMemo(() => boardImage(drawn(doc), background), [doc, background, withComments]);
   const name = `${safeName(doc.meta.title)}${partial ? '_選択範囲' : ''}`;
 
   // The preview shows whole pages scaled to the width of the pane.
@@ -149,11 +166,11 @@ export function ExportPanel() {
   }, [mode]);
   const zoom = width ? Math.min(1, (width - 16) / (PAGE_PX[paper] + 48)) : 0.5;
   const html = useMemo(
-    () => (all ? bookletHtml(project, parts, paper, zoom) : pdfHtml(doc, { paper, version, tables: chosen }, zoom)),
-    [all, parts, project, doc, paper, version, zoom, chosen.map((t) => t.title).join()],
+    () => (all ? bookletHtml(project, parts, paper, zoom) : pdfHtml(drawn(doc), { paper, version, tables: chosen }, zoom)),
+    [all, parts, project, doc, paper, version, zoom, chosen.map((t) => t.title).join(), withComments],
   );
   const pack = `${safeName(project)}_まとめて`;
-  const images = useMemo(() => (all && mode === 'image' ? boards.map((d) => ({ doc: d, image: boardImage(d, background) })) : []), [all, mode, boards, background]);
+  const images = useMemo(() => (all && mode === 'image' ? boards.map((d) => ({ doc: d, image: boardImage(drawn(d), background) })) : []), [all, mode, boards, background, withComments]);
 
   // An action may report back in its own words (how many rows an update touched …).
   const run = (fn: () => Promise<string | void> | string | void, done: string) => async () => {
@@ -235,6 +252,7 @@ export function ExportPanel() {
               </>
             ) : all && mode === 'image' ? (
               <>
+                {commentToggle}
                 <label className="check">
                   <input type="checkbox" checked={background} onChange={(e) => setBackground(e.target.checked)} />
                   白背景を付ける（オフで透過）
@@ -304,6 +322,7 @@ export function ExportPanel() {
               </>
             ) : mode === 'pdf' ? (
               <>
+                {commentToggle}
                 <label className="field">
                   <span>用紙（横）</span>
                   <select
@@ -332,13 +351,14 @@ export function ExportPanel() {
                 </p>
                 <button
                   className="primary wide"
-                  onClick={run(() => printHtml(all ? bookletHtml(project, parts, paper) : pdfHtml(doc, { paper, version, tables: chosen })), '印刷ダイアログで送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。')}
+                  onClick={run(() => printHtml(all ? bookletHtml(project, parts, paper) : pdfHtml(drawn(doc), { paper, version, tables: chosen })), '印刷ダイアログで送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。')}
                 >
                   {all ? `${boards.length} 枚まとめて PDF にする（${paper} 横）` : `PDF にする（${paper} 横）`}
                 </button>
               </>
             ) : (
               <>
+                {commentToggle}
                 <label className="check">
                   <input type="checkbox" checked={background} onChange={(e) => setBackground(e.target.checked)} />
                   白背景を付ける（オフで透過）

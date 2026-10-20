@@ -47,9 +47,14 @@ export interface ShapeNode extends Base {
   /** Dashed border. */
   dash?: boolean;
 }
+/** A comment on the board: listed in the comments panel, left out of exports unless asked for. */
 export interface StickyNode extends Base {
   type: 'sticky';
   color: ColorKey;
+  /** Settled: drawn faded, and listed apart from the open ones. */
+  done?: boolean;
+  /** When it was put on the board (ms). */
+  at?: number;
   /** Font size in px (default 13.5). */
   fontSize?: number;
   /** Bold text; unset = this kind of node's usual weight. */

@@ -457,8 +457,9 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
       const f = Math.min(22, w / 4, h / 4);
       const paper = `M${x},${y} H${x + w} V${y + h - f} L${x + w - f},${y + h} H${x} Z`;
       const curl = `M${x + w - f},${y + h} L${x + w - f * 0.82},${y + h - f * 0.82} L${x + w},${y + h - f} Z`;
+      // A settled comment fades back, ticked.
       return (
-        <g>
+        <g opacity={n.done ? 0.38 : undefined}>
           {(
             <>
               <path d={`M${x + 3},${y + 8} H${x + w - 1} V${y + h - f + 5} L${x + w - f + 2},${y + h + 6} H${x + 5} Z`} fill="rgba(15,23,42,0.07)" />
@@ -471,6 +472,12 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
             </>
           )}
           <TextBlock x={cx} y={cy} w={textWidth(n)} text={n.text} size={textSize(n)} weight={textWeight(n)} theme={theme} />
+          {n.done && (
+            <g transform={`translate(${x + w - 12},${y + 12})`}>
+              <circle r={8} fill="#16a34a" />
+              <path d="M-3.6,0.2 L-1,2.8 L3.8,-2.4" fill="none" stroke="#fff" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+            </g>
+          )}
         </g>
       );
     }

@@ -14,7 +14,7 @@ export const SHAPES: { id: ShapeKind; label: string; icon: ReactNode }[] = [
   { id: 'round', label: '端子（開始・終了）', icon: ico(<rect x="3" y="6" width="14" height="8" rx="4" />) },
   { id: 'diamond', label: '判断', icon: ico(<path d="M10 3l7 7-7 7-7-7z" />) },
   { id: 'ellipse', label: '楕円', icon: ico(<ellipse cx="10" cy="10" rx="7" ry="5" />) },
-  { id: 'cloud', label: '雲（コメント）', icon: ico(<path d="M6 15a3.5 3.5 0 0 1-.6-6.95A4.5 4.5 0 0 1 14 7.2 3.9 3.9 0 0 1 14.2 15z" />) },
+  { id: 'cloud', label: '雲', icon: ico(<path d="M6 15a3.5 3.5 0 0 1-.6-6.95A4.5 4.5 0 0 1 14 7.2 3.9 3.9 0 0 1 14.2 15z" />) },
 ];
 export const shapeIcon = (id: ShapeKind): ReactNode => SHAPES.find((s) => s.id === id)?.icon;
 

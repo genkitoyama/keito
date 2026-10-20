@@ -311,7 +311,7 @@ const SIZE: Record<CreateKind, [number, number]> = {
 export function makeNode(kind: CreateKind, cx: number, cy: number, taken: Set<string>, text = '', color?: ColorKey): Node {
   const [w, h] = SIZE[kind];
   const base = { x: cx - w / 2, y: cy - h / 2, w, h, text };
-  if (kind === 'sticky') return { ...base, id: freshId(taken, 'note'), type: 'sticky', color: color ?? 'yellow' };
+  if (kind === 'sticky') return { ...base, id: freshId(taken, 'note'), type: 'sticky', color: color ?? 'yellow', at: Date.now() };
   if (kind === 'text') return { ...base, id: freshId(taken, 'txt'), type: 'text' };
   if (kind === 'frame') return { ...base, id: freshId(taken, 'area'), type: 'frame', text: text || 'エリア' };
   if (kind === 'sequence') return { ...base, x: cx, y: cy, id: freshId(taken, 'seq'), type: 'sequence' };

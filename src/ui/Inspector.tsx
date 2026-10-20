@@ -556,7 +556,7 @@ function NodePanel({ n }: { n: Node }) {
   }
   return (
     <>
-      <h3>{n.type === 'shape' ? '図形' : n.type === 'sticky' ? '付箋' : n.type === 'frame' ? 'エリア枠' : 'テキスト'} <code>{n.id}</code></h3>
+      <h3>{n.type === 'shape' ? '図形' : n.type === 'sticky' ? '付箋（コメント）' : n.type === 'frame' ? 'エリア枠' : 'テキスト'} <code>{n.id}</code></h3>
       <Field label={n.type === 'frame' ? 'エリア名（機材リストの設置場所になります）' : 'テキスト'} value={n.text} onChange={(v) => patch({ text: v })} multiline={n.type !== 'frame'} />
       {n.type === 'shape' && (
         <label className="field">
@@ -585,6 +585,15 @@ function NodePanel({ n }: { n: Node }) {
             <input type="checkbox" checked={!!n.dash} onChange={(e) => patch({ dash: e.target.checked }, true)} />
             枠を点線にする
           </label>
+        </>
+      )}
+      {n.type === 'sticky' && (
+        <>
+          <label className="check">
+            <input type="checkbox" checked={!!n.done} onChange={(e) => patch({ done: e.target.checked || undefined }, true)} />
+            解決済みにする（図では薄く表示）
+          </label>
+          <p className="hint">付箋はコメントとして上の「コメント」に一覧で並びます。書き出しには、エクスポートで選んだときだけ入ります。</p>
         </>
       )}
       {(n.type === 'shape' || n.type === 'sticky' || n.type === 'text' || n.type === 'frame') && <TextStyle n={n} />}

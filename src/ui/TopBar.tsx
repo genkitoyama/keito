@@ -3,6 +3,7 @@ import { randomId } from '../model/presets';
 import { type Panel, emptyDoc, useStore } from '../model/store';
 import { tidy } from '../model/tidy';
 import { kindOf } from '../model/kinds';
+import { openComments } from '../model/comments';
 import { openBoards } from './Boards';
 import { ICON } from './icons';
 import type { Doc } from '../model/types';
@@ -42,6 +43,7 @@ export function TopBar() {
   const mode = useStore((s) => s.mode);
   const viewing = useStore((s) => !!s.viewing);
   const kind = useStore((s) => kindOf(s.doc));
+  const comments = useStore((s) => openComments(s.doc).length);
   const st = useStore.getState;
   const toggle = (p: Panel) => st().setPanel(panel === p ? null : p);
 
@@ -93,6 +95,9 @@ export function TopBar() {
           {kind.listsLabel}
         </button>
       )}
+      <button className={panel === 'comments' ? 'on' : ''} onClick={() => toggle('comments')} data-tip="付箋（コメント）の一覧">
+        コメント{comments > 0 && <b className="count">{comments}</b>}
+      </button>
       <button className={panel === 'text' ? 'on' : ''} onClick={() => toggle('text')}>テキスト / AI</button>
       <button className="primary" onClick={() => toggle('export')}>エクスポート</button>
     </header>

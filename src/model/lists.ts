@@ -1,3 +1,4 @@
+import { openComments } from './comments';
 import { frameOf } from './geometry';
 import { allSignals, signalOf } from './signals';
 import { safeUrl } from './url';
@@ -603,6 +604,9 @@ export function checkTable(doc: Doc): Table {
     const list = unmeasured.map((e) => ids.get(e.id) ?? '').sort(natural);
     found.push({ level: 1, what: '長さが未入力', target: `${unmeasured.length} 本`, detail: list.length > 8 ? `${list.slice(0, 8).join('、')} ほか ${list.length - 8} 本` : list.join('、'), ref: unmeasured.map((e) => e.id) });
   }
+  // Comments not settled yet: one row, the list of them is in the comments panel.
+  const open = openComments(doc);
+  if (open.length) found.push({ level: 1, what: '未解決のコメント', target: `${open.length} 件`, detail: open.slice(0, 4).map((n) => n.text.split('\n')[0].trim() || '（空の付箋）').join('、') + (open.length > 4 ? ` ほか ${open.length - 4} 件` : ''), ref: open.map((n) => n.id) });
   found.sort((a, b) => a.level - b.level);
   return {
     title: 'チェック',

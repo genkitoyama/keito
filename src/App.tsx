@@ -8,6 +8,7 @@ import { copySelection, pasteClipboard, useStore } from './model/store';
 import { ExportPanel } from './ui/ExportPanel';
 import { BoardsPanel } from './ui/Boards';
 import { BoardTabs } from './ui/BoardTabs';
+import { CommentsPanel } from './ui/Comments';
 import { Inspector } from './ui/Inspector';
 import { ListsPanel } from './ui/ListsPanel';
 import { RevisionBanner } from './ui/Revisions';
@@ -159,6 +160,7 @@ export function App() {
         <div className="stage">
           <RevisionBanner />
           <Canvas />
+          {panel === 'comments' && <CommentsPanel />}
           {panel === 'lists' && hasLists && <Splitter axis="y" onDrag={(d) => growLists(-d)} />}
           {panel === 'lists' && hasLists && <ListsPanel />}
         </div>
