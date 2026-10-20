@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { type Paper, boardImage, copyPng, pdfHtml, printHtml, toPng } from '../export/exporters';
+import { type Paper, type PdfPart, boardImage, bookletHtml, copyPng, pdfHtml, printHtml, toPng, zipFiles } from '../export/exporters';
 import { TABLES, type Table, compact, toCsv } from '../model/lists';
-import { type ListKey, kindOf } from '../model/kinds';
+import { KINDS, type ListKey, kindOf } from '../model/kinds';
 import { toYaml } from '../model/dsl';
 import { saveFile } from './TopBar';
 import { sheetTables } from '../export/xlsx';
@@ -9,6 +9,7 @@ import { subset } from '../model/geometry';
 import { useStore } from '../model/store';
 import type { Doc } from '../model/types';
 import { labelOf } from '../model/history';
+import { useProjectTabs } from './BoardTabs';
 import { download, getSetting, inlineImages, pickFile, safeName, setSetting } from '../platform/storage';
 
 type Mode = 'pdf' | 'image' | 'table' | 'data';
@@ -24,6 +25,9 @@ export function openExport(mode: Mode): void {
   setSetting('exportMode', mode);
   useStore.getState().setPanel('export');
 }
+/** Every list there is, in the order they come in a document. */
+const LIST_ORDER: ListKey[] = ['equipment', 'cables', 'summary', 'power', 'network', 'comms'];
+
 const PAGE_PX: Record<Paper, number> = { A4: (297 / 25.4) * 96, A3: (420 / 25.4) * 96 };
 
 export function ExportPanel() {
@@ -38,17 +42,41 @@ export function ExportPanel() {
     };
   }, [board]);
   const whole = inlined?.from === board ? inlined.doc : board;
+  // The whole project at once: every board of it, in the order of its tabs.
+  const tabs = useProjectTabs();
+  const others = useStore((s) => s.others);
+  const project = board.meta.project?.trim() ?? '';
+  const [scopeState, setScopeState] = useState<'board' | 'project'>(() => (getSetting('exportScope') === 'project' ? 'project' : 'board'));
+  const all = scopeState === 'project' && tabs.length > 1;
+  const setScope = (v: 'board' | 'project') => {
+    setScopeState(v);
+    setSetting('exportScope', v);
+  };
+  const order = tabs.map((t) => t.id).join();
+  const [loaded, setLoaded] = useState<{ order: string; docs: Doc[] }>({ order: '', docs: [] });
+  const boards = loaded.docs;
+  useEffect(() => {
+    if (!all) return;
+    let live = true;
+    const docs = order.split(',').map((id) => (id === board.id ? board : others.find((o) => o.id === id))).filter((d): d is Doc => !!d);
+    void Promise.all(docs.map(inlineImages)).then((d) => live && setLoaded({ order, docs: d }));
+    return () => {
+      live = false;
+    };
+  }, [all, order, board, others]);
   // With something selected, the export can be just that part of the board.
   const selection = useStore((s) => s.selection);
   const [onlySelected, setOnlySelected] = useState(() => selection.length > 0);
-  const partial = onlySelected && selection.length > 0;
+  const partial = !all && onlySelected && selection.length > 0;
   const doc = useMemo(() => (partial ? subset(whole, selection) : whole), [whole, partial, selection]);
   // The lists come from the board's kind: the sheets of the workbook (and CSV) are all of them,
   // the PDF takes them all but the check list.
   const kind = kindOf(board);
   const SHEETS = kind.lists;
-  const LISTS: ListKey[] = SHEETS.filter((k) => k !== 'check');
-  const modes = MODES.filter((m) => m.key !== 'table' || SHEETS.length > 0);
+  // For the whole project, the lists of every kind of board in it.
+  const LISTS: ListKey[] = all ? LIST_ORDER.filter((k) => boards.some((d) => kindOf(d).lists.includes(k))) : SHEETS.filter((k) => k !== 'check');
+  const withLists = boards.filter((d) => kindOf(d).lists.length > 0);
+  const modes = MODES.filter((m) => m.key !== 'table' || (all ? withLists.length > 0 : SHEETS.length > 0));
   // The tab used last comes back, so a board exported the same way each time takes one click.
   const [chosenMode, setModeState] = useState<Mode>(() => (MODES.find((m) => m.key === getSetting('exportMode'))?.key ?? 'pdf'));
   const mode: Mode = modes.some((m) => m.key === chosenMode) ? chosenMode : 'pdf';
@@ -75,8 +103,24 @@ export function ExportPanel() {
   const [scale, setScale] = useState(2);
   const [msg, setMsg] = useState('');
 
-  const tables = useMemo(() => new Map<ListKey, Table>(LISTS.map((k) => [k, compact(TABLES[k].make(doc))])), [doc, kind.id]);
-  const chosen = LISTS.filter((k) => lists.includes(k) && tables.get(k)!.rows.length).map((k) => tables.get(k)!);
+  const tables = useMemo(() => new Map<ListKey, Table>(LISTS.map((k) => [k, compact(TABLES[k].make(doc))])), [doc, kind.id, all]);
+  const chosen = LISTS.filter((k) => lists.includes(k) && tables.get(k)?.rows.length).map((k) => tables.get(k)!);
+  // Each board of the project with the chosen lists its kind has, those with rows.
+  const parts: PdfPart[] = useMemo(
+    () =>
+      all
+        ? boards.map((d) => ({
+            doc: d,
+            tables: LIST_ORDER.filter((k) => lists.includes(k) && kindOf(d).lists.includes(k))
+              .map((k) => compact(TABLES[k].make(d)))
+              .filter((t) => t.rows.length),
+          }))
+        : [],
+    [all, boards, lists.join()],
+  );
+  const rowsIn = (t: Table) => t.rows.length - (t.total ? 1 : 0);
+  // How many rows a list has on this board, or over all the project's boards.
+  const countOf = (k: ListKey): number => (all ? boards.filter((d) => kindOf(d).lists.includes(k)).reduce((n, d) => n + rowsIn(compact(TABLES[k].make(d))), 0) : rowsIn(tables.get(k)!));
   const image = useMemo(() => boardImage(doc, background), [doc, background]);
   const name = `${safeName(doc.meta.title)}${partial ? '_選択範囲' : ''}`;
 
@@ -95,7 +139,12 @@ export function ExportPanel() {
   const zoom = width ? Math.min(1, (width - 16) / (PAGE_PX[paper] + 48)) : 0.5;
   // An older state on screen exports under its own name or time.
   const version = useStore((s) => (s.viewing ? labelOf(s.viewing.entry) : undefined));
-  const html = useMemo(() => pdfHtml(doc, { paper, version, tables: chosen }, zoom), [doc, paper, version, zoom, chosen.map((t) => t.title).join()]);
+  const html = useMemo(
+    () => (all ? bookletHtml(project, parts, paper, zoom) : pdfHtml(doc, { paper, version, tables: chosen }, zoom)),
+    [all, parts, project, doc, paper, version, zoom, chosen.map((t) => t.title).join()],
+  );
+  const pack = `${safeName(project)}_まとめて`;
+  const images = useMemo(() => (all && mode === 'image' ? boards.map((d) => ({ doc: d, image: boardImage(d, background) })) : []), [all, mode, boards, background]);
 
   // An action may report back in its own words (how many rows an update touched …).
   const run = (fn: () => Promise<string | void> | string | void, done: string) => async () => {
@@ -122,6 +171,16 @@ export function ExportPanel() {
         </header>
         <div className="modal-body cols">
           <div className="col side">
+            {tabs.length > 1 && (
+              <div className="seg">
+                <button className={all ? '' : 'on'} onClick={() => setScope('board')}>
+                  このボード
+                </button>
+                <button className={all ? 'on' : ''} onClick={() => setScope('project')} data-tip={`「${project}」のボードすべてを 1 回で`}>
+                  案件まるごと（{tabs.length} 枚）
+                </button>
+              </div>
+            )}
             <div className="seg wrap">
               {modes.map((m) => (
                 <button key={m.key} className={mode === m.key ? 'on' : ''} onClick={() => setMode(m.key)}>
@@ -129,14 +188,66 @@ export function ExportPanel() {
                 </button>
               ))}
             </div>
-            {mode !== 'data' && (
+            {mode !== 'data' && !all && (
               <label className="check">
                 <input type="checkbox" checked={partial} disabled={!selection.length} onChange={(e) => setOnlySelected(e.target.checked)} />
                 選択した要素だけ{selection.length ? `（${selection.length} 個）` : '（何も選択されていません）'}
               </label>
             )}
             {partial && mode !== 'data' && <p className="hint">エリア枠を選ぶと中の要素も入ります。両端が入っている線は自動で付き、リストも選択した範囲から作ります。</p>}
-            {mode === 'table' ? (
+            {all && loaded.order !== order ? (
+              <p className="hint">ボードを読み込み中…</p>
+            ) : all && mode === 'table' ? (
+              <>
+                <h4>Excel（.xlsx）をまとめて</h4>
+                <p className="hint">表のあるボード（{withLists.map((d) => d.meta.title).join('・')}）ごとに 1 ファイル、それを 1 つの ZIP にします。中身は 1 枚ずつ書き出すときと同じです。</p>
+                <button
+                  className="primary wide"
+                  onClick={run(async () => {
+                    const { workbook } = await import('../export/xlsx');
+                    const files = await Promise.all(withLists.map(async (d) => ({ name: `${safeName(d.meta.title)}_${kindOf(d).listsLabel}.xlsx`, data: await workbook(d) })));
+                    download(`${pack}_表.zip`, await zipFiles(files));
+                  }, 'ZIP を保存しました。')}
+                >
+                  Excel をまとめて保存（ZIP）
+                </button>
+              </>
+            ) : all && mode === 'data' ? (
+              <>
+                <h4>keito ファイルをまとめて</h4>
+                <p className="hint">案件のボードすべてを、画像込みの .keito.json で 1 つの ZIP に。バックアップや受け渡しに。</p>
+                <button className="primary wide" onClick={run(async () => download(`${pack}_keito.zip`, await zipFiles(boards.map((d) => ({ name: `${safeName(d.meta.title)}.keito.json`, data: JSON.stringify(d, null, 2) })))), 'ZIP を保存しました。')}>
+                  keito ファイルをまとめて保存（ZIP）
+                </button>
+                <h4>YAML をまとめて</h4>
+                <button className="wide" onClick={run(async () => download(`${pack}_yaml.zip`, await zipFiles(boards.map((d) => ({ name: `${safeName(d.meta.title)}.yaml`, data: toYaml(d) })))), 'ZIP を保存しました。')}>
+                  YAML をまとめて保存（ZIP）
+                </button>
+              </>
+            ) : all && mode === 'image' ? (
+              <>
+                <label className="check">
+                  <input type="checkbox" checked={background} onChange={(e) => setBackground(e.target.checked)} />
+                  白背景を付ける（オフで透過）
+                </label>
+                <label className="field">
+                  <span>PNG 解像度</span>
+                  <select value={scale} onChange={(e) => setScale(Number(e.target.value))}>
+                    <option value={1}>1x</option>
+                    <option value={2}>2x</option>
+                    <option value={3}>3x</option>
+                    <option value={4}>4x</option>
+                  </select>
+                </label>
+                <p className="hint">ボードごとに 1 枚、それを 1 つの ZIP にします。</p>
+                <button className="primary wide" onClick={run(async () => download(`${pack}_PNG.zip`, await zipFiles(await Promise.all(images.map(async (x) => ({ name: `${safeName(x.doc.meta.title)}.png`, data: await toPng(x.image, scale) }))))), 'ZIP を保存しました。')}>
+                  PNG をまとめて保存（ZIP）
+                </button>
+                <button className="wide" onClick={run(async () => download(`${pack}_SVG.zip`, await zipFiles(images.map((x) => ({ name: `${safeName(x.doc.meta.title)}.svg`, data: x.image.svg })))), 'ZIP を保存しました。')}>
+                  SVG をまとめて保存（ZIP）
+                </button>
+              </>
+            ) : mode === 'table' ? (
               <>
                 <h4>Excel（.xlsx）</h4>
                 <p className="hint">すべての表を 1 ファイルに、表ごとのシートで。見出し固定・フィルター・プルダウン付きで、Google スプレッドシートでも開けます。</p>
@@ -197,10 +308,9 @@ export function ExportPanel() {
                     <option>A3</option>
                   </select>
                 </label>
-                <p className="hint">1 ページ目に図、そのあとに選んだリストが付きます。</p>
+                <p className="hint">{all ? 'ボードごとに、図のページのあとにそのボードのリストが続きます（タブの順）。' : '1 ページ目に図、そのあとに選んだリストが付きます。'}</p>
                 {LISTS.map((k) => {
-                  const rows = tables.get(k)!;
-                  const count = rows.rows.length - (rows.total ? 1 : 0);
+                  const count = countOf(k);
                   return (
                     <label key={k} className="check">
                       <input type="checkbox" checked={lists.includes(k)} disabled={!count} onChange={(e) => toggle(k, e.target.checked)} />
@@ -211,8 +321,11 @@ export function ExportPanel() {
                 <p className="hint">
                   何も書かれていない列（URL や備考など）は出しません。長いリストは自動で改ページされ、見出し行が各ページに付きます。見出しの右には案件名と今日の日付（履歴の版を開いているときはその版の名前か日時）が入ります。
                 </p>
-                <button className="primary wide" onClick={run(() => printHtml(pdfHtml(doc, { paper, version, tables: chosen })), '印刷ダイアログで送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。')}>
-                  PDF にする（{paper} 横）
+                <button
+                  className="primary wide"
+                  onClick={run(() => printHtml(all ? bookletHtml(project, parts, paper) : pdfHtml(doc, { paper, version, tables: chosen })), '印刷ダイアログで送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。')}
+                >
+                  {all ? `${boards.length} 枚まとめて PDF にする（${paper} 横）` : `PDF にする（${paper} 横）`}
                 </button>
               </>
             ) : (
@@ -238,7 +351,26 @@ export function ExportPanel() {
             {msg && <p className="info">{msg}</p>}
           </div>
           <div className="col" ref={pane}>
-            {mode === 'table' ? (
+            {all && (mode === 'table' || mode === 'data') ? (
+              <ul className="preview bundle-list">
+                {(mode === 'table' ? withLists : boards).map((d) => (
+                  <li key={d.id}>
+                    <b className={`kind-badge ${d.kind ?? 'system'}`}>{KINDS[d.kind ?? 'system'].label}</b>
+                    {d.meta.title}
+                    <small>{mode === 'table' ? kindOf(d).lists.map((k) => TABLES[k].label).join('・') : `${d.nodes.length} 要素`}</small>
+                  </li>
+                ))}
+              </ul>
+            ) : all && mode === 'image' ? (
+              <div className={`preview bundle-images ${background ? '' : 'checker'}`}>
+                {images.map((x) => (
+                  <figure key={x.doc.id}>
+                    <div dangerouslySetInnerHTML={{ __html: x.image.svg.replace(/width="[\d.]+" height="[\d.]+"/, 'width="100%" height="100%"') }} />
+                    <figcaption>{x.doc.meta.title}</figcaption>
+                  </figure>
+                ))}
+              </div>
+            ) : mode === 'table' ? (
               <WorkbookPreview sheets={sheets} at={sheet} onPick={setSheet} />
             ) : mode === 'data' ? (
               <pre className="preview code-preview">{yaml}</pre>

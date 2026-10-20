@@ -1,5 +1,5 @@
 import type { Doc, UserPreset } from '../model/types';
-import { readBoard } from '../model/load';
+import { boardKind, readBoard } from '../model/load';
 import { upgradePreset } from '../model/video';
 
 /**
@@ -79,7 +79,7 @@ const local: Backend = {
   // Boards listed before projects and kinds were noted in the index get them from the board itself.
   list: async () =>
     localList().map((b) => {
-      if (b.project !== undefined || b.kind !== undefined) return b;
+      if (b.project !== undefined || b.kind !== undefined) return { ...b, kind: boardKind(b.kind) };
       const doc = localLoad(b.id);
       return doc ? { ...b, project: doc.meta.project || undefined, kind: doc.kind } : b;
     }),
@@ -127,7 +127,7 @@ const serials = new Map<string, number>();
 
 const server: Backend = {
   mode: 'server',
-  list: async () => (await ok(await fetch(API))).json(),
+  list: async () => ((await (await ok(await fetch(API))).json()) as BoardInfo[]).map((b) => ({ ...b, kind: boardKind(b.kind) })),
   load: async (id) => {
     const res = await fetch(`${API}/${id}`);
     if (res.status === 404) return null;

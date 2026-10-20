@@ -75,19 +75,39 @@ function tableHtml(t: Table, doc: Doc): string {
  * `zoom` scales the on-screen preview; print ignores it.
  */
 export function pdfHtml(doc: Doc, opts: PdfOptions, zoom = 1): string {
-  const [w, h] = SIZE[opts.paper];
+  return bookletHtml(doc.meta.title, [{ doc, tables: opts.tables, version: opts.version }], opts.paper, zoom);
+}
+
+/** One board of a booklet: its diagram, then its lists. */
+export interface PdfPart {
+  doc: Doc;
+  tables: Table[];
+  /** The state of the board shown, when an older one is on screen. */
+  version?: string;
+}
+
+/** Figure page of one board: the diagram fitted under its title, the project and the date (or its version) on the right. */
+function figureHtml(part: PdfPart): string {
+  const { doc } = part;
   const figure = boardImage(doc, true, 24).svg.replace(/width="[\d.]+" height="[\d.]+"/, 'width="100%" height="100%"');
   // An older state carries its own name or time in place of today's date.
-  const meta = [doc.meta.project, opts.version ?? new Date().toLocaleDateString('sv-SE')].filter(Boolean);
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(doc.meta.title)}</title><style>
-@page{size:${opts.paper} landscape;margin:${MARGIN}mm}
+  const meta = [doc.meta.project, part.version ?? new Date().toLocaleDateString('sv-SE')].filter(Boolean);
+  return `<div class="figure"><header><h1>${esc(doc.meta.title)}</h1><span class="grow"></span><span>${meta.map((m) => esc(String(m))).join('　')}</span></header><div class="art">${figure}</div></div>
+${part.tables.map((t) => tableHtml(t, doc)).join('')}`;
+}
+
+/** Several boards (a project's) as one document: each board's diagram, then its lists, one after the other. */
+export function bookletHtml(title: string, parts: PdfPart[], paper: Paper, zoom = 1): string {
+  const [w, h] = SIZE[paper];
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>
+@page{size:${paper} landscape;margin:${MARGIN}mm}
 html,body{margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 body{font:8.5pt/1.45 -apple-system,"Hiragino Sans","Noto Sans JP","Yu Gothic UI",sans-serif;color:#1f2937}
 header{display:flex;align-items:baseline;gap:12pt;border-bottom:.8pt solid #334155;padding-bottom:3pt;margin-bottom:6pt}
 header h1,header h2{margin:0;font-size:13pt}header span{color:#64748b;font-size:8.5pt}header .grow{flex:1}
 .figure{height:${h - MARGIN * 2 - 1}mm;display:flex;flex-direction:column}
 .figure .art{flex:1;min-height:0}.figure svg{display:block}
-.list{break-before:page}
+.list,.figure~.figure{break-before:page}
 table{width:100%;border-collapse:collapse;table-layout:fixed}
 thead{display:table-header-group}tr{break-inside:avoid}
 th,td{border:.4pt solid #cbd5e1;padding:2.5pt 4pt;text-align:left;vertical-align:top;overflow-wrap:anywhere}
@@ -99,8 +119,7 @@ a{color:#1d4ed8;text-decoration:none}
 .figure,.list{background:#fff;width:${w - MARGIN * 2}mm;padding:${MARGIN}mm;margin:0 auto 6mm;box-shadow:0 1px 6px rgba(15,23,42,.18)}
 .list{min-height:${h - MARGIN * 2}mm}}
 </style></head><body>
-<div class="figure"><header><h1>${esc(doc.meta.title)}</h1><span class="grow"></span><span>${meta.map((m) => esc(String(m))).join('　')}</span></header><div class="art">${figure}</div></div>
-${opts.tables.map((t) => tableHtml(t, doc)).join('')}
+${parts.map(figureHtml).join('\n')}
 </body></html>`;
 }
 
@@ -119,4 +138,19 @@ export function printHtml(html: string): void {
     win.focus();
     win.print();
   }, 150);
+}
+
+/** Files packed into one ZIP. Names repeated (two boards of one title) are numbered. */
+export async function zipFiles(files: { name: string; data: Blob | string }[]): Promise<Blob> {
+  const { default: JSZip } = await import('jszip');
+  const zip = new JSZip();
+  const used = new Set<string>();
+  for (const f of files) {
+    let name = f.name;
+    const dot = name.indexOf('.') > 0 ? name.indexOf('.') : name.length;
+    for (let i = 2; used.has(name); i++) name = `${f.name.slice(0, dot)}_${i}${f.name.slice(dot)}`;
+    used.add(name);
+    zip.file(name, f.data);
+  }
+  return zip.generateAsync({ type: 'blob' });
 }

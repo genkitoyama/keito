@@ -7,6 +7,7 @@ import { getSetting, setSetting } from './platform/storage';
 import { copySelection, pasteClipboard, useStore } from './model/store';
 import { ExportPanel } from './ui/ExportPanel';
 import { BoardsPanel } from './ui/Boards';
+import { BoardTabs } from './ui/BoardTabs';
 import { Inspector } from './ui/Inspector';
 import { ListsPanel } from './ui/ListsPanel';
 import { RevisionBanner } from './ui/Revisions';
@@ -152,6 +153,7 @@ export function App() {
   return (
     <div className="app" style={{ '--side': `${side}px`, '--lists': `${lists}px` } as CSSProperties}>
       <TopBar />
+      <BoardTabs />
       <div className="main">
         <Toolbar />
         <div className="stage">

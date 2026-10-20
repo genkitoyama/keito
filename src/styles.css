@@ -1532,6 +1532,76 @@ body.row-dragging .lists td.editable:hover {
   font-size: 10px;
 }
 
+/* The open board's project as tabs, under the top bar. */
+.board-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  padding: 4px 10px 0;
+  border-bottom: 1px solid var(--line);
+  background: #f1f5f9;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.board-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--sub);
+  flex-shrink: 0;
+  margin-bottom: -1px;
+}
+.board-tab:hover {
+  background: #e2e8f0;
+  color: var(--ink);
+}
+.board-tab.on {
+  background: var(--panel);
+  border-color: var(--line);
+  color: var(--ink);
+  font-weight: 600;
+}
+.board-tab span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The kind's colour, as on its badge. */
+.board-tab i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: #2563eb;
+  flex-shrink: 0;
+}
+.board-tab.software i {
+  background: #7c3aed;
+}
+.board-tab.sequence i {
+  background: #0d9488;
+}
+.board-tab.free i {
+  background: #64748b;
+}
+.board-tab.add {
+  padding: 0 10px;
+  font-size: 14px;
+}
+.board-tabs-hint {
+  align-self: center;
+  margin-left: 8px;
+  color: var(--sub);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
 /* The boards window: projects on the left, their boards on the right. */
 .modal.boards {
   width: min(980px, 94vw);
@@ -1733,3 +1803,49 @@ body.row-dragging .lists td.editable:hover {
   height: 17px;
 }
 
+
+/* Exporting a whole project: what goes in the ZIP, and each board's picture. */
+.preview.bundle-list {
+  display: block;
+  list-style: none;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+}
+.bundle-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.bundle-list small {
+  margin-left: auto;
+  color: var(--sub);
+}
+.preview.bundle-images {
+  display: grid;
+  justify-content: stretch;
+  align-items: start;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  padding: 12px;
+  overflow: auto;
+  align-content: start;
+}
+.bundle-images figure {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.bundle-images figure > div {
+  height: 180px;
+  padding: 6px;
+}
+.bundle-images figcaption {
+  padding: 5px 8px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  font-weight: 600;
+}

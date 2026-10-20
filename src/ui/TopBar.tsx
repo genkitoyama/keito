@@ -48,11 +48,9 @@ export function TopBar() {
   return (
     <header className="topbar">
       <b className="logo">keito</b>
-      {/* The project and board on screen; the list of all of them opens from here. */}
-      <button className="board-switch" onClick={() => openBoards()} data-tip="ボード一覧（案件ごと）">
-        {doc.meta.project && <small>{doc.meta.project} ／</small>}
-        <b className={`kind-badge ${kind.id}`}>{kind.label}</b>
-        <span>{doc.meta.title}</span>
+      {/* The project on screen (its boards are the tabs below); every project's boards open from here. */}
+      <button className="board-switch" onClick={() => openBoards()} data-tip="ボード一覧（ほかの案件も）">
+        <span>{doc.meta.project?.trim() || '案件なし'}</span>
         <i>▾</i>
       </button>
       <button onClick={() => openBoards(true)} data-tip="新しいボード（種類を選ぶ）">＋新規</button>

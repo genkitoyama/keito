@@ -17,7 +17,7 @@ import { fitLegends } from '../src/model/legend';
 import { TABLES, type Table, checkTable, toCsv } from '../src/model/lists';
 import { drawingOf, entryFor, fingerprint, labelOf, thin } from '../src/model/history';
 import { kindOf } from '../src/model/kinds';
-import { readBoard } from '../src/model/load';
+import { boardKind, readBoard } from '../src/model/load';
 import { randomId } from '../src/model/presets';
 import { registerSignals } from '../src/model/signals';
 import { type Doc, type Revision, emptyMeta } from '../src/model/types';
@@ -220,7 +220,7 @@ async function main(): Promise<void> {
       const all = boards.list();
       if (!all.length) return void console.log(`（ボードはありません: ${boards.root}）`);
       const KIND_LABEL: Record<string, string> = { software: 'ソフトウェア構成図', sequence: 'シーケンス図', free: '自由ボード' };
-      for (const b of all) console.log(`${b.id}\t${b.project ?? '（案件なし）'}\t${KIND_LABEL[b.kind ?? ''] ?? 'システム図'}\t${b.title}\t${new Date(b.updated).toLocaleString('ja-JP')}`);
+      for (const b of all) console.log(`${b.id}\t${b.project ?? '（案件なし）'}\t${KIND_LABEL[boardKind(b.kind) ?? ''] ?? 'システム図'}\t${b.title}\t${new Date(b.updated).toLocaleString('ja-JP')}`);
       return;
     }
 
