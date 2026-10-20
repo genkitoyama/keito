@@ -1532,67 +1532,87 @@ body.row-dragging .lists td.editable:hover {
   font-size: 10px;
 }
 
-/* The open board's project as tabs, under the top bar. */
+/*
+ * The open board's project as tabs, under the top bar: each a raised card on a grey strip; the
+ * open one in the board's own colour, joined to it, with its kind's colour along its top.
+ */
 .board-tabs {
   display: flex;
   align-items: flex-end;
-  gap: 2px;
-  padding: 4px 10px 0;
-  border-bottom: 1px solid var(--line);
-  background: #f1f5f9;
+  gap: 4px;
+  padding: 6px 10px 0;
+  border-bottom: 1px solid #cbd5e1;
+  background: #dbe2ea;
   overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: none;
 }
-.board-tab {
+.board-tabs .board-tab {
+  --kind: #2563eb;
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 7px;
   max-width: 220px;
-  height: 28px;
-  padding: 0 12px;
-  border: 1px solid transparent;
+  height: 30px;
+  padding: 0 14px;
+  border: 1px solid #cbd5e1;
   border-bottom: none;
-  border-radius: 6px 6px 0 0;
-  background: transparent;
-  color: var(--sub);
+  border-radius: 8px 8px 0 0;
+  background: #e9eef3;
+  color: #475569;
+  font-size: 12.5px;
   flex-shrink: 0;
+  box-shadow: inset 0 -1px 0 #cbd5e1;
+}
+.board-tabs .board-tab.software {
+  --kind: #7c3aed;
+}
+.board-tabs .board-tab.sequence {
+  --kind: #0d9488;
+}
+.board-tabs .board-tab.free {
+  --kind: #64748b;
+}
+.board-tabs .board-tab:hover {
+  background: #f1f4f8;
+  color: var(--ink);
+}
+/* The open tab: the board's colour (as the canvas draws it), covering the strip's bottom line so the two read as one. */
+.board-tabs .board-tab.on {
+  height: 33px;
   margin-bottom: -1px;
-}
-.board-tab:hover {
-  background: #e2e8f0;
+  background: #f4f6f9;
   color: var(--ink);
+  font-weight: 700;
+  border-top: 3px solid var(--kind);
+  box-shadow: 0 -2px 6px rgba(15, 23, 42, 0.08);
+  z-index: 1;
 }
-.board-tab.on {
-  background: var(--panel);
-  border-color: var(--line);
-  color: var(--ink);
-  font-weight: 600;
-}
-.board-tab span {
+.board-tabs .board-tab span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 /* The kind's colour, as on its badge. */
-.board-tab i {
+.board-tabs .board-tab i {
   width: 8px;
   height: 8px;
   border-radius: 2px;
-  background: #2563eb;
+  background: var(--kind);
   flex-shrink: 0;
 }
-.board-tab.software i {
-  background: #7c3aed;
+.board-tabs .board-tab.add {
+  padding: 0 11px;
+  background: transparent;
+  border-style: dashed dashed none;
+  box-shadow: none;
+  color: var(--sub);
+  font-size: 15px;
 }
-.board-tab.sequence i {
-  background: #0d9488;
-}
-.board-tab.free i {
-  background: #64748b;
-}
-.board-tab.add {
-  padding: 0 10px;
-  font-size: 14px;
+.board-tabs .board-tab.add:hover {
+  background: #fff;
+  color: var(--accent);
 }
 .board-tabs-hint {
   align-self: center;
