@@ -41,7 +41,7 @@ export function BoardTabs() {
       <button className="board-tab add" data-tip={project ? `「${project}」に新しいボードを追加` : '新しいボード'} aria-label="新しいボード" onClick={() => openBoards(true)}>
         ＋
       </button>
-      {!project && <span className="board-tabs-hint">ボード情報で案件名を付けると、同じ案件のボードがここにタブで並びます</span>}
+      {!project && <span className="board-tabs-hint">ボード設定で案件名を付けると、同じ案件のボードがここにタブで並びます</span>}
     </nav>
   );
 }

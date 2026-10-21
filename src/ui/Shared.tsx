@@ -50,7 +50,7 @@ export function SharedSection({ n }: { n: DeviceNode }) {
     return (
       <div className="shared">
         <h4>ほかのボードとの共有</h4>
-        <p className="hint">ボード情報で案件名を付けると、同じ案件のボード（ほかのシステム図・ソフトウェア構成図）と同じものとしてつなげられます。</p>
+        <p className="hint">ボード設定で案件名を付けると、同じ案件のボード（ほかのシステム図・ソフトウェア構成図）と同じものとしてつなげられます。</p>
       </div>
     );
   }

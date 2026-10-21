@@ -550,6 +550,33 @@ textarea:focus {
   margin: 0 0 10px;
   font-size: 14px;
 }
+.board-lead {
+  margin: -6px 0 10px;
+}
+.board-section {
+  margin: 0 0 12px;
+  padding: 2px 10px 8px;
+  border: 1px solid #d6e2f0;
+  border-radius: 8px;
+  background: #f3f7fc;
+}
+.inspector .board-section h4 {
+  color: #3b5b85;
+}
+.board-section h4 small {
+  font-weight: 400;
+  font-size: 10.5px;
+  color: var(--sub);
+}
+.board-section .group-label {
+  display: block;
+  margin: 8px 0 2px;
+  font-size: 11px;
+  color: var(--sub);
+}
+.board-section .hint {
+  margin: 6px 0 0;
+}
 .inspector h4,
 .modal h4 {
   margin: 14px 0 6px;
@@ -825,6 +852,18 @@ textarea.code {
   align-items: center;
   gap: 6px;
   margin: 4px 0;
+}
+/* A label running over two lines must not squeeze its box: every checkbox keeps one size. */
+.check input[type='checkbox'] {
+  flex: none;
+  margin: 0;
+}
+.board-section .check {
+  align-items: flex-start;
+  font-size: 12.5px;
+}
+.board-section .check input[type='checkbox'] {
+  margin-top: 2px;
 }
 .error {
   margin: 0;

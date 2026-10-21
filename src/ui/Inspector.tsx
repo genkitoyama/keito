@@ -219,60 +219,71 @@ function MetaPanel() {
   const set = (k: keyof DocMeta) => (v: string) => useStore.getState().mutate((d) => ({ ...d, meta: { ...d.meta, [k]: v } }), false);
   return (
     <>
-      <h3>ボード情報</h3>
-      <Field label="タイトル（図面名称）" value={meta.title} onChange={set('title')} />
-      <Field label="案件名" value={meta.project} onChange={set('project')} />
-      <label className="field">
-        <span>ボードの種類</span>
-        {/* Changing the kind changes what the board offers; what is drawn on it stays. */}
-        <select value={kind.id} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, kind: e.target.value === 'system' ? undefined : (e.target.value as BoardKind) }))}>
-          {KIND_ORDER.map((k) => (
-            <option key={k} value={k}>
-              {KINDS[k].label}
-            </option>
-          ))}
-        </select>
-      </label>
+      <h3>ボード設定</h3>
+      <p className="hint board-lead">何も選んでいないときは、このボード全体の設定が出ます。</p>
+      <section className="board-section">
+        <h4>基本情報</h4>
+        <Field label="タイトル（図面名称）" value={meta.title} onChange={set('title')} />
+        <Field label="案件名" value={meta.project} onChange={set('project')} />
+        <label className="field">
+          <span>ボードの種類</span>
+          {/* Changing the kind changes what the board offers; what is drawn on it stays. */}
+          <select value={kind.id} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, kind: e.target.value === 'system' ? undefined : (e.target.value as BoardKind) }))}>
+            {KIND_ORDER.map((k) => (
+              <option key={k} value={k}>
+                {KINDS[k].label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="hint">タイトルと案件名は、PDF・Excel の見出しに入ります。</p>
+      </section>
+      <section className="board-section">
+        <h4>
+          線とラベル
+          <small>すべての線に適用</small>
+        </h4>
+        <label className="field">
+          <span>ラベルの文字サイズ</span>
+          <select value={labelSize} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, labelSize: Number(e.target.value) === LABEL_SIZE ? undefined : Number(e.target.value) }))}>
+            {LABEL_SIZES.map((o) => (
+              <option key={o.size} value={o.size}>
+                {o.label}（{o.size}px）
+              </option>
+            ))}
+          </select>
+        </label>
+        {kind.cableOptions && (
+          <>
+            <span className="group-label">ラベルに出すもの</span>
+            <label className="check">
+              <input type="checkbox" checked={idLabels} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, cableIdLabels: e.target.checked, edges: d.edges.map((x) => (x.showId === undefined ? x : { ...x, showId: undefined })) }))} />
+              ケーブル ID
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={lenLabels} onChange={(e) => boardLabel({ lengthLabels: e.target.checked }, 'showLength')} />
+              ケーブルの長さ
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={stackLabels} onChange={(e) => boardLabel({ stackedLabels: e.target.checked }, 'stacked')} />
+              項目を 1 行ずつに分ける
+            </label>
+            <span className="group-label">線の描き方</span>
+            <label className="check">
+              <input type="checkbox" checked={powerTags} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, powerTags: e.target.checked }))} />
+              電源ケーブルは線を省略（両端に接続先だけ表示）
+            </label>
+          </>
+        )}
+        <label className="check">
+          <input type="checkbox" checked={hops} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, hops: e.target.checked || undefined }))} />
+          交差するところを跨ぎ線（小さな山）にする
+        </label>
+        {kind.cableOptions && <p className="hint">線ごとに変えたいときは、その線を選んで右パネルで設定できます。</p>}
+      </section>
       <Underlays />
       <Revisions />
-      {kind.cableOptions && (
-        <>
-          <label className="check">
-            <input type="checkbox" checked={powerTags} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, powerTags: e.target.checked }))} />
-            電源ケーブルは線を省略（両端に接続先だけ表示）
-          </label>
-          <label className="check">
-            <input type="checkbox" checked={idLabels} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, cableIdLabels: e.target.checked, edges: d.edges.map((x) => (x.showId === undefined ? x : { ...x, showId: undefined })) }))} />
-            ケーブル ID を線のラベルに表示
-          </label>
-          <label className="check">
-            <input type="checkbox" checked={lenLabels} onChange={(e) => boardLabel({ lengthLabels: e.target.checked }, 'showLength')} />
-            ケーブルの長さを線のラベルに表示
-          </label>
-          <label className="check">
-            <input type="checkbox" checked={stackLabels} onChange={(e) => boardLabel({ stackedLabels: e.target.checked }, 'stacked')} />
-            ラベルの項目を 1 行ずつに分ける
-          </label>
-        </>
-      )}
-      <label className="field">
-        <span>線のラベルの文字サイズ</span>
-        <select value={labelSize} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, labelSize: Number(e.target.value) === LABEL_SIZE ? undefined : Number(e.target.value) }))}>
-          {LABEL_SIZES.map((o) => (
-            <option key={o.size} value={o.size}>
-              {o.label}（{o.size}px）
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="check">
-        <input type="checkbox" checked={hops} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, hops: e.target.checked || undefined }))} />
-        線が交差するところを跨ぎ線（小さな山）にする
-      </label>
       <p className="hint">
-        タイトルと案件名は、PDF・Excel の見出しに入ります。
-        <br />
-        <br />
         <b>操作</b>
         <br />
         ダブルクリック: 文字編集 ／ 辺の●やポートをドラッグ: 接続 ／ スクロール: 移動 ／ ⌘+スクロール: ズーム ／ Space+ドラッグ: パン
@@ -561,7 +572,7 @@ function NodePanel({ n }: { n: Node }) {
           角をドラッグで比率を保ったまま拡縮（Shift で自由変形）。
         </p>
         <button onClick={replace}>画像を差し替え</button>
-        <button className="wide" data-tip="平面図などを一番下に敷き、クリックで選ばれないようにします（戻すのはボード情報から）" onClick={() => patch({ under: true }, true)}>
+        <button className="wide" data-tip="平面図などを一番下に敷き、クリックで選ばれないようにします（戻すのはボード設定から）" onClick={() => patch({ under: true }, true)}>
           下敷きにする
         </button>
       </>
