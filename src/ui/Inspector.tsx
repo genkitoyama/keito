@@ -87,6 +87,7 @@ function CategoryField({ id, value, onChange, soft }: { id: string; value: strin
   const [typed, setTyped] = useState(false);
   const [hi, setHi] = useState(-1);
   const dirty = useRef(false);
+  const box = useRef<HTMLInputElement>(null);
   const used = useStore(
     useShallow((s) => {
       const count = new Map<string, number>();
@@ -113,46 +114,68 @@ function CategoryField({ id, value, onChange, soft }: { id: string; value: strin
   return (
     <label className="field combo">
       <span>カテゴリ</span>
-      <input
-        value={value}
-        placeholder="選ぶか入力"
-        role="combobox"
-        aria-expanded={open}
-        onFocus={() => {
-          dirty.current = false;
-          setOpen(true);
-          setTyped(false);
-          setHi(-1);
-        }}
-        onClick={() => setOpen(true)}
-        onBlur={() => setOpen(false)}
-        onChange={(e) => {
-          if (!dirty.current) {
-            dirty.current = true;
-            useStore.getState().checkpoint();
-          }
-          onChange(e.target.value);
-          setTyped(true);
-          setOpen(true);
-          setHi(-1);
-        }}
-        onKeyDown={(e) => {
-          // Keys pressed while the IME is still composing belong to the IME.
-          if (e.nativeEvent.isComposing) return;
-          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            e.preventDefault();
+      {/* Looks like the dropdown it is, with its own arrow: the list also opens by clicking the box. */}
+      <div className="combo-box">
+        <input
+          ref={box}
+          value={value}
+          placeholder="選ぶか入力"
+          role="combobox"
+          aria-expanded={open}
+          onFocus={() => {
+            dirty.current = false;
             setOpen(true);
-            const step = e.key === 'ArrowDown' ? 1 : -1;
-            setHi((h) => (flat.length ? (h + step + flat.length) % flat.length : -1));
-          } else if (e.key === 'Enter' && open && hi >= 0 && flat[hi]) {
+            setTyped(false);
+            setHi(-1);
+          }}
+          onClick={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
+          onChange={(e) => {
+            if (!dirty.current) {
+              dirty.current = true;
+              useStore.getState().checkpoint();
+            }
+            onChange(e.target.value);
+            setTyped(true);
+            setOpen(true);
+            setHi(-1);
+          }}
+          onKeyDown={(e) => {
+            // Keys pressed while the IME is still composing belong to the IME.
+            if (e.nativeEvent.isComposing) return;
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              e.preventDefault();
+              setOpen(true);
+              const step = e.key === 'ArrowDown' ? 1 : -1;
+              setHi((h) => (flat.length ? (h + step + flat.length) % flat.length : -1));
+            } else if (e.key === 'Enter' && open && hi >= 0 && flat[hi]) {
+              e.preventDefault();
+              pick(flat[hi]);
+            } else if (e.key === 'Escape' && open) {
+              e.stopPropagation();
+              setOpen(false);
+            }
+          }}
+        />
+        <button
+          type="button"
+          className="combo-toggle"
+          tabIndex={-1}
+          aria-label={open ? '一覧を閉じる' : '一覧を開く'}
+          // mousedown, so the box keeps its focus; the click must not reach the label either.
+          onMouseDown={(e) => {
             e.preventDefault();
-            pick(flat[hi]);
-          } else if (e.key === 'Escape' && open) {
-            e.stopPropagation();
-            setOpen(false);
-          }
-        }}
-      />
+            if (open) return setOpen(false);
+            if (document.activeElement === box.current) setOpen(true);
+            else box.current?.focus();
+          }}
+          onClick={(e) => e.preventDefault()}
+        >
+          <svg width="10" height="6" viewBox="0 0 10 6" aria-hidden="true">
+            <path d="M1 1l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
       {open && groups.length > 0 && (
         // mousedown, not click: picking must happen before the input's blur closes the list.
         <div className="combo-list" onMouseDown={(e) => e.preventDefault()}>
@@ -401,7 +424,7 @@ function DevicePanel({ n }: { n: DeviceNode }) {
       </Section>
       {/* A piece of software has no quantity, price, power or supplier: those belong to the gear it runs on. */}
       {!soft && (
-        <Section title="手配・電源" note="機材リストに出ます">
+        <Section title="手配" note="機材リストに出ます">
           <Field label="手配先・担当（区分）" placeholder="例: 自社 / レンタル / 先方支給" value={n.vendor ?? ''} onChange={(v) => patch({ vendor: v || undefined })} />
           {/* What the board's colour key says is only a guess (the colours may mean something else),
               so it is offered, never written in unasked. */}
@@ -413,11 +436,11 @@ function DevicePanel({ n }: { n: DeviceNode }) {
               </button>
             </p>
           )}
-          <div className="grid2">
-            <Field label="消費電力 (W)" type="number" value={n.watts == null ? '' : String(n.watts)} onChange={(v) => patch({ watts: num(v) })} />
-            {(supplies || n.capacity != null) && <Field label="給電容量 (W)" type="number" placeholder="UPS・タップ" value={n.capacity == null ? '' : String(n.capacity)} onChange={(v) => patch({ capacity: num(v) })} />}
-            {many && <Field label="数量（この枠の台数）" type="number" placeholder={`${quantityOf(n.text).count}（名前から）`} value={n.qty == null ? '' : String(n.qty)} onChange={(v) => patch({ qty: num(v) && num(v)! >= 1 ? Math.round(num(v)!) : undefined })} />}
-          </div>
+          {many && (
+            <div className="grid2">
+              <Field label="数量（この枠の台数）" type="number" placeholder={`${quantityOf(n.text).count}（名前から）`} value={n.qty == null ? '' : String(n.qty)} onChange={(v) => patch({ qty: num(v) && num(v)! >= 1 ? Math.round(num(v)!) : undefined })} />
+            </div>
+          )}
           {/* Prices are typed in the equipment list, where the rows can be gone down one after another. */}
           <p className="hint price-hint">
             {n.price != null ? <>単価 {n.price.toLocaleString('ja-JP')} 円{unitsOf(n).count > 1 && <>（金額 {(n.price * unitsOf(n).count).toLocaleString('ja-JP')} 円）</>}。</> : <>単価は</>}
@@ -431,6 +454,14 @@ function DevicePanel({ n }: { n: DeviceNode }) {
               ＋数量（1 枠で複数台を表すとき）
             </button>
           )}
+        </Section>
+      )}
+      {!soft && (
+        <Section title="電源" note="電源系統表に出ます">
+          <div className="grid2">
+            <Field label="消費電力 (W)" type="number" value={n.watts == null ? '' : String(n.watts)} onChange={(v) => patch({ watts: num(v) })} />
+            {(supplies || n.capacity != null) && <Field label="給電容量 (W)" type="number" placeholder="UPS・タップ" value={n.capacity == null ? '' : String(n.capacity)} onChange={(v) => patch({ capacity: num(v) })} />}
+          </div>
         </Section>
       )}
       <Section title={soft ? '動作環境' : 'ネットワーク'}>
