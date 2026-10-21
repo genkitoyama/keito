@@ -184,15 +184,16 @@ export const useStore = create<State>((set, get) => ({
     }));
     set({ selection: [], editing: null });
   },
+  // The board's history list is not part of the drawing: undo takes back drawing, never a kept state.
   undo: () =>
     set((s) => {
       const doc = s.past[s.past.length - 1];
-      return doc ? { doc, past: s.past.slice(0, -1), future: [s.doc, ...s.future], selection: [], editing: null } : s;
+      return doc ? { doc: { ...doc, revisions: s.doc.revisions }, past: s.past.slice(0, -1), future: [s.doc, ...s.future], selection: [], editing: null } : s;
     }),
   redo: () =>
     set((s) => {
       const doc = s.future[0];
-      return doc ? { doc, past: [...s.past, s.doc], future: s.future.slice(1), selection: [], editing: null } : s;
+      return doc ? { doc: { ...doc, revisions: s.doc.revisions }, past: [...s.past, s.doc], future: s.future.slice(1), selection: [], editing: null } : s;
     }),
   select: (selection) => set({ selection }),
   // Arming a tool puts away whatever was waiting to be placed.
