@@ -46,20 +46,12 @@ export function SharedSection({ n }: { n: DeviceNode }) {
   const doc = useStore((s) => s.doc);
   const entries = useProject();
   const project = doc.meta.project?.trim();
-  if (!project) {
-    return (
-      <div className="shared">
-        <h4>ほかのボードとの共有</h4>
-        <p className="hint">ボード設定で案件名を付けると、同じ案件のボード（ほかのシステム図・ソフトウェア構成図）と同じものとしてつなげられます。</p>
-      </div>
-    );
-  }
   // Software is shared with software (the gear it runs on is chosen as its host instead), gear with gear.
   const soft = doc.kind === 'software';
   const elsewhere = entries.filter((e) => e.board !== doc.id && (e.kind === 'software') === soft);
   const seen = occurrences(entries, n.shared, { board: doc.id, node: n.id });
-  // Software shared between software boards is rare: with nothing to link it to, no section at all.
-  if (soft && !n.shared && !elsewhere.length) return null;
+  // With nothing to link it to (no project, or no other board of its kind in it), no section at all.
+  if (!n.shared && (!project || !elsewhere.length)) return null;
   const name = firstLine(n.text);
   const alike = n.shared ? [] : elsewhere.filter((e) => name && firstLine(e.node.text) === name);
   const pick = (v: string) => {
@@ -106,17 +98,13 @@ export function SharedSection({ n }: { n: DeviceNode }) {
               </button>
             </div>
           ))}
-          {elsewhere.length > 0 ? (
-            <label className="field">
-              <span>ほかのボードのものと同じものにする</span>
-              <select value="" onChange={(e) => pick(e.target.value)}>
-                <option value="">選ぶ…</option>
-                <Choices entries={elsewhere} />
-              </select>
-            </label>
-          ) : (
-            <p className="hint">同じ案件のほかのボードに、つなげられるものがまだありません。</p>
-          )}
+          <label className="field">
+            <span>ほかのボードのものと同じものにする</span>
+            <select value="" onChange={(e) => pick(e.target.value)}>
+              <option value="">選ぶ…</option>
+              <Choices entries={elsewhere} />
+            </select>
+          </label>
         </>
       )}
     </div>
