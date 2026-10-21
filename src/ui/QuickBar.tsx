@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { SCREEN, edgeTags, textHeightFor, textWeight } from '../canvas/render';
 import { docBounds, isTagged, labelPoint, routeEdges } from '../model/geometry';
+import { LABEL_SIZES } from '../model/labels';
 import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
 import { COLOR_KEYS, PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { copySelection, pasteClipboard, useStore } from '../model/store';
@@ -259,6 +260,35 @@ export function QuickBar() {
             {ICON.lineDashed}
           </Btn>
         </>
+      )}
+      {edge && (
+        <div className={`qb-drop${menu === 'size' ? ' open' : ''}`}>
+          <Btn className="drop labeled" tip="ラベルの文字サイズ" on={menu === 'size'} onClick={toggle('size')}>
+            {ICON.size}
+            <span>{edge.fontSize ? (LABEL_SIZES.find((o) => o.size === edge.fontSize)?.label ?? `${edge.fontSize}px`) : 'ボード設定'}</span>
+            {ICON.caret}
+          </Btn>
+          {menu === 'size' && (
+            <div className="qb-menu">
+              <button className={edge.fontSize ? '' : 'on'} onClick={() => {
+                  setEdges({ fontSize: undefined });
+                  setMenu(null);
+                }}>
+                <span>ボード設定に合わせる</span>
+              </button>
+              {LABEL_SIZES.map((o) => (
+                <button key={o.size} className={edge.fontSize === o.size ? 'on' : ''} onClick={() => {
+                    setEdges({ fontSize: o.size });
+                    setMenu(null);
+                  }}>
+                  <span style={{ fontSize: `${o.size + 2}px` }}>
+                    {o.label}（{o.size}px）
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       )}
       {edge && edge.signal !== 'flow' && (
         <Btn className="labeled" tip={tagged ? '線を引いて表示する' : '線を引かず、両端に接続先だけ表示する'} on={tagged} onClick={() => setEdges({ tag: !tagged, route: undefined })}>

@@ -191,6 +191,8 @@ export interface Edge {
   url?: string;
   /** Colour of this line alone (hex); unset = the colour of its signal type. */
   color?: string;
+  /** Size of this line's label in px; unset = the board's (see labels.ts). */
+  fontSize?: number;
   /** Where the label sits along the line, 0–1 from the start (default: the middle). */
   labelAt?: number;
   /** Hand-placed bend points between the two ends; absent = routed automatically. */

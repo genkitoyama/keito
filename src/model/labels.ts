@@ -14,14 +14,15 @@ export const LABEL_SIZES = [
   { size: 12, label: '大' },
 ];
 
-/** Size of a line's label: the board's choice, a flow line's a little larger. */
+/** Size of a line's label: its own, else the board's choice (a flow line's a little larger). */
 export function labelFont(doc: Doc, e: Edge): number {
+  if (e.fontSize) return e.fontSize;
   const k = (doc.labelSize ?? LABEL_SIZE) / LABEL_SIZE;
   return (e.signal === 'flow' ? 12 : LABEL_SIZE) * k;
 }
 
 /** Size of the tags drawn in place of a line (power cables, by default): in step with the labels. */
-export const tagFont = (doc: Doc): number => (10 * (doc.labelSize ?? LABEL_SIZE)) / LABEL_SIZE;
+export const tagFont = (doc: Doc, e: Edge): number => (10 * (e.fontSize ?? doc.labelSize ?? LABEL_SIZE)) / LABEL_SIZE;
 
 /** A line's label; may run over several lines when the user's own text does. */
 export function edgeLabel(doc: Doc, e: Edge): string {

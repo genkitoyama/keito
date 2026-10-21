@@ -245,7 +245,7 @@ function MetaPanel() {
         </h4>
         <label className="field">
           <span>ラベルの文字サイズ</span>
-          <select value={labelSize} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, labelSize: Number(e.target.value) === LABEL_SIZE ? undefined : Number(e.target.value) }))}>
+          <select value={labelSize} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, labelSize: Number(e.target.value) === LABEL_SIZE ? undefined : Number(e.target.value), edges: d.edges.map((x) => (x.fontSize === undefined ? x : { ...x, fontSize: undefined })) }))}>
             {LABEL_SIZES.map((o) => (
               <option key={o.size} value={o.size}>
                 {o.label}（{o.size}px）
@@ -279,7 +279,7 @@ function MetaPanel() {
           <input type="checkbox" checked={hops} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, hops: e.target.checked || undefined }))} />
           交差するところを跨ぎ線（小さな山）にする
         </label>
-        {kind.cableOptions && <p className="hint">線ごとに変えたいときは、その線を選んで右パネルで設定できます。</p>}
+        <p className="hint">線ごとに変えたいときは、その線を選んで右パネルで設定できます（ここで変えると、線ごとの設定は解除されます）。</p>
       </section>
       <Underlays />
       <Revisions />
@@ -322,6 +322,9 @@ function DevicePanel({ n }: { n: DeviceNode }) {
   // Network settings only matter for things on the network: shown for a device with a LAN port or
   // settings already typed in, and one click away for the rest (a Wi-Fi device, say).
   const [asked, setNetworked] = useState(false);
+  // A box is one unit as a rule: the quantity is shown only for one that stands for several.
+  const [manyAsked, setMany] = useState(false);
+  const many = !soft && (manyAsked || n.qty != null || quantityOf(n.text).count > 1);
   const networked = asked || !!n.ip || !!n.host || n.ports.some((p) => p.signal === 'lan');
   const group = useStore((s) => colourKey(s.doc).get(n.color ?? 'gray') ?? '');
   const ipIssue = useStore((s) => ipIssues(s.doc).get(n.id));
@@ -346,7 +349,7 @@ function DevicePanel({ n }: { n: DeviceNode }) {
       <Field wrap label="名称（改行できます）" value={n.text} onChange={(v) => patch({ text: v })} />
       {/* A piece of software has no quantity, price, power or supplier: those belong to the gear it runs on. */}
       <div className="grid2">
-        {!soft && <Field label="数量" type="number" placeholder={`${quantityOf(n.text).count}（名前から）`} value={n.qty == null ? '' : String(n.qty)} onChange={(v) => patch({ qty: num(v) && num(v)! >= 1 ? Math.round(num(v)!) : undefined })} />}
+        {many && <Field label="数量（この 1 枠の台数）" type="number" placeholder={`${quantityOf(n.text).count}（名前から）`} value={n.qty == null ? '' : String(n.qty)} onChange={(v) => patch({ qty: num(v) && num(v)! >= 1 ? Math.round(num(v)!) : undefined })} />}
         <CategoryField id={n.id} soft={soft} value={n.category} onChange={(v, record) => patch({ category: v }, record)} />
         {soft && <Field label="バージョン・実装" placeholder="例: Node 22 / TD 2025" value={n.model} onChange={(v) => patch({ model: v })} />}
       </div>
@@ -411,10 +414,19 @@ function DevicePanel({ n }: { n: DeviceNode }) {
       )}
       {!soft && (
         <>
-          <div className="grid2">
-            <Field label="単価 (円)" type="number" value={n.price == null ? '' : String(n.price)} onChange={(v) => patch({ price: num(v) })} />
-            {n.price != null && unitsOf(n).count > 1 && <span className="readout-inline">金額 {(n.price * unitsOf(n).count).toLocaleString('ja-JP')} 円</span>}
-          </div>
+          {!many && (
+            <button className="mini add-field" onClick={() => setMany(true)}>
+              ＋数量（1 枠で複数台を表すとき）
+            </button>
+          )}
+          {/* Prices are typed in the equipment list, where the rows can be gone down one after another. */}
+          <p className="hint price-hint">
+            {n.price != null ? <>単価 {n.price.toLocaleString('ja-JP')} 円{unitsOf(n).count > 1 && <>（金額 {(n.price * unitsOf(n).count).toLocaleString('ja-JP')} 円）</>}。</> : <>単価は</>}
+            <button className="link" onClick={() => st().setPanel('lists')}>
+              機材リスト
+            </button>
+            {n.price != null ? 'で変えられます。' : 'の「単価(円)」欄に入力します。'}
+          </p>
           <div className="grid2">
             <Field label="消費電力 (W)" type="number" value={n.watts == null ? '' : String(n.watts)} onChange={(v) => patch({ watts: num(v) })} />
             {(supplies || n.capacity != null) && <Field label="給電容量 (W)" type="number" placeholder="UPS・タップ" value={n.capacity == null ? '' : String(n.capacity)} onChange={(v) => patch({ capacity: num(v) })} />}
@@ -793,6 +805,7 @@ function EdgePanel({ e }: { e: Edge }) {
           ラベルの項目（ID・品名・文・長さ）を 1 行ずつに分ける
         </label>
       )}
+      <LabelSizeField edges={[e]} />
       <div className="field">
         <span>線の色</span>
         <div className="line-colors">
@@ -889,4 +902,26 @@ function PinNote({ n }: { n: StickyNode }) {
   const pin = pinLabel(doc, n);
   if (!pin) return <p className="hint">シーケンス図の矢印やノートの上に置くと、その処理へのコメントになり、書き換えても付いていきます。</p>;
   return <p className={`pin-note${pin.lost ? ' lost' : ''}`}>{pin.lost ? '対象の処理がシーケンス図から消えました。別の処理の上に置き直すと付け直せます。' : `対象: ${pin.text}`}</p>;
+}
+
+/** Size of the selected lines' labels: the board's, or one of their own. */
+export function LabelSizeField({ edges }: { edges: Edge[] }) {
+  const board = useStore((s) => s.doc.labelSize ?? LABEL_SIZE);
+  const own = edges[0]?.fontSize;
+  const ids = new Set(edges.map((x) => x.id));
+  const pick = (v: string) =>
+    useStore.getState().mutate((d) => ({ ...d, edges: d.edges.map((x) => (ids.has(x.id) ? { ...x, fontSize: v ? Number(v) : undefined } : x)) }));
+  return (
+    <label className="field">
+      <span>ラベルの文字サイズ</span>
+      <select value={own ?? ''} onChange={(ev) => pick(ev.target.value)}>
+        <option value="">ボード設定に合わせる（{LABEL_SIZES.find((o) => o.size === board)?.label ?? `${board}px`}）</option>
+        {LABEL_SIZES.map((o) => (
+          <option key={o.size} value={o.size}>
+            {o.label}（{o.size}px）
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }

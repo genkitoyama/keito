@@ -54,7 +54,7 @@ cables:
                            # 映像の規格(HDMI / SDI …)や音声のコネクタ(XLR / TRS …)は spec かポート名で。
                            # ケーブルIDは HDMI-01 / XLR-01 のようにそこから付く
                            # ソフトウェア構成図（kind: software）では http websocket osc mqtt tcp udp ndi file data。ポートは spec に（例 7000/udp）
-    cableId: V-01          # 任意。ケーブルIDを手で決める（省略で自動採番）。showId / showLength: false でラベルから隠す。stacked: true で項目を 1 行ずつに
+    cableId: V-01          # 任意。ケーブルIDを手で決める（省略で自動採番）。showId / showLength: false でラベルから隠す。stacked: true で項目を 1 行ずつに。fontSize でこの線のラベルの文字サイズ（px）
     spec: 光 HDMI AOC      # 任意。品名・規格（線のラベルに出る）。maker / model / url も書ける
     length: 10             # m、任意
     label: メイン映像      # 任意
@@ -185,6 +185,7 @@ export function toYaml(doc: Doc): string {
       if (e.showId != null) o.showId = e.showId;
       if (e.showLength != null) o.showLength = e.showLength;
       if (e.stacked != null) o.stacked = e.stacked;
+      if (e.fontSize) o.fontSize = e.fontSize;
       put(o, 'spec', e.spec);
       put(o, 'maker', e.maker);
       put(o, 'model', e.model);
@@ -496,6 +497,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (typeof v.showId === 'boolean') e.showId = v.showId;
     if (typeof v.showLength === 'boolean') e.showLength = v.showLength;
     if (typeof v.stacked === 'boolean') e.stacked = v.stacked;
+    if (typeof v.fontSize === 'number' && v.fontSize > 0) e.fontSize = v.fontSize;
     e.spec = str(v.spec) || undefined;
     if (named && !e.spec && !cableKind(nodes, e)) e.spec = named;
     e.maker = str(v.maker) || undefined;

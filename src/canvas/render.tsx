@@ -603,7 +603,7 @@ export function edgeTags(doc: Doc, e: Edge, theme: Theme): EdgeTag[] {
   const id = idShown(doc, e) ? cableIds(doc).get(e.id) : undefined;
   const length = e.length != null && lengthShown(doc, e) ? ` ${e.length}m` : '';
   const power = e.signal === 'power';
-  const size = tagFont(doc);
+  const size = tagFont(doc, e);
   const make = (at: Pt, toward: Pt, text: string): EdgeTag => {
     const horizontal = Math.abs(toward.x - at.x) >= Math.abs(toward.y - at.y);
     const s = horizontal ? (toward.x >= at.x ? 1 : -1) : toward.y >= at.y ? 1 : -1;
@@ -632,7 +632,7 @@ function TaggedEdge({ doc, e, theme }: { doc: Doc; e: Edge; theme: Theme }) {
         <g key={i}>
           <line x1={t.from.x} y1={t.from.y} x2={t.to.x} y2={t.to.y} stroke={ink} strokeWidth={width} />
           <rect x={t.x} y={t.y} width={t.w} height={t.h} rx={3} fill={mix(stroke, '#ffffff', 0.84)} stroke={ink} strokeWidth={1} />
-          <text x={t.x + t.w / 2} y={mid(t.y + t.h / 2, tagFont(doc))} fontFamily={theme.font} fontSize={tagFont(doc)} fill={mix(stroke, '#0f172a', 0.5)} textAnchor="middle">
+          <text x={t.x + t.w / 2} y={mid(t.y + t.h / 2, tagFont(doc, e))} fontFamily={theme.font} fontSize={tagFont(doc, e)} fill={mix(stroke, '#0f172a', 0.5)} textAnchor="middle">
             {t.text}
           </text>
         </g>
