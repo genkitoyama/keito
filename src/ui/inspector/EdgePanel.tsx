@@ -87,6 +87,12 @@ export function EdgePanel({ e }: { e: Edge }) {
             </label>
           </>
         )}
+        {protocol && (
+          <label className="check">
+            <input type="checkbox" checked={stacked} onChange={(ev) => patch({ stacked: ev.target.checked }, true)} />
+            種別・ポートと文を 1 行ずつに分ける
+          </label>
+        )}
         <LabelSizeField edges={[e]} />
       </Section>
       <Section title="線の見た目">

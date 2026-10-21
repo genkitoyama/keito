@@ -105,6 +105,12 @@ export function MetaPanel() {
             </label>
           </>
         )}
+        {kind.id === 'software' && (
+          <label className="check">
+            <input type="checkbox" checked={stackLabels} onChange={(e) => boardLabel({ stackedLabels: e.target.checked }, 'stacked')} />
+            通信の種別・ポートと文を 1 行ずつに分ける
+          </label>
+        )}
         <label className="check">
           <input type="checkbox" checked={hops} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, hops: e.target.checked || undefined }))} />
           交差するところを跨ぎ線（小さな山）にする
