@@ -4,7 +4,7 @@ import { edgeLabel, labelFont, labelSize, tagFont } from '../model/labels';
 import { LEGEND, shownRows } from '../model/legend';
 import { lineColor, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, ipIssues, lengthShown, powerLoads } from '../model/lists';
-import { SEQ, SEQ_TEXT, parseSequence, seqBands, seqLayout, seqRows, seqScale } from '../model/sequence';
+import { BLOCK_WORD, SEQ, SEQ_TEXT, parseSequence, seqBands, seqBlocks, seqLayout, seqPlace, seqScale } from '../model/sequence';
 import { PALETTE, STICKY, STRONG } from '../model/signals';
 import { MONO_FONT, UI_FONT, measure, wrapText } from '../model/text';
 import { safeUrl } from '../model/url';
@@ -241,7 +241,7 @@ function Sequence({ n, theme, doc }: { n: SequenceNode; theme: Theme; doc?: Doc 
   const d = parseSequence(n.text);
   // Everything scales with the text size, so a bigger text never outgrows its boxes.
   const k = seqScale(n.fontSize);
-  const { col, step, w: dw, h: dh } = seqLayout(n.text, n.w, n.h, k);
+  const { col, w: dw, h: dh } = seqLayout(n.text, n.w, n.h, k);
   // Narrow columns take narrower boxes so neighbours never touch.
   const boxW = Math.min(SEQ.boxW * k, col - 12);
   const boxH = SEQ.boxH * k;
@@ -273,25 +273,65 @@ function Sequence({ n, theme, doc }: { n: SequenceNode; theme: Theme; doc?: Doc 
       </g>,
     );
   });
-  const rows = seqRows(d);
+  // Where each item runs and how its text wraps, worked out once for the drawing and its highlights.
+  const placed = seqPlace(n).items;
+  const rowY = (i: number): number => placed[i].y;
+  // Blocks (loop, alt, opt …) are framed round their rows, nested ones inside; drawn first, under the messages.
+  for (const b of seqBlocks(d)) {
+    // Well inside the diagram's own border, and each nested block a step further in.
+    const inset = (SEQ.padX + b.depth * 8) * k;
+    const x0 = n.x + inset;
+    const x1 = n.x + dw - inset;
+    const y0 = rowY(b.start) - 11 * k;
+    // Closed just below the last thing inside it (its `end` line takes a row of its own, left as air below).
+    const last = b.end - 1 > b.start ? placed[b.end - 1].bottom + 8 * k : rowY(b.start) + 12 * k;
+    const y1 = b.end < d.items.length ? Math.min(rowY(b.end), last) : n.y + dh - SEQ.padX * k;
+    const tab = measure(b.kind, `700 ${text}px ${theme.font}`) + 14 * k;
+    const tabH = 17 * k;
+    out.push(
+      <g key={`b${b.start}`}>
+        <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} rx={3} fill={'#f8fafc'} fillOpacity={0.55} stroke={'#64748b'} strokeWidth={1} />
+        {/* The block's name on a tab in the corner, its condition beside it. */}
+        <path d={`M${x0},${y0} H${x0 + tab} V${y0 + tabH - 5 * k} L${x0 + tab - 5 * k},${y0 + tabH} H${x0} Z`} fill={'#e2e8f0'} stroke={'#64748b'} strokeWidth={1} />
+        <text x={x0 + 6 * k} y={mid(y0 + tabH / 2, text)} fontFamily={theme.font} fontSize={text} fontWeight={700} fill={'#334155'}>
+          {b.kind}
+        </text>
+        {b.label && (
+          <text x={x0 + tab + 6 * k} y={mid(y0 + tabH / 2, text)} fontFamily={theme.font} fontSize={text} fontWeight={600} fill={'#475569'}>
+            [{b.label}]
+          </text>
+        )}
+        {b.splits.map((sp) => {
+          const y = rowY(sp.at);
+          return (
+            <g key={sp.at}>
+              <line x1={x0} y1={y - 6 * k} x2={x1} y2={y - 6 * k} stroke={'#64748b'} strokeWidth={1} strokeDasharray="5 3" />
+              {sp.label && (
+                <text x={x0 + 6 * k} y={mid(y + 4 * k, text)} fontFamily={theme.font} fontSize={text} fontWeight={600} fill={'#475569'}>
+                  [{sp.label}]
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </g>,
+    );
+  }
   d.items.forEach((it, i) => {
-    const y = lifeTop + rows.at[i] * step;
+    const y = rowY(i);
     if (it.kind === 'section') {
-      // A block's start (loop, alt …) is a dashed rule with its label; its end a fainter one.
+      // Blocks are drawn above as frames; what is left is a plain divider (== 区切り ==, ... 待ち ...).
+      if (it.end || BLOCK_WORD.test(it.text)) return;
       const x0 = n.x + 8 * k;
       const x1 = n.x + dw - 8 * k;
-      if (it.end) {
-        out.push(<line key={`i${i}`} x1={x0} y1={y} x2={x1} y2={y} stroke={'#cbd5e1'} strokeWidth={1} strokeDasharray="2 3" />);
-        return;
-      }
       const tw = it.text ? measure(it.text, `600 ${text}px ${theme.font}`) + 12 * k : 0;
       out.push(
         <g key={`i${i}`}>
           <line x1={x0} y1={y} x2={x1} y2={y} stroke={'#94a3b8'} strokeWidth={1} strokeDasharray="6 3" />
           {it.text && (
             <>
-              <rect x={x0} y={y - 9 * k} width={tw} height={18 * k} rx={3} fill={'#f1f5f9'} stroke={'#94a3b8'} strokeWidth={0.8} />
-              <text x={x0 + 6 * k} y={mid(y, text)} fontFamily={theme.font} fontSize={text} fontWeight={600} fill={'#475569'}>
+              <rect x={(x0 + x1) / 2 - tw / 2} y={y - 9 * k} width={tw} height={18 * k} rx={3} fill={'#f1f5f9'} stroke={'#94a3b8'} strokeWidth={0.8} />
+              <text x={(x0 + x1) / 2} y={mid(y, text)} textAnchor="middle" fontFamily={theme.font} fontSize={text} fontWeight={600} fill={'#475569'}>
                 {it.text}
               </text>
             </>
@@ -305,7 +345,7 @@ function Sequence({ n, theme, doc }: { n: SequenceNode; theme: Theme; doc?: Doc 
       const a = cx(it.over);
       const b = cx(it.to ?? it.over);
       const span = Math.abs(b - a);
-      const lines = it.text.split('\n').length;
+      const lines = placed[i].lines.length;
       const w = Math.max(Math.min(col - 12, measure(it.text, `${text}px ${theme.font}`) + 18 * k), span + col * 0.6 - 12);
       const h = Math.max(26 * k, lines * text * 1.4 + 10 * k);
       out.push(
@@ -341,7 +381,8 @@ function Sequence({ n, theme, doc }: { n: SequenceNode; theme: Theme; doc?: Doc 
       <g key={`i${i}`}>
         <line x1={a.x} y1={y} x2={b.x} y2={y} stroke={line} strokeWidth={sw} strokeDasharray={dash} />
         {it.cross ? <path d={`M${tip - c},${y - c} L${tip + c},${y + c} M${tip - c},${y + c} L${tip + c},${y - c}`} stroke={line} strokeWidth={sw * 1.2} /> : <polygon points={arrowHead(b, a, 8)} fill={line} />}
-        <TextBlock x={(a.x + b.x) / 2} y={y - 10 * k} w={Math.abs(b.x - a.x) - 12} text={it.text} size={text} theme={theme} />
+        {/* Text that wraps stacks up above the arrow: its rows were given the room. */}
+        <TextBlock x={(a.x + b.x) / 2} y={placed[i].textY} w={Math.abs(b.x - a.x) - 12} text={it.text} size={text} theme={theme} />
       </g>,
     );
   });

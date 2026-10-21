@@ -599,7 +599,7 @@ function NodePanel({ n }: { n: Node }) {
               <br />
               <code>note over A: メモ</code>　／　<code>title: 題名</code>
               <br />
-              <code>loop 3回</code> … <code>end</code>　／　<code>alt 条件</code> … <code>else</code> … <code>end</code>　区切り線
+              <code>loop 3回</code> … <code>end</code>　／　<code>alt 条件</code> … <code>else</code> … <code>end</code>　枠で囲む
               <br />
               Mermaid（<code>sequenceDiagram</code>）や PlantUML（<code>@startuml</code>）のシーケンス図をそのまま貼っても読めます。
             </p>

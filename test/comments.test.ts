@@ -45,3 +45,26 @@ describe('comments pinned to a sequence', () => {
     expect(memo(d).on).toBeUndefined();
   });
 });
+
+describe('highlighted rows', () => {
+  const text = ['participant A', 'participant B', 'A -> B: 一つ目', 'B --> A: 二つ目', 'A -> B: 三つ目'].join('\n');
+  // As drawn: lifelines start below the boxes (16 + 34), and each message's text is centred 10px
+  // above its arrow, 11px high.
+  const arrows = (step: number) => [1, 2, 3].map((row) => 50 + row * step);
+  const textTop = (arrow: number) => arrow - 10 - 11 / 2;
+
+  it("covers a message's text above its arrow, and the arrow", () => {
+    const bands = seqBands(seq(text));
+    arrows(42).forEach((y, i) => {
+      expect(bands[i].y - bands[i].h / 2).toBeLessThanOrEqual(textTop(y));
+      expect(bands[i].y + bands[i].h / 2).toBeGreaterThanOrEqual(y + 4);
+    });
+  });
+
+  it("stays clear of the next row's text even when the rows are squeezed", () => {
+    // Resized by hand to the smallest height: rows as close as they go (26px apart).
+    const bands = seqBands({ ...seq(text), h: 1 });
+    const ys = arrows(26);
+    for (let i = 0; i < ys.length - 1; i++) expect(bands[i].y + bands[i].h / 2).toBeLessThan(textTop(ys[i + 1]));
+  });
+});

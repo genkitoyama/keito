@@ -1,3 +1,5 @@
+import { UI_FONT, measure, wrapText } from './text';
+
 /**
  * Sequence diagram source. keito's own short form is a subset of Mermaid's; whole Mermaid
  * (`sequenceDiagram`) and PlantUML (`@startuml`) sequence diagrams are read as well:
@@ -6,7 +8,7 @@
  *   App -> API: リクエスト
  *   API --> App: レスポンス               (dashed = return; PlantUML's <- reverses)
  *   note over App, API: メモ              (PlantUML: a note over several lines, up to "end note")
- *   loop 3回 … end / alt … else … end    (drawn as dividers; also == 区切り == and ... 待ち ...)
+ *   loop 3回 … end / alt … else … end    (framed round their rows; == 区切り == and ... 待ち ... are dividers)
  *   autonumber                           (numbers the messages)
  */
 export interface SeqParticipant {
@@ -46,28 +48,110 @@ export function seqLayout(text: string, w = 0, h = 0, k = 1): SeqLayout {
   const d = parseSequence(text);
   const n = Math.max(1, d.participants.length);
   const head = (SEQ.padTop + (d.title ? SEQ.titleH : 0) + SEQ.boxH) * k;
-  const rows = seqRows(d);
   const col = w > 0 ? Math.max(SEQ.minCol * k, (w - SEQ.padX * 2 * k) / n) : SEQ.col * k;
-  const step = h > 0 ? Math.max(SEQ.minStep * k, (h - head) / (rows.total + 1)) : SEQ.step * k;
-  return { col, step, w: SEQ.padX * 2 * k + n * col, h: head + (rows.total + 1) * step };
+  const lines = seqLines(d, col, k);
+  const total = (step: number) => seqRows(d, lines, k, step).total;
+  let step = SEQ.step * k;
+  if (h > 0) {
+    // Resized by hand: the row spacing that fills the height (rows with more text keep their extra room).
+    let [lo, hi] = [SEQ.minStep * k, Math.max(SEQ.minStep * k, h)];
+    for (let i = 0; i < 40; i++) {
+      const m = (lo + hi) / 2;
+      if (head + total(m) > h) hi = m;
+      else lo = m;
+    }
+    step = lo;
+  }
+  return { col, step, w: SEQ.padX * 2 * k + n * col, h: head + total(step) };
 }
 
-/** How many rows a note of several lines takes (one for a line or two), so it never covers its neighbours. */
-const weight = (it: SeqItem): number => (it.kind === 'note' ? Math.max(1, (it.text.split('\n').length * SEQ_TEXT * 1.4 + 14) / SEQ.step) : 1);
+/** Line height of the diagram's text, as a share of its size. */
+export const SEQ_LINE = 1.4;
+
+/** How wide a message's or a note's text may run in columns `col` apart, as drawn. */
+export function seqTextWidth(it: SeqItem, col: number, k: number): number {
+  if (it.kind === 'msg') return Math.abs(it.to - it.from) * col - 12;
+  if (it.kind !== 'note') return Infinity;
+  // A note over two participants spans them both; one over one takes what its text needs, up to its column.
+  const span = Math.abs((it.to ?? it.over) - it.over) * col;
+  return Math.max(Math.min(col - 12, measure(it.text, `${SEQ_TEXT * k}px ${UI_FONT}`) + 18 * k), span + col * 0.6 - 12) - 8;
+}
+
+/** Each item's text as drawn, line by line: wrapped to the room it has (a message to itself runs free to the right). */
+export function seqLines(d: SeqDiagram, col: number, k: number): string[][] {
+  return d.items.map((it) => {
+    if ((it.kind === 'msg' && it.from !== it.to) || it.kind === 'note') return wrapText(it.text, seqTextWidth(it, col, k), `${SEQ_TEXT * k}px ${UI_FONT}`);
+    return [it.text];
+  });
+}
+
+/** A note's box: tall enough for its lines. */
+const noteHeight = (lines: number, k: number): number => Math.max(26 * k, lines * SEQ_TEXT * k * SEQ_LINE + 10 * k);
 
 /**
- * Where each item sits, in rows from the top of the lifelines: its centre (1 = the first row), and
- * how many rows the whole diagram takes.
+ * How tall an item's row is with rows `step` apart: a message whose text runs to several lines
+ * gets the extra lines on top (its text stacks up above the arrow), a note at least its box and a
+ * little air, so nothing covers its neighbours however close the rows are.
  */
-export function seqRows(d: SeqDiagram): { at: number[]; total: number } {
+function rowHeight(it: SeqItem, lines: number, k: number, step: number): number {
+  if (it.kind === 'note') return Math.max(step, noteHeight(lines, k) + 12 * k);
+  if (it.kind === 'msg' && it.from !== it.to) return step + (lines - 1) * SEQ_TEXT * k * SEQ_LINE;
+  return step;
+}
+
+/**
+ * Where each item sits below the top of the lifelines (its row's centre), and how tall all the rows
+ * are, half a row of air above the first and below the last included.
+ */
+export function seqRows(d: SeqDiagram, lines: string[][], k: number, step: number): { at: number[]; total: number } {
   const at: number[] = [];
-  let used = 0;
-  for (const it of d.items) {
-    const w = weight(it);
-    at.push(used + w / 2 + 0.5);
-    used += w;
-  }
-  return { at, total: used };
+  let used = step / 2;
+  d.items.forEach((it, i) => {
+    const h = rowHeight(it, lines[i]?.length ?? 1, k, step);
+    at.push(used + h / 2);
+    used += h;
+  });
+  return { at, total: used + step / 2 };
+}
+
+/** One item as drawn: the line it runs along (a message's arrow, a note's or a divider's centre), its text, and the top and bottom of all it draws. */
+export interface SeqPlaced {
+  y: number;
+  lines: string[];
+  /** Where its text is centred (a message's sits above its arrow). */
+  textY: number;
+  top: number;
+  bottom: number;
+}
+
+/** Where everything of a diagram on the board is drawn: what the renderer draws and a highlighted row covers. */
+export function seqPlace(n: { x: number; y: number; w: number; h: number; text: string; fontSize?: number }): { d: SeqDiagram; k: number; layout: SeqLayout; lifeTop: number; items: SeqPlaced[] } {
+  const d = parseSequence(n.text);
+  const k = seqScale(n.fontSize);
+  const layout = seqLayout(n.text, n.w, n.h, k);
+  const { col, step } = layout;
+  const lifeTop = n.y + (SEQ.padTop + (d.title ? SEQ.titleH : 0) + SEQ.boxH) * k;
+  const lines = seqLines(d, col, k);
+  const rows = seqRows(d, lines, k, step);
+  const text = SEQ_TEXT * k;
+  const lh = text * SEQ_LINE;
+  const items = d.items.map((it, i): SeqPlaced => {
+    const centre = lifeTop + rows.at[i];
+    const L = lines[i];
+    if (it.kind === 'msg' && it.from !== it.to) {
+      // The arrow at the foot of the item's row, its text stacked up above it.
+      const y = centre + (rowHeight(it, L.length, k, step) - step) / 2;
+      const textY = y - 10 * k - ((L.length - 1) * lh) / 2;
+      return { y, lines: L, textY, top: textY - (L.length * lh) / 2, bottom: y + 5 * k };
+    }
+    if (it.kind === 'msg') return { y: centre, lines: L, textY: centre, top: centre - 10 * k, bottom: centre + 10 * k };
+    if (it.kind === 'note') {
+      const h = noteHeight(L.length, k);
+      return { y: centre, lines: L, textY: centre, top: centre - h / 2, bottom: centre + h / 2 };
+    }
+    return { y: centre, lines: L, textY: centre, top: centre - 9 * k, bottom: centre + 9 * k };
+  });
+  return { d, k, layout, lifeTop, items };
 }
 
 /** What an item says, independent of where it sits: how a comment pinned to it finds it again. */
@@ -89,14 +173,16 @@ export function seqDescribe(d: SeqDiagram, i: number): string {
   return it.end ? '（ブロックの終わり）' : it.text;
 }
 
-/** The band each item takes across the diagram, in board coordinates: its centre line and height. */
+/**
+ * The band each item takes across the diagram, in board coordinates: its centre line and height.
+ * It covers what the item draws — a message's text above its arrow, a note, a block's label — with
+ * a little room, so a highlighted row never cuts its text or reaches into the next one when the
+ * rows are squeezed.
+ */
 export function seqBands(n: { x: number; y: number; w: number; h: number; text: string; fontSize?: number }): { y: number; h: number }[] {
-  const d = parseSequence(n.text);
-  const k = seqScale(n.fontSize);
-  const { step } = seqLayout(n.text, n.w, n.h, k);
-  const lifeTop = n.y + (SEQ.padTop + (d.title ? SEQ.titleH : 0) + SEQ.boxH) * k;
-  const rows = seqRows(d);
-  return d.items.map((it, i) => ({ y: lifeTop + rows.at[i] * step, h: weight(it) * step }));
+  const { k, items } = seqPlace(n);
+  const pad = 3 * k;
+  return items.map((it) => ({ y: (it.top + it.bottom) / 2, h: it.bottom - it.top + pad * 2 }));
 }
 
 /**
@@ -151,6 +237,49 @@ const cache = new Map<string, SeqDiagram>();
 // message arrow, so a participant named Group, Header or End is never taken for one.
 const IGNORED = /^(?:```|sequenceDiagram\b|@startuml\b|@enduml\b|skinparam\b|hide\b|show\b|!|\|\|\||activate\b|deactivate\b|destroy\b|create\b|autoactivate\b|newpage\b|scale\b|left to right\b|top to bottom\b|footer\b|header\b|legend\b|end legend\b)/i;
 const BLOCK = /^(loop|alt|else|opt|par|and|critical|option|break|rect|group)(?:\s+(.*))?$/i;
+/** A block's divider label, as parsed: the start of a block or a split inside one ("loop 3回", "else 失敗"). */
+export const BLOCK_WORD = /^(loop|alt|else|opt|par|and|critical|option|break|rect|group)\b/i;
+/** Words that split a block in parts (alt … else, par … and, critical … option) rather than start one. */
+const SPLIT = /^(else|and|option)\b/i;
+
+/** A block of rows (loop, alt …) as drawn: its first and closing rows, how deep it sits, and where it is split. */
+export interface SeqBlock {
+  kind: string;
+  label: string;
+  /** The row of its opening line, and of its `end` (the item count when it is never closed). */
+  start: number;
+  end: number;
+  depth: number;
+  splits: { at: number; label: string }[];
+}
+
+/** The blocks of a diagram, outer ones first, from its dividers. */
+export function seqBlocks(d: SeqDiagram): SeqBlock[] {
+  const open: SeqBlock[] = [];
+  const done: SeqBlock[] = [];
+  const words = (text: string) => {
+    const [kind, ...rest] = text.split(' ');
+    return { kind: kind.toLowerCase(), label: rest.join(' ').trim() };
+  };
+  d.items.forEach((it, i) => {
+    if (it.kind !== 'section') return;
+    if (it.end) {
+      const b = open.pop();
+      if (b) done.push({ ...b, end: i });
+      return;
+    }
+    if (!BLOCK_WORD.test(it.text)) return;
+    const { kind, label } = words(it.text);
+    if (SPLIT.test(kind)) {
+      open.at(-1)?.splits.push({ at: i, label: [kind === 'else' ? '' : kind, label].filter(Boolean).join(' ') || kind });
+      return;
+    }
+    open.push({ kind, label, start: i, end: d.items.length, depth: open.length, splits: [] });
+  });
+  // Left open at the bottom: framed down to the end of the diagram.
+  done.push(...open);
+  return done.sort((a, b) => a.depth - b.depth || a.start - b.start);
+}
 /** A message: who, the arrow (keito and Mermaid "->>", "-x", "-)"; PlantUML "<-", "->x"), who, and its text. */
 const MESSAGE = /^(.+?)\s*(<->|<-->|-->>|->>|-->x|->x|-->|->|--x|-x|--\)|-\)|<--|<-)\s*[+-]?\s*([^:：]+?)\s*(?:\+\+|--)?\s*(?:[:：]\s*(.*))?$/;
 const unquote = (s: string): string => s.trim().replace(/^"(.*)"$/, '$1').trim();
