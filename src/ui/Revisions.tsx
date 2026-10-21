@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { type Diff, describe, diff, labelOf } from '../model/history';
 import { currentBoard, loadState, useStore } from '../model/store';
 import type { Doc, Revision } from '../model/types';
+import { composing } from './keys';
 
 /** When a state was taken, as the list shows it under its day: "14:32". */
 const time = (r: Revision): string => (r.at ? new Date(r.at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '');
@@ -76,7 +77,7 @@ export function Revisions() {
             value={naming.name}
             onChange={(e) => setNaming({ ...naming, name: e.target.value })}
             onKeyDown={(e) => {
-              if (e.nativeEvent.isComposing) return;
+              if (composing(e)) return;
               if (e.key === 'Enter' && (naming.name.trim() || naming.id)) {
                 if (naming.id) st().renameRevision(naming.id, naming.name);
                 else st().nameState(naming.name);

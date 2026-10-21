@@ -17,6 +17,7 @@ import { textHeightFor, textWeight } from '../canvas/render';
 import { useShallow } from 'zustand/react/shallow';
 import { Revisions } from './Revisions';
 import { RunsOn, SharedSection } from './Shared';
+import { composing } from './keys';
 
 /** Text input that records one undo step per editing burst instead of per keystroke. */
 function Field({ label, value, onChange, multiline, wrap, type = 'text', placeholder, onPasteText, list }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean; wrap?: boolean; type?: string; placeholder?: string; onPasteText?: (text: string) => boolean; list?: string }) {
@@ -142,7 +143,7 @@ function CategoryField({ id, value, onChange, soft }: { id: string; value: strin
           }}
           onKeyDown={(e) => {
             // Keys pressed while the IME is still composing belong to the IME.
-            if (e.nativeEvent.isComposing) return;
+            if (composing(e)) return;
             if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
               e.preventDefault();
               setOpen(true);

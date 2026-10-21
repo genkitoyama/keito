@@ -6,6 +6,7 @@ import { allSignals, groupSignals } from '../model/signals';
 import { useStore } from '../model/store';
 import { openExport } from './ExportPanel';
 import { ICON } from './icons';
+import { composing } from './keys';
 
 
 export function ListsPanel() {
@@ -315,7 +316,7 @@ function CellEditor({ t, row, edit, shown, done }: { t: Table; row: number; edit
       onFocus={(ev) => ev.currentTarget.select()}
       onBlur={(ev) => finish(ev.currentTarget.value)}
       onKeyDown={(ev) => {
-        if (ev.nativeEvent.isComposing) return;
+        if (composing(ev)) return;
         if (ev.key === 'Enter') finish(ev.currentTarget.value);
         else if (ev.key === 'Escape') finish(null);
       }}

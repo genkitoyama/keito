@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { type BoardKind, KINDS, KIND_ORDER } from '../model/kinds';
 import { deletedBoards, restoreBoard, startBoard, useStore } from '../model/store';
 import type { BoardInfo, TrashedBoard } from '../platform/storage';
+import { composing } from './keys';
 
 /** The boards window opens on the list, or straight on the form for a new board. */
 let startWithForm = false;
@@ -148,7 +149,7 @@ export function BoardsPanel() {
                   value={renaming}
                   onChange={(e) => setRenaming(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.nativeEvent.isComposing) return;
+                    if (composing(e)) return;
                     if (e.key === 'Enter' && renaming.trim()) {
                       st().renameProject(project, renaming);
                       setProject(renaming.trim());

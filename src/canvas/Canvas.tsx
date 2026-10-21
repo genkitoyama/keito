@@ -36,6 +36,7 @@ import { type Doc, type Edge, type EdgeEnd, type Node, type Pt, type Rect, hasTe
 import { isImageFile, readImageFile } from '../platform/storage';
 import { EdgeView, HopCaps, INK, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
+import { composing } from '../ui/keys';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
 type Drag =
@@ -1418,7 +1419,7 @@ function TextEditor({ id }: { id: string }) {
         onKeyDown={(e) => {
           e.stopPropagation();
           // While the IME is composing, Enter / Escape belong to the conversion, not to us.
-          if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+          if (composing(e)) return;
           if (e.key === 'Escape' || (e.key === 'Enter' && ((enterCommits && !e.shiftKey) || e.metaKey || e.ctrlKey))) {
             e.preventDefault();
             commit();
