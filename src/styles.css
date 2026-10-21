@@ -563,10 +563,73 @@ textarea:focus {
 .inspector .board-section h4 {
   color: #3b5b85;
 }
+.inspector .board-section h4 {
+  margin: 8px 0 8px;
+}
 .board-section h4 small {
+  margin-left: 6px;
   font-weight: 400;
   font-size: 10.5px;
   color: var(--sub);
+}
+/* What is selected, with its id on the right. */
+.inspector h3.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.panel-head code {
+  color: var(--sub);
+}
+.board-section .field:last-child,
+.board-section > .check:last-child {
+  margin-bottom: 0;
+}
+.board-section .field input:not([type='checkbox']):not([type='color']),
+.board-section .field select,
+.board-section .field textarea,
+.board-section .port-row input,
+.board-section .port-row select {
+  background: #fff;
+}
+/* Column names over the port rows, lined up with the name and type boxes. */
+.port-head {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 2px;
+  font-size: 10.5px;
+  color: var(--sub);
+}
+.port-head span:first-child {
+  flex: 1;
+}
+.port-head span:last-child {
+  width: 64px;
+  margin-right: 80px;
+}
+.howto summary {
+  font-size: 11.5px;
+  color: var(--accent);
+  cursor: pointer;
+}
+.howto .hint {
+  margin: 4px 0 0;
+}
+.inspector .shared {
+  margin: 0 0 12px;
+  padding: 0 10px 8px;
+  border: 1px solid #d6e2f0;
+  border-radius: 8px;
+  background: #f3f7fc;
+}
+.inspector .shared h4 {
+  margin: 8px 0;
+  color: #3b5b85;
+}
+.panel-actions {
+  flex-wrap: wrap;
+  margin: 0 0 12px;
 }
 .board-section .group-label {
   display: block;
@@ -2078,4 +2141,23 @@ body.row-dragging .lists td.editable:hover {
 }
 .price-hint {
   margin: 0 0 10px;
+}
+/* The row's buttons stay slim, so the port's name has the room. */
+.inspector .port-row {
+  gap: 2px;
+}
+.port-row .mini {
+  flex: none;
+  width: 18px;
+  padding: 0;
+}
+.inspector .port-row select {
+  width: 64px;
+}
+/* A sequence is written here: room for a good part of it at once. */
+.seq-source textarea {
+  min-height: 240px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11.5px;
+  line-height: 1.5;
 }
