@@ -1,0 +1,51 @@
+import { describe, expect, it } from 'vitest';
+import { deviceTagRects } from '../src/model/badges';
+import { frameOf, nodeRect, tagChips } from '../src/model/geometry';
+import { sampleBoards } from '../src/model/sample';
+import { tangle, tidy } from '../src/model/tidy';
+import type { Doc, Rect } from '../src/model/types';
+
+const system = () => sampleBoards()[0];
+
+/** The board with every device nudged up or down a little, as boxes end up after dragging by hand. */
+function nudged(doc: Doc, seed: number): Doc {
+  let s = seed;
+  const rand = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  return { ...doc, nodes: doc.nodes.map((n) => (n.type === 'device' ? { ...n, y: n.y + Math.round((rand() - 0.5) * 60) } : n)), edges: doc.edges.map(({ route: _, ...e }) => e) };
+}
+
+const inside = (r: Rect, f: Rect) => r.x >= f.x && r.y >= f.y && r.x + r.w <= f.x + f.w && r.y + r.h <= f.y + f.h;
+
+describe('tidy', () => {
+  it('keeps the bends drawn by hand on lines whose ends stay put', () => {
+    const doc = system();
+    const drawn = doc.edges.filter((e) => e.route);
+    expect(drawn.length).toBeGreaterThan(0);
+    const after = tidy(doc);
+    for (const e of drawn) expect(after.edges.find((x) => x.id === e.id)!.route).toEqual(e.route);
+  });
+
+  it('never leaves the wiring more tangled than it found it', () => {
+    for (const doc of sampleBoards().filter((d) => d.edges.length)) {
+      expect(tangle(tidy(doc))).toBeLessThanOrEqual(tangle(doc));
+      for (const seed of [3, 11, 29]) {
+        const messy = nudged(doc, seed);
+        expect(tangle(tidy(messy))).toBeLessThanOrEqual(tangle(messy));
+      }
+    }
+  });
+
+  it('fits the areas round the tags hanging off what they hold', () => {
+    const after = tidy(system());
+    const chips = tagChips(after);
+    for (const n of after.nodes) {
+      if (n.type !== 'device') continue;
+      const frame = frameOf(after, n);
+      if (!frame) continue;
+      const box = nodeRect(n);
+      const near = { x: box.x - 4, y: box.y - 4, w: box.w + 8, h: box.h + 8 };
+      const hung = [...deviceTagRects(after, n), ...chips.filter((c) => c.x < near.x + near.w && near.x < c.x + c.w && c.y < near.y + near.h && near.y < c.y + c.h)];
+      for (const r of hung) expect(inside(r, nodeRect(frame)), `${n.id} tag sticks out of ${frame.id}`).toBe(true);
+    }
+  });
+});
