@@ -62,6 +62,56 @@ export interface TrashedFile {
 /** Deleted boards' folders are moved here, and back from here when restored. */
 const TRASH = '.trash';
 
+/**
+ * The folder's write lock: the dev server, the command line and the desktop app may all work on
+ * one boards folder, and a change (check the version, then write; move a folder) must not run into
+ * another's halfway. Held for the few milliseconds a change takes; one left behind by a writer that
+ * died is taken over once it is older than STALE_MS. src-tauri/src/store.rs takes the same file.
+ */
+export const LOCK = '.keito.lock';
+const STALE_MS = 10_000;
+const WAIT_MS = 3_000;
+export class Busy extends Error {
+  constructor() {
+    super('ほかのアプリがこのフォルダーに書き込み中です。少し待ってからもう一度保存してください');
+  }
+}
+const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/** Run `change` holding the folder's write lock, waiting up to `wait` ms for it. */
+export function locked<T>(root: string, change: () => T, wait = WAIT_MS): T {
+  const file = path.join(root, LOCK);
+  fs.mkdirSync(root, { recursive: true });
+  const until = Date.now() + wait;
+  for (;;) {
+    try {
+      fs.closeSync(fs.openSync(file, 'wx'));
+      break;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
+      try {
+        if (Date.now() - fs.statSync(file).mtimeMs > STALE_MS) fs.rmSync(file, { force: true });
+      } catch {
+        // Let go meanwhile: try again.
+      }
+      if (Date.now() > until) throw new Busy();
+      pause(15);
+    }
+  }
+  try {
+    return change();
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+}
+
+/** Write a file whole or not at all, under a name no other writer uses for the moment. */
+function writeWhole(file: string, text: string): void {
+  const tmp = `${file}.${process.pid}-${Math.random().toString(36).slice(2, 8)}.tmp`;
+  fs.writeFileSync(tmp, text);
+  fs.renameSync(tmp, file);
+}
+
 export interface BoardFile {
   id: string;
   title: string;
@@ -97,6 +147,26 @@ export function store(root: string) {
     }
   };
 
+  /** Write a board, holding the lock (see `write`). */
+  const writeBoard = (doc: Stored, base: number | undefined): { serial: number; folder: string } => {
+    const dir = dirOf(doc.id);
+    const now = serialAt(dir);
+    // Made on a version read earlier, of a board deleted since: never brought back unasked.
+    if (base !== undefined && !dir) throw new Gone();
+    if (base !== undefined && dir && base !== now) throw new Conflict(now);
+    const wanted = path.join(root, `${slug(String(doc.meta?.title ?? ''))}__${doc.id}`);
+    let target = dir ?? wanted;
+    fs.mkdirSync(target, { recursive: true });
+    // Follow a renamed board with its folder; keep the old name if the new one is taken.
+    if (target !== wanted && !fs.existsSync(wanted)) {
+      fs.renameSync(target, wanted);
+      target = wanted;
+    }
+    const serial = now + 1;
+    writeWhole(path.join(target, 'board.json'), JSON.stringify({ ...doc, serial }, null, 2));
+    return { serial, folder: path.basename(target) };
+  };
+
   return {
     root,
     dirOf,
@@ -129,24 +199,23 @@ export function store(root: string) {
      * write). Returns the new serial; throws Conflict when the board moved on meanwhile.
      */
     write(doc: Stored, base: number | undefined): { serial: number; folder: string } {
-      const dir = dirOf(doc.id);
-      const now = serialAt(dir);
-      // Made on a version read earlier, of a board deleted since: never brought back unasked.
-      if (base !== undefined && !dir) throw new Gone();
-      if (base !== undefined && dir && base !== now) throw new Conflict(now);
-      const wanted = path.join(root, `${slug(String(doc.meta?.title ?? ''))}__${doc.id}`);
-      let target = dir ?? wanted;
-      fs.mkdirSync(target, { recursive: true });
-      // Follow a renamed board with its folder; keep the old name if the new one is taken.
-      if (target !== wanted && !fs.existsSync(wanted)) {
-        fs.renameSync(target, wanted);
-        target = wanted;
-      }
-      const serial = now + 1;
-      const tmp = path.join(target, 'board.json.tmp');
-      fs.writeFileSync(tmp, JSON.stringify({ ...doc, serial }, null, 2));
-      fs.renameSync(tmp, path.join(target, 'board.json'));
-      return { serial, folder: path.basename(target) };
+      return locked(root, () => writeBoard(doc, base));
+    },
+
+    /** Deleting moves the folder aside instead of destroying it. */
+    remove(id: string): void {
+      locked(root, () => {
+        const dir = dirOf(id);
+        if (!dir) return;
+        const trash = path.join(root, TRASH);
+        fs.mkdirSync(trash, { recursive: true });
+        fs.renameSync(dir, path.join(trash, `${path.basename(dir)}-${Date.now()}`));
+      });
+    },
+
+    /** The user's own device presets, shared by every board. */
+    writePresets(text: string): void {
+      locked(root, () => writeWhole(path.join(root, 'presets.json'), text));
     },
 
     /** A state from a board's history (revisions/<id>.json). */
@@ -167,15 +236,6 @@ export function store(root: string) {
       const dir = dirOf(id);
       const file = dir && path.join(dir, 'revisions', `${path.basename(state)}.json`);
       if (file && fs.existsSync(file)) fs.rmSync(file);
-    },
-
-    /** Deleting moves the folder aside instead of destroying it. */
-    remove(id: string): void {
-      const dir = dirOf(id);
-      if (!dir) return;
-      const trash = path.join(root, TRASH);
-      fs.mkdirSync(trash, { recursive: true });
-      fs.renameSync(dir, path.join(trash, `${path.basename(dir)}-${Date.now()}`));
     },
 
     /** Deleted boards, the most recently deleted first; a folder that cannot be read is left out. */
@@ -203,16 +263,18 @@ export function store(root: string) {
      * now (one restored before, say) is never overwritten: that throws instead.
      */
     restore(key: string): string {
-      if (key !== path.basename(key) || key.startsWith('.')) throw new Error('bad key');
-      const from = path.join(root, TRASH, key);
-      if (!fs.existsSync(path.join(from, 'board.json'))) throw new Error('削除したボードが見つかりません');
-      const doc = JSON.parse(fs.readFileSync(path.join(from, 'board.json'), 'utf8'));
-      if (typeof doc?.id !== 'string' || !ID.test(doc.id)) throw new Error('not a board');
-      if (dirOf(doc.id)) throw new Error('同じボードがすでにあります');
-      const to = path.join(root, `${slug(String(doc.meta?.title ?? ''))}__${doc.id}`);
-      if (fs.existsSync(to)) throw new Error('同じ名前のフォルダーがすでにあります');
-      fs.renameSync(from, to);
-      return doc.id;
+      return locked(root, () => {
+        if (key !== path.basename(key) || key.startsWith('.')) throw new Error('bad key');
+        const from = path.join(root, TRASH, key);
+        if (!fs.existsSync(path.join(from, 'board.json'))) throw new Error('削除したボードが見つかりません');
+        const doc = JSON.parse(fs.readFileSync(path.join(from, 'board.json'), 'utf8'));
+        if (typeof doc?.id !== 'string' || !ID.test(doc.id)) throw new Error('not a board');
+        if (dirOf(doc.id)) throw new Error('同じボードがすでにあります');
+        const to = path.join(root, `${slug(String(doc.meta?.title ?? ''))}__${doc.id}`);
+        if (fs.existsSync(to)) throw new Error('同じ名前のフォルダーがすでにあります');
+        fs.renameSync(from, to);
+        return doc.id as string;
+      });
     },
   };
 }
