@@ -249,7 +249,7 @@ export function toYaml(doc: Doc): string {
   // Pictures are listed without their data so the text stays readable; applying
   // the YAML keeps each picture by id.
   const images = doc.nodes.filter((n) => n.type === 'image');
-  if (images.length) out.images = images.map((n) => ({ id: n.id, name: n.text, pos: [r(n.x), r(n.y)], size: [r(n.w), r(n.h)], ...(n.under ? { under: true } : {}), ...(n.opacity != null ? { opacity: n.opacity } : {}) }));
+  if (images.length) out.images = images.map((n) => ({ id: n.id, name: n.text, pos: [r(n.x), r(n.y)], size: [r(n.w), r(n.h)], ...(n.under ? { under: true } : {}), ...(n.opacity != null ? { opacity: n.opacity } : {}), ...(n.caption ? { caption: n.caption } : {}), ...(n.captionAt ? { captionAt: n.captionAt } : {}), ...(n.fontSize ? { fontSize: n.fontSize } : {}) }));
 
   const junctions = doc.nodes.filter((n) => n.type === 'junction');
   if (junctions.length) out.junctions = junctions.map((n) => ({ id: n.id, pos: [r(n.x + n.w / 2), r(n.y + n.h / 2)] }));
@@ -449,7 +449,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (!src) return;
     const id = claim(v.id, 'img', `images[${i}]`);
     const size = nums(v.size, 2) ?? (old ? [old.w, old.h] : [200, 150]);
-    nodes.push({ id, type: 'image', ...place(id, v.pos), w: size[0], h: size[1], text: str(v.name), src, under: v.under === true || undefined, opacity: typeof v.opacity === 'number' ? v.opacity : undefined });
+    nodes.push({ id, type: 'image', ...place(id, v.pos), w: size[0], h: size[1], text: str(v.name), src, under: v.under === true || undefined, opacity: typeof v.opacity === 'number' ? v.opacity : undefined, caption: str(v.caption) || undefined, captionAt: v.captionAt === 'top' ? 'top' : undefined, fontSize: typeof v.fontSize === 'number' ? v.fontSize : undefined });
   });
 
   const byId = new Map(nodes.map((n) => [n.id, n]));

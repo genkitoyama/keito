@@ -136,6 +136,12 @@ export interface ImageNode extends Base {
   under?: boolean;
   /** Opacity of an underlay, 0–1 (default 0.55). */
   opacity?: number;
+  /** Text set just outside the picture, as wide as it. */
+  caption?: string;
+  /** Which side of the picture the caption goes on (default below). */
+  captionAt?: 'top' | 'bottom';
+  /** Caption size in px (default 13). */
+  fontSize?: number;
 }
 /** A dot where lines meet: a line splits here into several, or several join into one. */
 export interface JunctionNode extends Base {
