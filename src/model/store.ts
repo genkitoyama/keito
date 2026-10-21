@@ -87,6 +87,8 @@ interface State {
 
   /** Push the current doc onto the undo stack (call before a drag or a burst of edits). */
   checkpoint(): void;
+  /** Take back the last undo step without leaving it to redo: what it did is called off, not undone. */
+  dropStep(): void;
   /** Replace the doc. `record` adds an undo step. */
   setDoc(doc: Doc, record?: boolean): void;
   mutate(fn: (d: Doc) => Doc, record?: boolean): void;
@@ -165,7 +167,15 @@ export const useStore = create<State>((set, get) => ({
   setPlacing: (placing) => set({ placing, ...(placing ? { tool: 'select' as Tool } : {}) }),
 
   checkpoint: () => set((s) => ({ past: [...s.past.slice(-HISTORY), s.doc], future: [] })),
+  dropStep: () =>
+    set((s) => {
+      const doc = s.past.at(-1);
+      return doc ? { doc: { ...doc, revisions: s.doc.revisions }, past: s.past.slice(0, -1), selection: [], editing: null } : s;
+    }),
   setDoc: (doc, record = true) => {
+    // An earlier state on screen is for looking at: an edit there would be lost, or restored
+    // along with it unseen.
+    if (get().viewing) return;
     if (record) get().checkpoint();
     set({ doc: fitLegends(pinComments(get().doc, doc)) });
   },

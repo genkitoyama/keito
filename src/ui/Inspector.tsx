@@ -18,6 +18,7 @@ import { useShallow } from 'zustand/react/shallow';
 import { Revisions } from './Revisions';
 import { RunsOn, SharedSection } from './Shared';
 import { composing } from './keys';
+import { useBurst } from './burst';
 
 /** Text input that records one undo step per editing burst instead of per keystroke. */
 function Field({ label, value, onChange, multiline, wrap, type = 'text', placeholder, onPasteText, list }: { label: string; value: string; onChange: (v: string) => void; multiline?: boolean; wrap?: boolean; type?: string; placeholder?: string; onPasteText?: (text: string) => boolean; list?: string }) {
@@ -255,6 +256,7 @@ function SignalHowTo({ port }: { port?: boolean }) {
 function Underlays() {
   const list = useStore(useShallow((s) => s.doc.nodes.filter((n): n is Extract<Node, { type: 'image' }> => n.type === 'image' && !!n.under)));
   const patch = (id: string, p: Partial<Node>, record = false) => useStore.getState().updateNode(id, p, record);
+  const burst = useBurst();
   if (!list.length) return null;
   return (
     <>
@@ -262,7 +264,10 @@ function Underlays() {
       {list.map((n) => (
         <div key={n.id} className="underlay">
           <span>{n.text || n.id}</span>
-          <input type="range" min={0.1} max={1} step={0.05} value={n.opacity ?? 0.55} onChange={(e) => patch(n.id, { opacity: Number(e.target.value) })} title="濃さ" />
+          <input type="range" min={0.1} max={1} step={0.05} value={n.opacity ?? 0.55} onChange={(e) => {
+              burst();
+              patch(n.id, { opacity: Number(e.target.value) });
+            }} title="濃さ" />
           <button
             className="mini"
             onClick={() => {
@@ -280,6 +285,7 @@ function Underlays() {
 
 function MetaPanel() {
   const meta = useStore((s) => s.doc.meta);
+  const boardId = useStore((s) => s.doc.id);
   const kind = useStore((s) => kindOf(s.doc));
   const powerTags = useStore((s) => s.doc.powerTags !== false);
   const idLabels = useStore((s) => s.doc.cableIdLabels !== false);
@@ -351,7 +357,8 @@ function MetaPanel() {
         <p className="hint">線ごとに変えたいときは、その線を選んで右パネルで設定できます（ここで変えると、線ごとの設定は解除されます）。</p>
       </Section>
       <Underlays />
-      <Revisions />
+      {/* Its own per board: a name half typed for one board's state never lands on another's. */}
+      <Revisions key={boardId} />
       <p className="hint">
         <b>操作</b>
         <br />
@@ -580,6 +587,7 @@ function PortName({ value, onChange }: { value: string; onChange: (v: string) =>
 
 function NodePanel({ n }: { n: Node }) {
   const patch = (p: Partial<Node>, record = false) => useStore.getState().updateNode(n.id, p, record);
+  const burst = useBurst();
   if (n.type === 'device') return <DevicePanel key={n.id} n={n} />;
   if (n.type === 'sequence') {
     return (
@@ -640,6 +648,7 @@ function NodePanel({ n }: { n: Node }) {
                 value={n.names?.[row.color] ?? ''}
                 placeholder={row.usual}
                 onChange={(e) => {
+                  burst();
                   const names = { ...n.names, [row.color]: e.target.value };
                   if (!e.target.value) delete names[row.color];
                   patch({ names: Object.keys(names).length ? names : undefined });
@@ -862,7 +871,12 @@ function EdgePanel({ e }: { e: Edge }) {
   const custom = useStore((s) => !!s.doc.signalColors?.[e.signal]);
   // Cables are colour-coded by type; arrows one by one.
   const [all, setAll] = useState(e.signal !== 'flow');
-  const paint = (c: string | null) => useStore.getState().mutate((d) => paintLine(d, e.id, c, all));
+  const burst = useBurst();
+  // A swatch is one step; the picker, dragged round, sends colour after colour: one step for them all.
+  const paint = (c: string | null, picker = false) => {
+    if (picker) burst();
+    useStore.getState().mutate((d) => paintLine(d, e.id, c, all), !picker);
+  };
   const patch = (p: Partial<Edge>, record = false) => useStore.getState().updateEdge(e.id, p, record);
   const cable = signalOf(e.signal).cable;
   const protocol = !!signalOf(e.signal).protocol;
@@ -931,7 +945,7 @@ function EdgePanel({ e }: { e: Edge }) {
             {LINE_COLORS.map((c) => (
               <button key={c} className={color.toLowerCase() === c ? 'on' : ''} style={{ background: c }} aria-label={c} onClick={() => paint(c)} />
             ))}
-            <input type="color" value={color} onChange={(ev) => paint(ev.target.value)} title="ほかの色を選ぶ" />
+            <input type="color" value={color} onChange={(ev) => paint(ev.target.value, true)} title="ほかの色を選ぶ" />
           </div>
           <label className="check">
             <input type="checkbox" checked={all} onChange={(ev) => setAll(ev.target.checked)} />

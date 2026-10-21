@@ -9,6 +9,7 @@ import { copySelection, pasteClipboard, useStore } from '../model/store';
 import { type ColorKey, type Edge, type Node, hasText } from '../model/types';
 import { safeUrl } from '../model/url';
 import { COLOR_NAME, FILLS, FillPreview, ICON, SHAPES, shapeIcon, sizesFor } from './icons';
+import { useBurst } from './burst';
 
 const st = useStore.getState;
 const CHECKER = 'repeating-conic-gradient(#c3ccd8 0% 25%, #fff 0% 50%) 50% / 8px 8px';
@@ -117,8 +118,11 @@ export function QuickBar() {
   const toggle = (m: 'shape' | 'color' | 'size' | 'line') => () => setMenu(menu === m ? null : m);
   // Cables are colour-coded by type, so a new colour goes to the whole type unless told otherwise; arrows are coloured one by one.
   const all = wide ?? (!!edge && edge.signal !== 'flow');
+  const burst = useBurst();
+  // A colour from the picker arrives over and over while it is dragged round: one undo step for it all.
   const paint = (c: string | null, close = true) => {
-    if (edges.length) st().setDoc(edges.reduce((d, e) => paintLine(d, e.id, c, all), doc));
+    if (!close) burst();
+    if (edges.length) st().setDoc(edges.reduce((d, e) => paintLine(d, e.id, c, all), doc), close);
     if (close) setMenu(null);
   };
   // Shapes, stickies, devices and area frames can be colour-coded; one without a colour shows as gray.

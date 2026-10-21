@@ -36,7 +36,7 @@ import { type Doc, type Edge, type EdgeEnd, type Node, type Pt, type Rect, hasTe
 import { isImageFile, readImageFile } from '../platform/storage';
 import { EdgeView, HopCaps, INK, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
-import { composing } from '../ui/keys';
+import { composing, onControl } from '../ui/keys';
 
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
 type Drag =
@@ -72,6 +72,10 @@ const portOf = (doc: Doc, end: EdgeEnd) => {
 };
 
 /** World point at the centre of the visible canvas. */
+/** Whether a pointer gesture (a drag, a resize, a line being pulled) is under way on the canvas. */
+let gesture = false;
+export const inGesture = (): boolean => gesture;
+
 export function viewCenter(): Pt {
   const v = st().view;
   const el = document.getElementById('canvas');
@@ -160,8 +164,15 @@ export function insertNode(kind: CreateKind, at?: Pt, rect?: Rect): void {
   s.mutate((d) => ({ ...d, nodes: kind === 'frame' ? [n, ...d.nodes] : [...d.nodes, n] }));
   s.select([n.id]);
   s.setTool('select');
-  if (kind !== 'sequence') s.setEditing(n.id);
+  if (kind !== 'sequence') {
+    // Its first text goes into the same undo step as the box itself.
+    fresh = n.id;
+    s.setEditing(n.id);
+  }
 }
+
+/** A box just put down and opened for its first text: that text belongs to the step that made it. */
+let fresh: string | null = null;
 
 /** Embed pictures (PNG / JPEG / GIF / WebP / SVG), side by side around `at` or the view centre. */
 export async function insertImages(files: File[], at?: Pt): Promise<void> {
@@ -267,6 +278,7 @@ export function Canvas() {
   };
   const begin = (e: RPointerEvent, d: Drag) => {
     drag.current = d;
+    gesture = true;
     setBusy(true);
     try {
       svgRef.current!.setPointerCapture(e.pointerId);
@@ -309,7 +321,8 @@ export function Canvas() {
     const down = (e: KeyboardEvent) => {
       // ⌘/Ctrl+Space switches the input source or opens Spotlight; the OS then
       // swallows the key-up, which would leave the canvas stuck in pan mode.
-      if (e.code !== 'Space' || typing(e.target)) return;
+      // A focused button takes Space to be pressed.
+      if (e.code !== 'Space' || typing(e.target) || onControl(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return setSpace(false);
       e.preventDefault();
       setSpace(true);
@@ -319,6 +332,7 @@ export function Canvas() {
     // Leaving the window mid-gesture must not leave a drag or pan half-finished.
     const reset = () => {
       drag.current = null;
+      gesture = false;
       setSpace(false);
       setBusy(false);
       setGhost(null);
@@ -680,9 +694,20 @@ export function Canvas() {
     s.updateNode(d.id, { x, y, w, h }, false);
   };
 
+  /** A gesture the system called off (a touch taken over, the pointer lost): it ends where it is, making nothing. */
+  const onCancel = () => {
+    drag.current = null;
+    gesture = false;
+    lastPlan.current = null;
+    setGhost(null);
+    setGuides({});
+    setBusy(false);
+  };
+
   const onUp = (e: RPointerEvent) => {
     const d = drag.current;
     drag.current = null;
+    gesture = false;
     setGhost(null);
     lastPlan.current = null;
     // The pointer was held by the canvas, so the box it left from never heard it go: its dots
@@ -782,7 +807,7 @@ export function Canvas() {
         void insertImages([...e.dataTransfer.files], world(e));
       }}
     >
-      <svg ref={svgRef} width="100%" height="100%" style={{ cursor }} onPointerDown={onBackgroundDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onPointerLeave={() => setPointer(null)} onDoubleClick={onDoubleClick}>
+      <svg ref={svgRef} width="100%" height="100%" style={{ cursor }} onPointerDown={onBackgroundDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onCancel} onPointerLeave={() => setPointer(null)} onDoubleClick={onDoubleClick}>
         <defs>
           <pattern id="dots" width={20 * view.k} height={20 * view.k} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
             <circle cx={1} cy={1} r={1} fill="#cbd5e1" />
@@ -1352,7 +1377,7 @@ function TextEditor({ id }: { id: string }) {
     if (h == null) return;
     if (!grew.current) {
       grew.current = true;
-      st().checkpoint();
+      if (fresh !== id) st().checkpoint();
     }
     st().updateNode(id, { h }, false);
   };
@@ -1361,16 +1386,19 @@ function TextEditor({ id }: { id: string }) {
     done.current = true;
     const s = st();
     const text = read();
+    const first = fresh === id;
+    fresh = null;
     if (edge) {
       if (text !== edge.label) s.updateEdge(id, { label: text });
     } else if (node?.type === 'text' && !text) {
-      // A text box left empty would be an invisible, unselectable leftover.
+      // A text box left empty would be an invisible, unselectable leftover. Just put down, it is
+      // called off altogether: no undo step brings back an empty box.
       s.setEditing(null);
-      return s.removeIds([id]);
+      return first ? s.dropStep() : s.removeIds([id]);
     } else if (node && text !== node.text) {
       const h = neededHeight(node, text);
-      // The growth steps already opened an undo entry; fold the text change into it.
-      s.updateNode(id, h == null ? { text } : { text, h }, !grew.current);
+      // The growth steps (or the box's own making) already opened an undo entry; fold the text into it.
+      s.updateNode(id, h == null ? { text } : { text, h }, !grew.current && !first);
     }
     s.setEditing(null);
   };

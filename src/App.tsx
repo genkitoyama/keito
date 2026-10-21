@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { flushSync } from 'react-dom';
-import { Canvas, insertImages, spawnFrom, zoomBy } from './canvas/Canvas';
+import { Canvas, inGesture, insertImages, spawnFrom, zoomBy } from './canvas/Canvas';
+import { onControl } from './ui/keys';
 import { hasText } from './model/types';
 import { getSetting, setSetting } from './platform/storage';
 import { copySelection, pasteClipboard, useStore } from './model/store';
@@ -29,7 +30,17 @@ function useHotkeys() {
       const t = e.target;
       if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       if (e.isComposing) return;
+      // Mid-drag, keys would act on what is being dragged (a delete under the pointer, an undo of
+      // the drag's own step): they wait until it is let go.
+      if (inGesture()) return void e.preventDefault();
+      // A focused button is pressed by Space or Enter, as anywhere else.
+      if ((e.key === 'Enter' || e.key === ' ') && onControl(t)) return;
       const s = useStore.getState();
+      // A window over the board (export, the boards list) takes the keys: only Escape, to close it.
+      if (document.querySelector('.modal-bg')) {
+        if (e.key === 'Escape') s.setPanel(null);
+        return;
+      }
       const mod = e.metaKey || e.ctrlKey;
       // With a Japanese IME on, letter keys arrive as "Process" (keyCode 229);
       // recover the physical key so shortcuts keep working.

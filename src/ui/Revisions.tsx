@@ -145,6 +145,12 @@ function Compare({ entry, onClose }: { entry: Revision; onClose: () => void }) {
       live = false;
     };
   }, [entry.id]);
+  // Escape closes it, as it closes the other windows over the board.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    window.addEventListener('keydown', key);
+    return () => window.removeEventListener('keydown', key);
+  }, [onClose]);
   const now = currentBoard();
   const d: Diff | null = useMemo(() => (then ? diff(then, now) : null), [then, now]);
   const [copied, setCopied] = useState(false);
@@ -214,7 +220,7 @@ export function RevisionBanner() {
   return (
     <div className="rev-banner">
       <span>
-        <b>{entry.name ? `「${entry.name}」` : `${day(entry.at)} ${time(entry)} の状態`}</b>を表示中。ここでの編集は保存されません。エクスポートはこの時点の内容で出ます。
+        <b>{entry.name ? `「${entry.name}」` : `${day(entry.at)} ${time(entry)} の状態`}</b>を表示中（見るだけで、編集はできません）。エクスポートはこの時点の内容で出ます。
       </span>
       <span className="grow" />
       <button onClick={() => setComparing(true)}>今との違い</button>
