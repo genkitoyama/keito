@@ -9,6 +9,7 @@ npm run build    # dist/ に静的ファイル（base は相対パス）
 npm test         # テスト（コメントのピン留め・ラベル配置・表・YAML・削除したボードの復元など）
 npm run app      # デスクトップアプリ（Tauri）を開発モードで起動（Rust が必要）
 npm run app:build  # デスクトップアプリをビルド（src-tauri/target/release/bundle/ に .app と .dmg）
+npm run app:release  # 署名・公証済みの .dmg を作る（人に配るとき。下の「配布用のビルド」）
 ```
 
 ## できること
@@ -139,6 +140,7 @@ boards/
 - 画像はボードのフォルダにファイルとして置かれ、`board.json` には参照（`asset:…`）だけが入ります。容量の上限はありません。
 - 削除したボードは `boards/.trash/` に移るだけです。ボード一覧の「最近削除したボード」から「戻す」で元に戻せます（同じボードがすでにあるときは戻しません）。ブラウザ保存（`?local`）のときも、直近 20 枚まではブラウザ内に残り、同じように戻せます。
 - 保存先を変えるには環境変数 `KEITO_BOARDS=/path/to/dir npm run dev`（案件のリポジトリの中に置けば、図も git で管理できます）。`boards/` はこのリポジトリでは `.gitignore` 済み。
+- 開発サーバー、コマンドライン、デスクトップアプリが同じフォルダに同時に書き込んでも、互いの変更を消さないように、書き込む間はフォルダの `.keito.lock` を取ります（数ミリ秒で外れます。異常終了で残ったものは 10 秒たつと引き継ぎます）。
 - エクスポートの「データ」（または ⌘S）で、画像込みの単一ファイル（`.keito.json`）を作れます。人に渡すときはこちらか、ボードのフォルダごと。
 - サーバー無しで開いた場合（静的ビルド）や URL に `?local` を付けた場合は、従来どおりブラウザの localStorage に保存します（約 5MB まで）。
 
@@ -156,6 +158,23 @@ Tauri で包んだ macOS アプリとしても動きます（`npm run app` / `np
 - PDF は、印刷用のページを既定のブラウザで開き、そこで印刷（⌘P）して「PDF に保存」します（アプリの画面からは直接印刷できないため）。
 - ウィンドウを閉じるときも ⌘Q で終了するときも、保存し終えてから終わります。保存できていない変更があれば確認します。
 - ブラウザ版に保存していたボードは自動では移りません。ブラウザ版の「エクスポート → データ」で書き出し、アプリの「開く」で読み込みます。
+
+### 配布用のビルド
+
+ほかの Mac でも警告なしに開けるように、Developer ID で署名し、Apple の公証を通した `.dmg` を作ります。
+
+1. 最初に一度だけ、公証用の認証情報をキーチェーンに保存します。App 用パスワードは account.apple.com で作ります。
+
+   ```sh
+   xcrun notarytool store-credentials keito --apple-id <Apple ID> --team-id <チーム ID>
+   ```
+
+2. `npm run app:release` を実行します。署名、公証、staple（公証の記録を .dmg と .app に添付）まで行い、`src-tauri/target/release/bundle/dmg/` に `.dmg` ができます。公証の待ち時間は数分です。
+
+- 署名には、キーチェーンにある最初の「Developer ID Application」証明書を使います。別の証明書を使うときは `APPLE_SIGNING_IDENTITY` で指定します。
+- 公証に使うプロファイル名は `KEITO_NOTARY_PROFILE` で変えられます（既定は `keito`）。
+- 署名だけで公証しないときは `KEITO_SKIP_NOTARIZE=1 npm run app:release` です。この Mac で使うだけなら、これで足ります。
+- アイコンの元データは `design/icon.svg` です。変えたら `npx tauri icon <1024px の PNG> -o src-tauri/icons` で各サイズを作り直します（android/ と ios/ は使わないので消します）。
 
 ## 既知の制限
 
