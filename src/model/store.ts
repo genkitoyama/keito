@@ -6,7 +6,7 @@ import { type Backend, type BoardInfo, Conflict, Gone, type TrashedBoard, connec
 import { fromYaml } from './dsl';
 import { type BoardKind, KINDS, kindOf } from './kinds';
 import { SEQUENCE_SAMPLE } from './sequence';
-import { readBoard } from './load';
+import { BOARD_ID, readBoard } from './load';
 import { docBounds, nodeRect } from './geometry';
 import { allIds, freshId, makeNode, randomId } from './presets';
 import { SAMPLE_YAML } from './sample';
@@ -214,13 +214,14 @@ export const useStore = create<State>((set, get) => ({
     const ticket = ++opening;
     await quietly(() => settle(b));
     if (!(await mayLeave())) return showInUrl(get().doc.id);
-    const doc = await b.load(id);
+    const doc = await tryLoad(b, id);
     // Another board was asked for meanwhile: that one is shown, not this.
     if (ticket !== opening) return;
     if (doc) return show(doc);
-    // Deleted elsewhere (another tab, the command line): the list stops offering it.
+    // Deleted elsewhere (another tab, the command line), or its file broken: the list follows.
     set({ boards: await b.list() });
-    alert('そのボードは見つかりませんでした（ほかの場所で削除されたようです）。');
+    showInUrl(get().doc.id);
+    alert('そのボードを開けませんでした（ほかの場所で削除されたか、ファイルが読めない状態です）。');
   }),
   newBoard: (doc = emptyDoc()) => void run(async (b) => {
     await quietly(() => settle(b));
@@ -228,7 +229,9 @@ export const useStore = create<State>((set, get) => ({
     // A file opened from elsewhere may carry its pictures inline; give them a home in the board's folder.
     // History belongs to the board it was recorded on; a copy or an opened file starts without one.
     // An opened file may be of an older form: it is read the way a stored board is.
-    const next = await externalize(readBoard({ ...doc, revisions: undefined }) ?? { ...doc, revisions: undefined }, b);
+    // An id the storage cannot take (a file written by hand or another tool) is given a new one.
+    const id = BOARD_ID.test(doc.id) ? doc.id : randomId();
+    const next = await externalize(readBoard({ ...doc, id, revisions: undefined }) ?? { ...doc, id, revisions: undefined }, b);
     show(next);
     await persist(next);
   }),
@@ -383,7 +386,7 @@ export const useStore = create<State>((set, get) => ({
       if (boardId !== get().doc.id) {
         await quietly(() => settle(b));
         if (!(await mayLeave())) return;
-        const doc = await b.load(boardId);
+        const doc = await tryLoad(b, boardId);
         if (!doc) return;
         show(doc);
       }
@@ -399,7 +402,7 @@ export const useStore = create<State>((set, get) => ({
     set({ boards, others: get().others.filter((d) => d.id !== id) });
     if (id !== get().doc.id) return;
     let next: Doc | null = null;
-    for (const info of boards) if ((next = await b.load(info.id))) break;
+    for (const info of boards) if ((next = await tryLoad(b, info.id))) break;
     if (next) return show(next);
     next = emptyDoc();
     show(next);
@@ -805,12 +808,23 @@ export async function storeImage(dataUrl: string): Promise<string> {
   return backend.putAsset(useStore.getState().doc.id, dataUrl);
 }
 
+/** A board read, or nothing when it cannot be (gone, or its file broken): one bad board never stops the rest. */
+async function tryLoad(b: Backend, id: string): Promise<Doc | null> {
+  try {
+    return await b.load(id);
+  } catch (e) {
+    console.warn(`[keito] ${id}: could not be read`, e);
+    return null;
+  }
+}
+
 /** First run against the on-disk store: carry over the boards this browser was keeping. */
 async function migrate(b: Backend): Promise<void> {
   if (b.mode !== 'server' || localStorage.getItem('keito:migrated')) return;
   const have = new Set((await b.list()).map((x) => x.id));
   for (const doc of localBoards()) {
-    if (!have.has(doc.id)) await b.save(await externalize(doc, b));
+    // One that cannot be carried over (an id the folder cannot take …) stays in the browser.
+    if (!have.has(doc.id)) await b.save(await externalize(doc, b)).catch((e) => console.warn(`[keito] ${doc.meta.title}: not carried over`, e));
   }
   // The browser copies are left in place as a backup.
   localStorage.setItem('keito:migrated', new Date().toISOString());
@@ -823,10 +837,10 @@ export async function boot(): Promise<void> {
     await migrate(backend);
     let boards = await backend.list();
     const wanted = boardInUrl() ?? localStorage.getItem(CURRENT);
-    let doc = wanted ? await backend.load(wanted) : null;
+    let doc = wanted ? await tryLoad(backend, wanted) : null;
     for (const info of boards) {
       if (doc) break;
-      doc = await backend.load(info.id);
+      doc = await tryLoad(backend, info.id);
     }
     if (!doc) {
       doc = sampleDoc();

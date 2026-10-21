@@ -14,7 +14,11 @@ import path from 'node:path';
  * a write made on an older one is refused, so two writers never silently undo each other.
  */
 
-export const ID = /^[A-Za-z0-9_-]{1,64}$/;
+/**
+ * What an id (of a board, a revision) may be. A double underscore is kept out: it parts a board's
+ * title from its id in the folder's name, and inside an id it would make two boards' folders alike.
+ */
+export const ID = /^(?!.*__)[A-Za-z0-9_-]{1,64}$/;
 
 /** Where the boards live: KEITO_BOARDS, else the folder named in ~/.config/keito/config.json, else ./boards. */
 export function boardsRoot(fallback = path.resolve('boards')): string {
