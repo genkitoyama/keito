@@ -28,6 +28,7 @@ pub fn run() {
             commands::save_presets,
             commands::write_file,
             commands::read_file,
+            commands::open_for_print,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

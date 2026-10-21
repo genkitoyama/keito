@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { type Paper, type PdfPart, boardImage, bookletHtml, pdfHtml, pngScale, printHtml, toPng, zipFiles } from '../export/exporters';
+import { type Paper, type PdfPart, boardImage, bookletHtml, pdfHtml, pngScale, toPng, zipFiles } from '../export/exporters';
 import { TABLES, type Table, compact, toCsv } from '../model/lists';
 import { KINDS, type ListKey, kindOf } from '../model/kinds';
 import { toYaml } from '../model/dsl';
@@ -12,7 +12,7 @@ import type { Doc } from '../model/types';
 import { labelOf } from '../model/history';
 import { useProjectTabs } from './BoardTabs';
 import { inlineImages, safeName } from '../platform/storage';
-import { copyPng, getSetting, pickFile, saveFile, setSetting } from '../platform/io';
+import { copyPng, getSetting, pickFile, printPage, saveFile, setSetting } from '../platform/io';
 
 /** Save a file; what to say when the user called the save off (nothing when it was saved). */
 const download = async (name: string, data: Blob | string, type?: string): Promise<string | undefined> => ((await saveFile(name, data, type)) ? undefined : '保存をやめました。');
@@ -362,7 +362,7 @@ export function ExportPanel() {
                 </p>
                 <button
                   className="primary wide"
-                  onClick={run(() => printHtml(all ? bookletHtml(project, parts, paper) : pdfHtml(drawn(doc), { paper, version, tables: chosen })), '印刷ダイアログで送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。')}
+                  onClick={run(() => printPage(all ? bookletHtml(project, parts, paper) : pdfHtml(drawn(doc), { paper, version, tables: chosen })), '')}
                 >
                   {all ? `${boards.length} 枚まとめて PDF にする（${paper} 横）` : `PDF にする（${paper} 横）`}
                 </button>

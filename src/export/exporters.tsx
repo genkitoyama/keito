@@ -142,22 +142,6 @@ ${parts.map(figureHtml).join('\n')}
 }
 
 /** Vector PDF via the print dialog; the system fonts render Japanese without embedding. */
-export function printHtml(html: string): void {
-  const frame = document.createElement('iframe');
-  frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
-  document.body.appendChild(frame);
-  const d = frame.contentDocument!;
-  d.open();
-  d.write(html);
-  d.close();
-  const win = frame.contentWindow!;
-  win.onafterprint = () => frame.remove();
-  setTimeout(() => {
-    win.focus();
-    win.print();
-  }, 150);
-}
-
 /**
  * Files packed into one ZIP. Names repeated (two boards of one title) are numbered before the
  * extension ("図_2.png", "図_2.keito.json"); names differing only in case count as the same, as

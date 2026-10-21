@@ -128,6 +128,11 @@ const system: Platform = {
   // The webview's own clipboard works from within a click.
   copyText: (text) => navigator.clipboard.writeText(text),
   copyPng: (png) => navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]),
+  // The app's webview cannot print on macOS: the page opens in the user's browser, which can.
+  async print(html) {
+    await invoke('open_for_print', { html });
+    return 'ブラウザで開きました。そこで印刷（⌘P）を開き、送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。';
+  },
 };
 
 /** Start the desktop app: its ways in, its store connected, and its window closing only once all is written. */

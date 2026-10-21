@@ -20,6 +20,8 @@ export interface Platform {
   copyText(text: string): Promise<void>;
   /** Put a PNG on the clipboard, handed over while it is still being made (see web's). */
   copyPng(png: Promise<Blob>): Promise<void>;
+  /** Print a page made for print (to PDF, through the print dialog); what to tell the user. */
+  print(html: string): Promise<string>;
 }
 
 const web: Platform = {
@@ -52,6 +54,22 @@ const web: Platform = {
   // Safari only lets the click itself write to the clipboard, not a moment later: the PNG goes in
   // while it is still being made.
   copyPng: (png) => navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]),
+  async print(html) {
+    const frame = document.createElement('iframe');
+    frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+    document.body.appendChild(frame);
+    const d = frame.contentDocument!;
+    d.open();
+    d.write(html);
+    d.close();
+    const win = frame.contentWindow!;
+    win.onafterprint = () => frame.remove();
+    // Pictures (large photos as data) must be drawn before the page goes to print.
+    await Promise.all([...d.images].map((img) => img.decode().catch(() => {})));
+    win.focus();
+    win.print();
+    return '印刷ダイアログで送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。';
+  },
 };
 
 let platform: Platform = web;
@@ -66,6 +84,7 @@ export const tell = (message: string): Promise<void> => platform.tell(message);
 export const openLink = (url: string): void => platform.openLink(url);
 export const copyText = (text: string): Promise<void> => platform.copyText(text);
 export const copyPng = (png: Promise<Blob>): Promise<void> => platform.copyPng(png);
+export const printPage = (html: string): Promise<string> => platform.print(html);
 
 /** A text file's name and contents, or null when none was picked. */
 export async function pickTextFile(accept: string): Promise<{ name: string; text: string } | null> {
