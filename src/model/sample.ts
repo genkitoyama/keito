@@ -268,7 +268,7 @@ kind: software
 project: ${PROJECT}
 areas:
   # One area per machine: the apps that share an address sit together.
-  - { name: 操作用 iPad（192.168.10.51）, color: purple, rect: [680, 0, 280, 140] }
+  - { name: 操作用 iPad（192.168.10.51）, color: green, rect: [680, 0, 280, 140] }
   - { name: センサーPC（192.168.10.12）, color: orange, rect: [20, 160, 600, 340] }
   - { name: 映像再生PC（192.168.10.11）, color: blue, rect: [680, 160, 610, 340] }
 devices:
