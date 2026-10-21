@@ -4,14 +4,12 @@ import { drawingOf, entryFor, fingerprint, thin } from './history';
 import { create } from 'zustand';
 import { type Backend, type BoardInfo, Conflict, Gone, type TrashedBoard, WRITER, connect, externalize, localBoards } from '../platform/storage';
 import { ask, tell } from '../platform/io';
-import { fromYaml } from './dsl';
 import { type BoardKind, KINDS, kindOf } from './kinds';
 import { SEQUENCE_SAMPLE } from './sequence';
 import { BOARD_ID, readBoard } from './load';
 import { docBounds, nodeRect } from './geometry';
-import { tidy } from './tidy';
 import { allIds, freshId, makeNode, randomId } from './presets';
-import { SAMPLE_BOARDS } from './sample';
+import { sampleBoards } from './sample';
 import { registerSignals } from './signals';
 import { type Entry, type ShareNode, catalog, newKey, pull, stamp, takeFrom } from './shared';
 import { type Doc, type Edge, type Node, type Revision, type UserPreset, emptyMeta } from './types';
@@ -52,25 +50,6 @@ export function startBoard(kind: BoardKind, title: string, project: string): Doc
   return doc;
 }
 
-/** A board's banner (the sample's "これはサンプルです") over the top left of everything else. */
-function bannerOnTop(doc: Doc): Doc {
-  const note = doc.nodes.find((n) => n.id === 'note');
-  const rest = note && docBounds({ ...doc, nodes: doc.nodes.filter((n) => n !== note) });
-  if (!note || !rest) return doc;
-  return { ...doc, nodes: doc.nodes.map((n) => (n === note ? { ...n, x: rest.x, y: rest.y - n.h - 40 } : n)) };
-}
-
-/** The sample project's boards, the PCs they share filled in on each (its software runs on them). */
-export function sampleBoards(): Doc[] {
-  try {
-    const docs = SAMPLE_BOARDS.map((yaml) => fromYaml(yaml, emptyDoc()));
-    const entries = catalog(docs);
-    return docs.map((d) => bannerOnTop(d.kind === 'sequence' ? pull(d, entries) : tidy(pull(d, entries))));
-  } catch (e) {
-    console.error(e);
-    return [emptyDoc()];
-  }
-}
 
 /** Each board has its own address: `#/b/<id>`. */
 const boardInUrl = (): string | null => /^#\/b\/([\w-]+)/.exec(location.hash)?.[1] ?? null;

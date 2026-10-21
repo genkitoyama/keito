@@ -1,3 +1,10 @@
+import { fromYaml } from './dsl';
+import { docBounds } from './geometry';
+import { randomId } from './presets';
+import { catalog, pull } from './shared';
+import { tidy } from './tidy';
+import type { Doc } from './types';
+
 /**
  * The project a first run starts with: a small interactive floor projection, drawn the way a real
  * one would be (makers, models, addresses, lengths, power), on the three kinds of board most work
@@ -7,7 +14,7 @@
 
 const PROJECT = 'サンプル展示';
 
-/** The banner heading each sample board (put above the drawing once it is laid out: see store.ts). */
+/** The banner heading each sample board (put above the drawing once it is laid out: see bannerOnTop). */
 const NOTE = (what: string) => `
   - id: note
     shape: rect
@@ -297,3 +304,23 @@ shapes:${NOTE('開館時に、機材とアプリを立ち上げる順番です�
 
 /** The first-run project's boards, the system diagram first (it is the one opened). */
 export const SAMPLE_BOARDS = [SYSTEM, SOFTWARE, SEQUENCE];
+
+/** A board's banner (the sample's "これはサンプルです") over the top left of everything else. */
+function bannerOnTop(doc: Doc): Doc {
+  const note = doc.nodes.find((n) => n.id === 'note');
+  const rest = note && docBounds({ ...doc, nodes: doc.nodes.filter((n) => n !== note) });
+  if (!note || !rest) return doc;
+  return { ...doc, nodes: doc.nodes.map((n) => (n === note ? { ...n, x: rest.x, y: rest.y - n.h - 40 } : n)) };
+}
+
+/** The sample project's boards, the PCs they share filled in on each (its software runs on them). */
+export function sampleBoards(): Doc[] {
+  try {
+    const docs = SAMPLE_BOARDS.map((yaml) => fromYaml(yaml, { version: 1, id: randomId(), meta: { title: '', project: '' }, nodes: [], edges: [] }));
+    const entries = catalog(docs);
+    return docs.map((d) => bannerOnTop(d.kind === 'sequence' ? pull(d, entries) : tidy(pull(d, entries))));
+  } catch (e) {
+    console.error(e);
+    return [{ version: 1, id: randomId(), meta: { title: '', project: '' }, nodes: [], edges: [] }];
+  }
+}
