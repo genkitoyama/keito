@@ -21,6 +21,8 @@ fn quit(app: AppHandle) {
 /// The menu bar: the app's own menu (with 設定…), editing (so ⌘C / ⌘V reach text fields), the window.
 fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let settings = MenuItem::with_id(app, "settings", "設定…", true, Some("CmdOrCtrl+,"))?;
+    // Quitting is the app's own, not the system's: the page writes what it has first.
+    let quit = MenuItem::with_id(app, "quit", "keito を終了", true, Some("CmdOrCtrl+Q"))?;
     let keito = Submenu::with_items(
         app,
         "keito",
@@ -34,7 +36,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &PredefinedMenuItem::hide_others(app, Some("ほかを隠す"))?,
             &PredefinedMenuItem::show_all(app, Some("すべてを表示"))?,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::quit(app, Some("keito を終了"))?,
+            &quit,
         ],
     )?;
     // Undo and redo are the board's own (⌘Z on the board), not the text system's: they stay out.
@@ -91,10 +93,14 @@ pub fn run() {
             app.manage(Boards::new(root, source));
             commands::watch(app.handle().clone());
             app.set_menu(menu(app.handle())?)?;
-            app.on_menu_event(|app, event| {
-                if event.id() == "settings" {
+            app.on_menu_event(|app, event| match event.id().as_ref() {
+                "settings" => {
                     let _ = app.emit("open-settings", ());
                 }
+                "quit" => {
+                    let _ = app.emit("quit-requested", ());
+                }
+                _ => {}
             });
             Ok(())
         })

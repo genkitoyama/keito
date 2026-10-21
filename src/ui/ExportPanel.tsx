@@ -102,6 +102,8 @@ export function ExportPanel() {
   const setMode = (m: Mode) => {
     setModeState(m);
     setSetting('exportMode', m);
+    // What was said of the last export belongs to its own tab.
+    setMsg('');
   };
   // The sheet on show in the preview, as in Excel's tabs; CSV saves that one.
   const [sheetKey, setSheetKey] = useState<string>(() => getSetting('csvList') || 'equipment');

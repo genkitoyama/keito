@@ -121,8 +121,8 @@ const system: Platform = {
     const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1).toLowerCase() : '';
     return new File([bytes], name, { type: MIME[ext] ?? '' });
   },
-  ask: (text) => askDialog(text, { title: 'keito', kind: 'warning' }),
-  tell: async (text) => void (await message(text, { title: 'keito' })),
+  ask: (text) => askDialog(text, { title: 'keito', kind: 'warning', okLabel: 'はい', cancelLabel: 'いいえ' }),
+  tell: async (text) => void (await message(text, { title: 'keito', okLabel: 'OK' })),
   openLink: (url) => void openUrl(url),
   ownsLinks: true,
   // The webview's own clipboard works from within a click.
@@ -168,7 +168,7 @@ async function chooseFolder(): Promise<boolean> {
 async function settleFolder(): Promise<void> {
   const folder = await invoke<Folder>('boards_folder');
   if (folder.source !== 'default') return;
-  const offered = await askDialog(`ボードを保存するフォルダを決めてください。\n\n${folder.path}\n\nあとからボード一覧で変えられます。`, { title: 'keito', okLabel: 'このフォルダを使う', cancelLabel: '別の場所を選ぶ…' });
+  const offered = await askDialog(`ボードを保存するフォルダを決めてください。\n\n${folder.path}\n\nあとからメニューの「keito > 設定…」で変えられます。`, { title: 'keito', okLabel: 'このフォルダを使う', cancelLabel: '別の場所を選ぶ…' });
   if (!offered && (await chooseFolder())) return;
   await invoke('set_boards_folder', { path: folder.path });
 }
