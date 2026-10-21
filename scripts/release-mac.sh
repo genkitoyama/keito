@@ -7,18 +7,28 @@
 # (it asks for an app-specific password made at account.apple.com).
 #
 #   KEITO_NOTARY_PROFILE  keychain profile to notarize with (default: keito)
-#   APPLE_SIGNING_IDENTITY  certificate to sign with (default: the first Developer ID Application)
+#   KEITO_SIGNING_TEAM  team ID whose Developer ID Application certificate signs (needed when the
+#                       keychain holds more than one)
+#   APPLE_SIGNING_IDENTITY  the certificate's full name, in place of KEITO_SIGNING_TEAM
 #   KEITO_SKIP_NOTARIZE=1  sign only, for a build that stays on this Mac
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 profile="${KEITO_NOTARY_PROFILE:-keito}"
 if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
-  APPLE_SIGNING_IDENTITY="$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -n 1)"
-fi
-if [ -z "$APPLE_SIGNING_IDENTITY" ]; then
-  echo "署名に使う Developer ID Application の証明書がキーチェーンにありません。" >&2
-  exit 1
+  ids="$(security find-identity -v -p codesigning | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | sort -u)"
+  [ -n "${KEITO_SIGNING_TEAM:-}" ] && ids="$(printf '%s\n' "$ids" | grep -F "(${KEITO_SIGNING_TEAM})" || true)"
+  if [ -z "$ids" ]; then
+    echo "署名に使う Developer ID Application の証明書がキーチェーンにありません${KEITO_SIGNING_TEAM:+（チーム ${KEITO_SIGNING_TEAM}）}。" >&2
+    exit 1
+  fi
+  # Never pick one of several by chance: the team that signs is the one users see.
+  if [ "$(printf '%s\n' "$ids" | wc -l)" -gt 1 ]; then
+    echo "Developer ID Application の証明書が複数あります。KEITO_SIGNING_TEAM=<チーム ID> で選んでください:" >&2
+    printf '  %s\n' "$ids" >&2
+    exit 1
+  fi
+  APPLE_SIGNING_IDENTITY="$ids"
 fi
 export APPLE_SIGNING_IDENTITY
 notarize=1

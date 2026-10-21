@@ -171,7 +171,7 @@ Tauri で包んだ macOS アプリとしても動きます（`npm run app` / `np
 
 2. `npm run app:release` を実行します。署名、公証、staple（公証の記録を .dmg と .app に添付）まで行い、`src-tauri/target/release/bundle/dmg/` に `.dmg` ができます。公証の待ち時間は数分です。
 
-- 署名には、キーチェーンにある最初の「Developer ID Application」証明書を使います。別の証明書を使うときは `APPLE_SIGNING_IDENTITY` で指定します。
+- 署名には、キーチェーンにある「Developer ID Application」証明書を使います。複数あるときはどれを使うか決めないと止まるので、`KEITO_SIGNING_TEAM=<チーム ID> npm run app:release` で選びます（証明書の名前ごと `APPLE_SIGNING_IDENTITY` で指定してもかまいません）。公証の認証情報も、同じチームのものを保存します。
 - 公証に使うプロファイル名は `KEITO_NOTARY_PROFILE` で変えられます（既定は `keito`）。
 - 署名だけで公証しないときは `KEITO_SKIP_NOTARIZE=1 npm run app:release` です。この Mac で使うだけなら、これで足ります。
 - アイコンの元データは `design/icon.svg` です。変えたら `npx tauri icon <1024px の PNG> -o src-tauri/icons` で各サイズを作り直します（android/ と ios/ は使わないので消します）。
