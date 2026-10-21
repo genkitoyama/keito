@@ -291,7 +291,8 @@ export function ExportPanel() {
                     const { blob, report } = await updateWorkbook(doc, await file.arrayBuffer());
                     download(file.name, blob);
                     const parts = [`追加 ${report.added} 行`, `変更 ${report.changed} 行`, `削除 ${report.removed} 行`];
-                    return `「${file.name}」を更新して保存しました（${parts.join('・')}）。${report.extra.length ? `Excel で足した列（${report.extra.join('・')}）と` : ''}購入ステータスはそのまま引き継いでいます。`;
+                    const kept = [report.extra.length && `Excel で足した列（${report.extra.join('・')}）`, report.manual && `手入力の行 ${report.manual} 行`, report.sheets.length && `足したシート（${report.sheets.join('・')}）`].filter(Boolean);
+                    return `「${file.name}」を更新して保存しました（${parts.join('・')}）。${kept.length ? `${kept.join('、')}と` : ''}購入ステータスはそのまま引き継いでいます。`;
                   }, '')}
                 >
                   前回の Excel を更新…

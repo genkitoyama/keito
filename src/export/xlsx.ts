@@ -46,6 +46,9 @@ const DROPDOWNS: Record<string, string[]> = {
 
 const STATUSES = ['未定', '見積中', '発注済', '納品済', '既存', 'レンタル'];
 
+/** In the hidden key column: a row keito wrote that stands for nothing on the board (a total …). */
+const OWN_ROW = '-';
+
 /** Columns summed in a total row with a formula, so totals follow edits made in the sheet. */
 const SUMMED = ['数量', '金額(円)', '消費電力(W)', '長さ(m)', '本数', '合計長(m)'];
 const YEN = ['単価(円)', '金額(円)'];
@@ -131,7 +134,10 @@ function writeSheet(ws: Worksheet, t: Table, doc: Doc, lists: Map<string, string
   const key = ws.getColumn(cols + 1);
   key.hidden = true;
   ws.getCell(HEAD_ROW, cols + 1).value = 'keito ID';
-  t.refs.forEach((ids, r) => ids.length && (ws.getCell(HEAD_ROW + 1 + r, cols + 1).value = ids.join(' ')));
+  // Rows of keito's own that stand for nothing (totals, subtotals) are marked, so that a row typed
+  // into the sheet by hand (with no key) is told apart from them when the sheet is brought up to date.
+  t.refs.forEach((ids, r) => (ws.getCell(HEAD_ROW + 1 + r, cols + 1).value = ids.length ? ids.join(' ') : OWN_ROW));
+  if (!t.rows.length) ws.getCell(HEAD_ROW + 1, cols + 1).value = OWN_ROW;
   ws.views = [{ state: 'frozen', ySplit: HEAD_ROW, showGridLines: false }];
   if (body > 0) ws.autoFilter = { from: { row: HEAD_ROW, column: 1 }, to: { row: HEAD_ROW + body, column: cols } };
   ws.pageSetup = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: `${HEAD_ROW}:${HEAD_ROW}`, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } };
@@ -148,7 +154,7 @@ async function build(doc: Doc) {
   const letter = (k: number): string => String.fromCharCode(65 + k);
   const lists = new Map(words.map(([h, w], k) => [h, `'選択肢'!$${letter(k)}$2:$${letter(k)}$${w.length + 1}`]));
   for (const t of tables) writeSheet(wb.addWorksheet(t.title), t, doc, lists);
-  const sheet = wb.addWorksheet('選択肢', { state: 'hidden' });
+  const sheet = wb.addWorksheet(CHOICES, { state: 'hidden' });
   words.forEach(([h, w], k) => {
     sheet.getCell(1, k + 1).value = h;
     w.forEach((x, i) => (sheet.getCell(i + 2, k + 1).value = x));
@@ -168,6 +174,10 @@ const KEPT = ['機材リスト', 'ケーブルリスト', 'ケーブル集計', 
 /** Columns the board never fills: what the sheet says in them is the sheet's to keep. */
 const SHEET_OWNED = [STATUS];
 const KEY = 'keito ID';
+/** The hidden sheet of the dropdowns' words. */
+const CHOICES = '選択肢';
+/** In the key column of the heading over the rows typed by hand. */
+const MANUAL_HEAD = '+';
 const REMOVED = '削除された行';
 
 export interface UpdateReport {
@@ -176,6 +186,40 @@ export interface UpdateReport {
   removed: number;
   /** Columns added in the sheet by hand, carried over as they were. */
   extra: string[];
+  /** Rows typed into the lists by hand (standing for nothing on the board), carried over. */
+  manual: number;
+  /** Sheets added to the workbook by hand, carried over. */
+  sheets: string[];
+}
+
+/** Columns that only say where a row stands: a new place is no change to report. */
+const POSITIONAL = ['No'];
+
+/** Copy a cell's look along with its value (a date stays a date, a figure keeps its format). */
+function carry(from: Cell, to: Cell): void {
+  to.value = plain(from.value) as never;
+  if (from.numFmt) to.numFmt = from.numFmt;
+  if (from.font) to.font = from.font;
+  if (from.alignment) to.alignment = from.alignment;
+}
+
+/** A whole sheet into another workbook: values, looks, widths, heights and merged cells. */
+function copySheet(from: Worksheet, to: Worksheet): void {
+  from.columns?.forEach((c, i) => {
+    if (c.width) to.getColumn(i + 1).width = c.width;
+    if (c.hidden) to.getColumn(i + 1).hidden = true;
+  });
+  from.eachRow({ includeEmpty: false }, (row, r) => {
+    const line = to.getRow(r);
+    if (row.height) line.height = row.height;
+    row.eachCell({ includeEmpty: false }, (c, j) => {
+      const d = line.getCell(j);
+      d.value = c.value;
+      d.style = JSON.parse(JSON.stringify(c.style ?? {}));
+      if (c.note) d.note = c.note;
+    });
+  });
+  for (const range of (from.model as { merges?: string[] }).merges ?? []) to.mergeCells(range);
 }
 
 /** What a cell reads as, whatever form its value takes (a formula's result, a link's text …). */
@@ -196,6 +240,8 @@ const plain = (v: unknown): unknown => (v && typeof v === 'object' && 'formula' 
 interface OldRow {
   sheet: string;
   values: Map<string, unknown>;
+  /** The cells themselves, for their looks. */
+  cells: Map<string, Cell>;
   ids: string[];
   used: boolean;
 }
@@ -224,7 +270,7 @@ export async function updateWorkbook(doc: Doc, previous: ArrayBuffer): Promise<{
   const { ExcelJS, wb } = await build(doc);
   const old = new ExcelJS.Workbook();
   await old.xlsx.load(previous);
-  const report: UpdateReport = { added: 0, changed: 0, removed: 0, extra: [] };
+  const report: UpdateReport = { added: 0, changed: 0, removed: 0, extra: [], manual: 0, sheets: [] };
   const leftover: OldRow[] = [];
   let found = false;
 
@@ -238,18 +284,32 @@ export async function updateWorkbook(doc: Doc, previous: ArrayBuffer): Promise<{
     // Rows of the earlier sheet, by every id they stand for.
     const rows: OldRow[] = [];
     const byId = new Map<string, OldRow>();
+    // Rows typed into the sheet by hand: no key, and not one of keito's own (marked, or in bold
+    // as totals were before they were marked).
+    const manual: OldRow[] = [];
     for (let r = before.row + 1; r <= was.rowCount; r++) {
-      const ids = shown(was.getCell(r, before.cols.get(KEY)!).value).split(/\s+/).filter(Boolean);
-      if (!ids.length) continue;
+      const key = shown(was.getCell(r, before.cols.get(KEY)!).value).trim();
+      if (key === OWN_ROW || key === MANUAL_HEAD) continue;
+      const ids = key.split(/\s+/).filter(Boolean);
       const values = new Map<string, unknown>();
-      for (const [h, j] of before.cols) if (h !== KEY) values.set(h, was.getCell(r, j).value);
-      const row: OldRow = { sheet: name, values, ids, used: false };
+      const cells = new Map<string, Cell>();
+      for (const [h, j] of before.cols) {
+        if (h === KEY) continue;
+        values.set(h, was.getCell(r, j).value);
+        cells.set(h, was.getCell(r, j));
+      }
+      const row: OldRow = { sheet: name, values, cells, ids, used: false };
+      if (!ids.length) {
+        const filled = [...values.values()].some((v) => shown(v).trim() !== '');
+        if (filled && !was.getCell(r, 1).font?.bold) manual.push(row);
+        continue;
+      }
       rows.push(row);
       for (const id of ids) if (!byId.has(id)) byId.set(id, row);
     }
     // A list the board no longer has (its kind changed): every row of it is kept aside, status and all.
     if (!now || !after) {
-      leftover.push(...rows);
+      leftover.push(...rows, ...manual);
       continue;
     }
     // Columns made in the sheet by hand go after the board's, beyond the hidden key.
@@ -280,27 +340,60 @@ export async function updateWorkbook(doc: Doc, previous: ArrayBuffer): Promise<{
         const cell = now.getCell(r, j);
         const prev = match.values.get(h);
         if (SHEET_OWNED.includes(h)) {
-          if (shown(cell.value) === '' && shown(prev) !== '') cell.value = plain(prev) as never;
-        } else if (shown(prev) !== shown(cell.value)) {
+          if (shown(cell.value) === '' && shown(prev) !== '') carry(match.cells.get(h)!, cell);
+        } else if (!POSITIONAL.includes(h) && shown(prev) !== shown(cell.value)) {
           cell.fill = fill('FFFEF9C3');
           cell.note = `前回: ${shown(prev) || '（空）'}`;
           touched = true;
         }
       }
       if (touched) report.changed++;
-      extra.forEach((h, k) => (now.getCell(r, keyCol + 1 + k).value = plain(match.values.get(h)) as never));
+      extra.forEach((h, k) => carry(match.cells.get(h)!, now.getCell(r, keyCol + 1 + k)));
     }
     leftover.push(...rows.filter((x) => !x.used));
+    // Rows typed by hand go on below the list, under a heading of their own, as they were.
+    if (manual.length) {
+      let r = now.rowCount + 2;
+      const head = now.getCell(r, 1);
+      head.value = '手入力の行（図にはない行。更新しても残ります）';
+      head.font = { bold: true, color: { argb: 'FF475569' } };
+      now.getCell(r, keyCol).value = MANUAL_HEAD;
+      for (const row of manual) {
+        r++;
+        for (const [h, j] of after.cols) if (h !== KEY && row.cells.has(h)) carry(row.cells.get(h)!, now.getCell(r, j));
+        extra.forEach((h, k) => row.cells.has(h) && carry(row.cells.get(h)!, now.getCell(r, keyCol + 1 + k)));
+      }
+      report.manual += manual.length;
+    }
   }
   if (!found) throw new Error('keito で書き出した Excel ファイルではありません（keito ID の列が見つかりません）');
 
+  // Sheets added to the workbook by hand (meeting notes …) come along as they were; keito's own
+  // sheets are written afresh (a list the board no longer has is kept aside above).
+  const ours = new Set(wb.worksheets.map((ws) => ws.name));
+  for (const ws of old.worksheets) {
+    if (ours.has(ws.name) || ws.name === REMOVED || ws.name === CHOICES || layout(ws)) continue;
+    copySheet(ws, wb.addWorksheet(ws.name, { state: ws.state, properties: { tabColor: ws.properties?.tabColor } }));
+    report.sheets.push(ws.name);
+  }
+
   // Rows that left the board, kept with what the sheet said about them (an order already placed …).
+  // Those that left at earlier updates stay where they were, these going on below them.
   report.removed = leftover.length;
-  if (leftover.length) {
+  const before = old.getWorksheet(REMOVED);
+  if (leftover.length || before) {
     const ws = wb.addWorksheet(REMOVED, { properties: { tabColor: { argb: 'FFDC2626' } } });
-    ws.getCell(1, 1).value = '図から消えた行（前回のファイルにあったもの）';
-    ws.getCell(1, 1).font = { size: 14, bold: true, color: { argb: INK } };
-    let r = 3;
+    if (before) copySheet(before, ws);
+    else {
+      ws.getCell(1, 1).value = '図から消えた行（前回のファイルにあったもの）';
+      ws.getCell(1, 1).font = { size: 14, bold: true, color: { argb: INK } };
+    }
+    let r = before ? ws.rowCount + 2 : 3;
+    if (before && leftover.length) {
+      ws.getCell(r, 1).value = `${new Date().toLocaleDateString('ja-JP')} の更新で消えた行`;
+      ws.getCell(r, 1).font = { bold: true, color: { argb: 'FFB91C1C' } };
+      r += 2;
+    }
     for (const name of KEPT) {
       const rows = leftover.filter((x) => x.sheet === name);
       if (!rows.length) continue;
@@ -317,7 +410,7 @@ export async function updateWorkbook(doc: Doc, previous: ArrayBuffer): Promise<{
       });
       r++;
       for (const row of rows) {
-        heads.forEach((h, j) => (ws.getCell(r, j + 1).value = plain(row.values.get(h)) as never));
+        heads.forEach((h, j) => carry(row.cells.get(h)!, ws.getCell(r, j + 1)));
         r++;
       }
       r++;
