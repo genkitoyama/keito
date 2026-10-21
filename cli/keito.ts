@@ -10,7 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Conflict, boardsRoot, store } from '../server/store';
+import { Conflict, SERVER_FILE, boardsRoot, store } from '../server/store';
 import { DSL_GUIDE, fromYaml, toYaml } from '../src/model/dsl';
 import { catalog, pull, stamp } from '../src/model/shared';
 import { fitLegends } from '../src/model/legend';
@@ -42,7 +42,7 @@ const HELP = `keito — 系統図ボードをコマンドラインから読み�
   history <ボード>                履歴の一覧（番号・日時か名前・変わったところ）
   restore <ボード> <番号|名前>     履歴のその時点に戻す（戻す前の状態も履歴に残る）
   name <ボード> <名前>            今の状態に名前を付けて履歴に残す（自動で消えなくなる）
-  url <ボード>                    画面で開く URL
+  url <ボード>                    画面で開く URL（このフォルダを開いている開発サーバーのもの）
   guide                          YAML の書式（AI に渡す用）
 
 <ボード> は id、フォルダ名、またはタイトルの一部。
@@ -56,6 +56,17 @@ process.stdout.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EPIPE') process.exit(0);
   throw e;
 });
+
+/** The address of a dev / preview server serving this boards folder, if one is running. */
+async function serverUrl(): Promise<string | null> {
+  try {
+    const { url } = JSON.parse(fs.readFileSync(path.join(boards.root, SERVER_FILE), 'utf8'));
+    const res = await fetch(new URL('api/boards', url), { signal: AbortSignal.timeout(1500) });
+    return res.ok ? String(url) : null;
+  } catch {
+    return null;
+  }
+}
 
 function fail(msg: string, code = 2): never {
   process.stderr.write(`keito: ${msg}\n`);
@@ -350,7 +361,9 @@ async function main(): Promise<void> {
 
     case 'url': {
       const info = find(args[0]);
-      return void console.log(`http://localhost:5183/#/b/${info.id}`);
+      const at = await serverUrl();
+      if (!at) fail(`このフォルダを開いている開発サーバーがありません（npm run dev で起動します）。デスクトップアプリでは、ボード一覧から「${info.title}」を開いてください`, 1);
+      return void console.log(`${at}#/b/${info.id}`);
     }
 
     default:

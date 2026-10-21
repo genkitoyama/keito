@@ -1,4 +1,4 @@
-import { isTagged, isUnderlay, labelPoint, nodeRect, routeEdges } from './geometry';
+import { isTagged, isUnderlay, labelPoint, nodeRect, routeEdges, tagChips } from './geometry';
 import { cableIds, idShown, labelStacked, lengthShown } from './lists';
 import { signalOf } from './signals';
 import { UI_FONT, measure } from './text';
@@ -83,22 +83,26 @@ const SPOTS = [0.5, ...Array.from({ length: 18 }, (_, i) => 0.5 + (i % 2 ? -1 : 
 
 /**
  * Slide every line's label along its line to where it is easiest to read: clear of the other
- * labels, the boxes, the area titles and the other lines, on a straight run rather than over a
+ * labels, the boxes, the tags beside ports, the area titles and borders and the other lines, on a straight run rather than over a
  * bend, and as near the middle as that allows. Lines with the least room are placed first.
  * Only where a label sits along its own line changes; the same board always gives the same result.
  */
 export function placeLabels(doc: Doc): Doc {
   const routes = routeEdges(doc);
   const boxes: Rect[] = [];
+  const frames: Rect[] = [];
   for (const n of doc.nodes) {
     if (n.type === 'junction' || isUnderlay(n)) continue;
     if (n.type === 'frame') {
+      frames.push(nodeRect(n));
       // Only an area's title is in the way: a label may sit anywhere inside the area.
       boxes.push({ x: n.x, y: n.y, w: Math.min(n.w, measure(n.text, `600 13px ${UI_FONT}`) + 24), h: 24 });
       continue;
     }
     boxes.push(nodeRect(n));
   }
+  // The tags beside ports (power lines drawn as tags) are read like boxes: a label keeps off them.
+  boxes.push(...tagChips(doc));
   const lines = doc.edges.filter((e) => !isTagged(doc, e) && (routes.get(e.id)?.length ?? 0) >= 2);
   const todo = lines
     .map((e) => ({ e, pts: routes.get(e.id)!, label: edgeLabel(doc, e) }))
@@ -123,6 +127,11 @@ export function placeLabels(doc: Doc): Doc {
       const near = { x: r.x - GAP, y: r.y - GAP, w: r.w + GAP * 2, h: r.h + GAP * 2 };
       for (const q of placed) cost += (area(r, q) / own) * 1000 + (area(near, q) / own) * 200;
       for (const b of boxes) cost += (area(r, b) / own) * 600;
+      // A chip astride an area's border reads as half in each: it sits wholly in one, or between them.
+      for (const f of frames) {
+        const o = area(r, f);
+        if (o > 0 && o < own) cost += 15;
+      }
       // Other lines running under the chip are hidden by it.
       for (const o of lines) {
         if (o === e) continue;

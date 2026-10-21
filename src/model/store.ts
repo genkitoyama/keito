@@ -594,6 +594,22 @@ function persist(doc: Doc): Promise<void> {
   return next;
 }
 
+/**
+ * A write that failed for no lasting reason (the folder busy with another writer, the dev server
+ * restarting, a moment offline) is tried again a little later, longer each time, until one goes
+ * through. Refusals the user has to settle (conflict, gone) are left to them.
+ */
+const RETRY_MS = [2_000, 5_000, 10_000, 30_000];
+let retryTimer = 0;
+let retries = 0;
+function retryLater(): void {
+  clearTimeout(retryTimer);
+  retryTimer = window.setTimeout(() => {
+    const s = useStore.getState();
+    if (s.saving === 'error' && s.ready && !s.viewing && s.doc !== stored) void persist(s.doc);
+  }, RETRY_MS[Math.min(retries++, RETRY_MS.length - 1)]);
+}
+
 async function write(doc: Doc): Promise<void> {
   if (!backend) return;
   // A write left over from a board no longer on screen goes out, but says nothing about this one.
@@ -602,6 +618,8 @@ async function write(doc: Doc): Promise<void> {
   try {
     await backend.save(doc);
     stored = doc;
+    retries = 0;
+    clearTimeout(retryTimer);
     const info: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now(), project: doc.meta.project || undefined, kind: doc.kind };
     useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], ...(here() ? { saving: s.doc === doc ? 'saved' : 'saving' } : {}) }));
   } catch (e) {
@@ -611,6 +629,7 @@ async function write(doc: Doc): Promise<void> {
     if (e instanceof Gone) return void useStore.setState({ saving: 'gone' });
     console.error(e);
     useStore.setState({ saving: 'error' });
+    retryLater();
   }
 }
 

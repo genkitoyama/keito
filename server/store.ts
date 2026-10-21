@@ -69,6 +69,12 @@ const TRASH = '.trash';
  * died is taken over once it is older than STALE_MS. src-tauri/src/store.rs takes the same file.
  */
 export const LOCK = '.keito.lock';
+
+/**
+ * Where a dev / preview server serving this folder says it is ({ url, pid }), so the command line
+ * can give a board's address on whatever port the server took.
+ */
+export const SERVER_FILE = '.keito-server.json';
 const STALE_MS = 10_000;
 const WAIT_MS = 3_000;
 export class Busy extends Error {
