@@ -50,29 +50,43 @@ export function TopBar() {
   return (
     <header className="topbar">
       <b className="logo">keito</b>
+      <span className="sep" />
       {/* The project on screen (its boards are the tabs below); every project's boards open from here. */}
       <button className="board-switch" onClick={() => openBoards()} data-tip="ボード一覧（ほかの案件も）">
         <span>{doc.meta.project?.trim() || '案件なし'}</span>
         <i>▾</i>
       </button>
-      <button onClick={() => openBoards(true)} data-tip="新しいボード（種類を選ぶ）">＋新規</button>
-      <button onClick={async () => st().newBoard({ ...(await inlineImages(doc)), id: randomId(), meta: { ...doc.meta, title: `${doc.meta.title} のコピー` } })}>複製</button>
+      {/* Boards and files: made, copied, opened, deleted. */}
+      <button className="ghost" onClick={() => openBoards(true)} data-tip="新しいボード（種類を選ぶ）">
+        {ICON.plus}
+        新規
+      </button>
+      <button className="ghost" data-tip="このボードを複製" onClick={async () => st().newBoard({ ...(await inlineImages(doc)), id: randomId(), meta: { ...doc.meta, title: `${doc.meta.title} のコピー` } })}>
+        {ICON.duplicate}
+        複製
+      </button>
+      <button className="ghost" onClick={openFile} data-tip="ファイルを開く（.keito.json / .yaml）">
+        {ICON.folder}
+        開く
+      </button>
       <button
+        className="ghost danger-hover"
+        data-tip="このボードを削除（ボード一覧から戻せます）"
         onClick={() => {
           if (confirm(`「${doc.meta.title}」を削除しますか？\n（ボード一覧の「最近削除したボード」から戻せます）`)) st().deleteBoard(doc.id);
         }}
       >
+        {ICON.trash}
         削除
       </button>
       <span className="sep" />
-      <button disabled={!canUndo} onClick={() => st().undo()} data-tip="元に戻す（⌘Z）" aria-label="元に戻す" className="icon">{ICON.undo}</button>
-      <button disabled={!canRedo} onClick={() => st().redo()} data-tip="やり直す（⇧⌘Z）" aria-label="やり直す" className="icon">{ICON.redo}</button>
-      <span className="sep" />
-      <button disabled={viewing} onClick={() => st().setDoc(tidy(st().doc))} data-tip="整頓: 機材の高さをそろえて線をまっすぐにし、折れ位置を並べ直す（⌘Z で戻せます）">
+      <button disabled={!canUndo} onClick={() => st().undo()} data-tip="元に戻す（⌘Z）" aria-label="元に戻す" className="ghost icon">{ICON.undo}</button>
+      <button disabled={!canRedo} onClick={() => st().redo()} data-tip="やり直す（⇧⌘Z）" aria-label="やり直す" className="ghost icon">{ICON.redo}</button>
+      <button className="ghost" disabled={viewing} onClick={() => st().setDoc(tidy(st().doc))} data-tip="整頓: 機材の高さをそろえて線をまっすぐにし、折れ位置を並べ直す（⌘Z で戻せます）">
+        {ICON.tidy}
         整頓
       </button>
       <span className="sep" />
-      <button onClick={openFile} data-tip="ファイルを開く（.keito.json / .yaml）">開く</button>
       {saving === 'conflict' ? (
         // The board was written elsewhere (the command line …) while this page had changes of its own.
         <span className="save-state conflict">
@@ -90,15 +104,21 @@ export function TopBar() {
         </span>
       )}
       <span className="grow" />
+      {/* Panels that open beside the drawing, then the one thing the board is made for: export. */}
       {kind.lists.length > 0 && (
-        <button className={panel === 'lists' ? 'on' : ''} onClick={() => toggle('lists')}>
+        <button className={`ghost${panel === 'lists' ? ' on' : ''}`} onClick={() => toggle('lists')}>
+          {ICON.table}
           {kind.listsLabel}
         </button>
       )}
-      <button className={panel === 'comments' ? 'on' : ''} onClick={() => toggle('comments')} data-tip="付箋（コメント）の一覧">
+      <button className={`ghost${panel === 'comments' ? ' on' : ''}`} onClick={() => toggle('comments')} data-tip="付箋（コメント）の一覧">
+        {ICON.comment}
         コメント{comments > 0 && <b className="count">{comments}</b>}
       </button>
-      <button className="primary" onClick={() => toggle('export')}>エクスポート</button>
+      <button className="primary export-btn" onClick={() => toggle('export')}>
+        {ICON.download}
+        エクスポート
+      </button>
     </header>
   );
 }

@@ -44,6 +44,16 @@ export const ICON = {
   lineDashed: ico(<path d="M3 10h14" strokeWidth="2" strokeDasharray="3 2.6" />),
   /** A line cut in two: "don't draw this cable, just name what is at each end". */
   omit: ico(<path d="M2.5 10h4.5M7 7v6M13 7v6M13 10h4.5" />),
+  plus: ico(<path d="M10 4v12M4 10h12" />),
+  folder: ico(<path d="M2.5 6V4.5a1 1 0 0 1 1-1h4l1.5 2h7.5a1 1 0 0 1 1 1V15a1 1 0 0 1-1 1h-13a1 1 0 0 1-1-1z" />),
+  table: ico(
+    <>
+      <rect x="2.5" y="3.5" width="15" height="13" rx="1.5" />
+      <path d="M2.5 8h15M2.5 12.25h15M7.5 8v8.5" />
+    </>,
+  ),
+  comment: ico(<path d="M3.5 4.5h13a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H9l-3.5 3v-3h-2a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z" />),
+  tidy: ico(<path d="M3 5h9M3 10h14M3 15h6M15 3l.6 1.4L17 5l-1.4.6L15 7l-.6-1.4L13 5l1.4-.6zM13.5 13l.45 1.05L15 14.5l-1.05.45L13.5 16l-.45-1.05L12 14.5l1.05-.45z" />),
   download: ico(<path d="M10 3v9.5M6 8.5l4 4 4-4M4 15.5v1h12v-1" />),
   close: ico(<path d="M5 5l10 10M15 5L5 15" />),
   reset: ico(<path d="M2.5 10a7.5 7.5 0 1 0 7.5-7.5 8.1 8.1 0 0 0-5.6 2.3L2.5 6.7M2.5 2.5v4.2h4.2" />),

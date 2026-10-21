@@ -126,9 +126,10 @@ textarea:focus {
   background: var(--panel);
 }
 .topbar .logo {
-  font-size: 16px;
-  letter-spacing: 0.04em;
-  margin-right: 6px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  margin: 0 2px 0 4px;
 }
 .topbar .sep {
   width: 1px;
@@ -2284,4 +2285,40 @@ body.row-dragging .lists td.editable:hover {
 }
 .tabs .list-close:hover {
   color: var(--ink);
+}
+
+/* The top bar's actions: plain until pointed at, an icon and a word each. */
+.topbar button.ghost,
+.topbar .export-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 9px;
+}
+.topbar button.ghost {
+  border-color: transparent;
+  background: none;
+  color: #334155;
+}
+.topbar button.ghost:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+.topbar button.ghost.on {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+}
+.topbar button.ghost.danger-hover:hover:not(:disabled) {
+  background: #fef2f2;
+  color: var(--danger);
+}
+.topbar button.ghost .ico,
+.topbar .export-btn .ico {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.topbar button.ghost.icon {
+  padding: 0 6px;
 }
