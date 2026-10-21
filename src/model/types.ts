@@ -225,7 +225,7 @@ export interface UserPreset {
   color?: ColorKey;
 }
 
-/** A signal type defined on one board, beside the built-in ones (HDBaseT, Dante, 12G-SDI …). */
+/** A signal type defined on one board, beside the built-in ones (HDBaseT …). */
 export interface CustomSignal {
   id: SignalId;
   label: string;

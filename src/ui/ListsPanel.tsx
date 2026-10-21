@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
 import { type CellEdit, TABLES, type Table, clearOrder, editCell, editable, moveRow } from '../model/lists';
 import { kindOf } from '../model/kinds';
-import { allSignals } from '../model/signals';
+import { allSignals, groupSignals } from '../model/signals';
 import { useStore } from '../model/store';
 import { openExport } from './ExportPanel';
 
@@ -266,14 +266,16 @@ function CellEditor({ t, row, edit, shown, done }: { t: Table; row: number; edit
     const e = doc.edges.find((x) => x.id === t.refs[row][0]);
     return (
       <select autoFocus defaultValue={e?.signal} onChange={(ev) => done(ev.target.value)} onBlur={() => done(null)} onKeyDown={(ev) => ev.key === 'Escape' && done(null)}>
-        {allSignals()
-          // A cable list offers cable types; a communication list, protocols.
-          .filter((s) => s.id !== 'flow' && kindOf(doc).lines(s) && (s.cable || !!s.protocol))
-          .map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-            </option>
-          ))}
+        {/* A cable list offers cable types; a communication list, protocols. */}
+        {groupSignals(allSignals().filter((s) => s.id !== 'flow' && kindOf(doc).lines(s) && (s.cable || !!s.protocol))).map((g) => (
+          <optgroup key={g.label} label={g.label}>
+            {g.items.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.label}
+              </option>
+            ))}
+          </optgroup>
+        ))}
       </select>
     );
   }

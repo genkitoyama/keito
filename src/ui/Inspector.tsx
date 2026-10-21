@@ -8,7 +8,7 @@ import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
 import { cableIds, colourKey, idShown, ipIssues, labelStacked, lengthShown, quantityOf, unitsOf } from '../model/lists';
 import { PRESETS, SOFTWARE, freshId } from '../model/presets';
 import { type BoardKind, KINDS, KIND_ORDER, kindOf } from '../model/kinds';
-import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
+import { COLOR_KEYS, PALETTE, STICKY, allSignals, groupSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
 import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type ShapeKind, type StickyNode } from '../model/types';
@@ -215,14 +215,38 @@ function SignalSelect({ value, onChange, flow }: { value: string; onChange: (v: 
   const kind = kindOf(useStore((s) => s.doc));
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)}>
-      {allSignals()
-        .filter((s) => s.id === value || ((flow || s.id !== 'flow') && kind.lines(s)))
-        .map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.label}
-          </option>
-        ))}
+      {groupSignals(allSignals().filter((s) => s.id === value || ((flow || s.id !== 'flow') && kind.lines(s)))).map((g) => (
+        <optgroup key={g.label} label={g.label}>
+          {g.items.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.label}
+            </option>
+          ))}
+        </optgroup>
+      ))}
     </select>
+  );
+}
+
+/** How to pick a cable's type, in a few examples: folded away until asked for. */
+function SignalHowTo({ port }: { port?: boolean }) {
+  return (
+    <details className="howto">
+      <summary>種別の選び方</summary>
+      {port ? (
+        <p className="hint">
+          ポートは、その端子の種類で選びます。光の端子（LC・SC など）なら「光ファイバー」、LAN の差し込み口なら「LAN」です。
+        </p>
+      ) : (
+        <p className="hint">
+          ケーブルは、<b>両端の端子</b>に合わせて選びます。中を流れるものでは選びません。
+          <br />・光 HDMI ケーブル → 両端が HDMI なので「映像」
+          <br />・光エクステンダーの間 → 両端が光の端子なので「光ファイバー」（運ぶのが映像でも）
+          <br />・Dante の音声 → LAN の端子どうしなので「LAN」
+          <br />「光」「12G-SDI」「Dante」のような中身や規格は、<b>品名・規格</b>に書きます。
+        </p>
+      )}
+    </details>
   );
 }
 
@@ -521,6 +545,7 @@ function DevicePanel({ n }: { n: DeviceNode }) {
           {!ports(side).length && <p className="hint">ポートはありません。</p>}
         </Section>
       ))}
+      {!soft && <SignalHowTo port />}
       <SharedSection n={n} />
       <button className="wide" title="名称・メーカー・型番・ポート構成などを、機材ライブラリの「マイプリセット」に保存します" onClick={() => st().savePreset(n.id)}>
         {saved ? 'マイプリセットを上書き保存' : 'マイプリセットに保存'}
@@ -761,7 +786,7 @@ function TextStyle({ n }: { n: Extract<Node, { type: 'shape' | 'sticky' | 'text'
   );
 }
 
-/** Add a signal type of the board's own (HDBaseT, Dante …) and hand its id back. */
+/** Add a signal type of the board's own (HDBaseT …) and hand its id back. */
 function NewSignal({ onAdd }: { onAdd: (id: string) => void }) {
   const [form, setForm] = useState<{ label: string; prefix: string; color: string } | null>(null);
   const doc = useStore((s) => s.doc);
@@ -846,6 +871,7 @@ function EdgePanel({ e }: { e: Edge }) {
         </label>
         {/* Types of one's own are cables; a software board's protocols are the set offered. */}
         {kind.cableOptions && <NewSignal onAdd={(signal) => patch({ signal, arrow: 'none' })} />}
+        {cable && <SignalHowTo />}
         {protocol && <Field label="ポート" placeholder="例: 443/tcp、7000/udp" value={e.spec ?? ''} onChange={(v) => patch({ spec: v || undefined })} />}
         {cable && (
           <>

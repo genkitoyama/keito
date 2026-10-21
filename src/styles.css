@@ -2193,3 +2193,6 @@ body.row-dragging .lists td.editable:hover {
 .combo-toggle:hover {
   color: var(--ink);
 }
+.inspector > .howto {
+  margin: -4px 0 12px;
+}

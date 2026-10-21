@@ -50,8 +50,9 @@ devices:
 cables:
   - from: pc1.HDMI 1       # 機材ID.ポート名（無いポートは自動追加。同じ名前のポートが複数あるときは IN#2 のように何番目かを付ける）
     to: pj1.HDMI
-    type: video            # video(映像) lan usb audio power fiber dmx serial wireless other、または signals で足した種別。
-                           # 映像の規格(HDMI / SDI …)や音声のコネクタ(XLR / TRS …)は spec かポート名で。
+    type: video            # video(映像) lan usb audio power dmx serial sync(同期) rf(アンテナ) fiber(光) wireless other、または signals で足した種別。
+                           # 両端の端子で選ぶ（光 HDMI は video、光の端子どうしは fiber、Dante は lan）。
+                           # 映像の規格(HDMI / SDI …)や音声のコネクタ(XLR / TRS …)、「光」「Dante」などの中身は spec かポート名で。
                            # ケーブルIDは HDMI-01 / XLR-01 のようにそこから付く
                            # ソフトウェア構成図（kind: software）では http websocket osc mqtt tcp udp ndi file data。ポートは spec に（例 7000/udp）
     cableId: V-01          # 任意。ケーブルIDを手で決める（省略で自動採番）。showId / showLength: false でラベルから隠す。stacked: true で項目を 1 行ずつに。fontSize でこの線のラベルの文字サイズ（px）
