@@ -25,3 +25,48 @@ describe('YAML', () => {
     expect(toYaml(fromYaml(toYaml(d), d))).toBe(toYaml(d));
   });
 });
+
+describe('YAML keeps what lines are', () => {
+  const blank = () => ({ version: 1 as const, id: 't', meta: { title: '', project: '' }, nodes: [], edges: [] });
+
+  it('keeps line ids, and a cable list put in order by hand with them', () => {
+    const d = sample();
+    // Lines removed from the middle leave gaps in the numbering; the order names the rest.
+    const kept = d.edges.filter((_, i) => i % 2 === 1);
+    const order = [...kept].reverse().filter((e) => e.signal !== 'flow').map((e) => e.id);
+    const doc = { ...d, edges: kept, listOrder: { cables: order } };
+    const back = fromYaml(toYaml(doc), doc);
+    expect(back.edges.map((e) => e.id)).toEqual(kept.map((e) => e.id));
+    expect(back.listOrder?.cables).toEqual(order);
+  });
+
+  it('gives a new line an id no listed line has', () => {
+    const yaml = ['devices:', '  - { id: a, name: A }', '  - { id: b, name: B }', 'cables:', '  - { from: a, to: b, type: lan }', '  - { id: e1, from: b, to: a, type: lan }'].join('\n');
+    const d = fromYaml(yaml, blank());
+    expect(d.edges[1].id).toBe('e1');
+    expect(d.edges[0].id).not.toBe('e1');
+  });
+
+  it('keeps a flow line’s text size and stacking', () => {
+    const yaml = ['shapes:', '  - { id: s1, shape: rect, text: A }', '  - { id: s2, shape: rect, text: B }', 'flows:', '  - { from: s1, to: s2, label: x, fontSize: 16, stacked: true }'].join('\n');
+    const d = fromYaml(yaml, blank());
+    const back = fromYaml(toYaml(d), d);
+    expect(back.edges[0]).toMatchObject({ fontSize: 16, stacked: true });
+  });
+
+  it('keeps a cable on a port without a name, and one held to a side of a device', () => {
+    const d = fromYaml(['devices:', '  - { id: a, name: A, out: [":lan", ":lan"] }', '  - { id: b, name: B }', 'cables:', '  - { from: a, to: b, type: lan, toSide: top }'].join('\n'), blank());
+    const a = d.nodes.find((n): n is DeviceNode => n.id === 'a')!;
+    // On the second unnamed port.
+    const doc = { ...d, edges: [{ ...d.edges[0], from: { node: 'a', port: a.ports[1].id } }] };
+    const back = fromYaml(toYaml(doc), doc);
+    expect(back.edges[0].from.port).toBe(a.ports[1].id);
+    expect(back.edges[0].to).toEqual({ node: 'b', side: 'top' });
+  });
+
+  it('names a port it adds as the board does', () => {
+    const d = fromYaml(['devices:', '  - { id: a, name: A }', '  - { id: b, name: B }', 'cables:', '  - { from: a, to: b, type: audio }'].join('\n'), blank());
+    const a = d.nodes.find((n): n is DeviceNode => n.id === 'a')!;
+    expect(a.ports.map((p) => p.name)).toEqual(['AUD 1']);
+  });
+});

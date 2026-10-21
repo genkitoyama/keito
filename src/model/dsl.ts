@@ -1,7 +1,7 @@
 import { Document, isScalar, parse, visit } from 'yaml';
 import { docBounds, frameOf } from './geometry';
 import { autoLayout } from './layout';
-import { JUNCTION, freshId, makeEdge, parsePort, presetOf, presetPorts } from './presets';
+import { JUNCTION, freshId, makeEdge, parsePort, portBase, presetOf, presetPorts } from './presets';
 import { VIDEO_STANDARDS, currentSignal, customSignals, isBuiltInSignal, isSignal, registerSignals } from './signals';
 import { cableKind } from './standards';
 import { upgradeOrder } from './lists';
@@ -48,7 +48,8 @@ devices:
     out: ["HDMI 1:video", DP:video]   # 右側ポート
     pos: [x, y]            # 省略すると自動レイアウト
 cables:
-  - from: pc1.HDMI 1       # 機材ID.ポート名（無いポートは自動追加。同じ名前のポートが複数あるときは IN#2 のように何番目かを付ける）
+  - id: e1                # 任意。線の id（書き出すと付く。消さずに残すと、表の並び順などがそのまま保たれる）
+    from: pc1.HDMI 1       # 機材ID.ポート名（無いポートは自動追加。同じ名前のポートが複数あるときは IN#2 のように何番目かを付ける）
     to: pj1.HDMI
     type: video            # video(映像) lan usb audio power dmx serial sync(同期) rf(アンテナ) fiber(光) wireless other、または signals で足した種別。
                            # 両端の端子で選ぶ（光 HDMI は video、光の端子どうしは fiber、Dante は lan）。
@@ -129,7 +130,8 @@ function refOf(doc: Doc, end: EdgeEnd): string {
   const port = n?.type === 'device' && end.port ? n.ports.find((p) => p.id === end.port) : undefined;
   if (!port || n?.type !== 'device') return end.node;
   const twins = n.ports.filter((p) => portKey(p.name) === portKey(port.name));
-  return twins.length > 1 ? `${end.node}.${port.name}#${twins.indexOf(port) + 1}` : `${end.node}.${port.name}`;
+  // A port without a name is still that port: by its number among the unnamed ones ("pc1.#2").
+  return twins.length > 1 || !port.name.trim() ? `${end.node}.${port.name}#${twins.indexOf(port) + 1}` : `${end.node}.${port.name}`;
 }
 
 export function toYaml(doc: Doc): string {
@@ -183,7 +185,8 @@ export function toYaml(doc: Doc): string {
   const cables = doc.edges.filter((e) => e.signal !== 'flow');
   if (cables.length) {
     out.cables = cables.map((e) => {
-      const o: Obj = { from: refOf(doc, e.from), to: refOf(doc, e.to), type: e.signal, ...sidesOf(e) };
+      // The id goes along, so what is keyed by it (a list put in order by hand) survives a round trip.
+      const o: Obj = { id: e.id, from: refOf(doc, e.from), to: refOf(doc, e.to), type: e.signal, ...sidesOf(e) };
       put(o, 'length', e.length);
       put(o, 'cableId', e.cableId);
       if (e.showId != null) o.showId = e.showId;
@@ -227,8 +230,10 @@ export function toYaml(doc: Doc): string {
   const flows = doc.edges.filter((e) => e.signal === 'flow');
   if (flows.length) {
     out.flows = flows.map((e) => {
-      const o: Obj = { from: refOf(doc, e.from), to: refOf(doc, e.to), ...sidesOf(e) };
+      const o: Obj = { id: e.id, from: refOf(doc, e.from), to: refOf(doc, e.to), ...sidesOf(e) };
       put(o, 'label', e.label);
+      if (e.stacked != null) o.stacked = e.stacked;
+      if (e.fontSize) o.fontSize = e.fontSize;
       if (e.arrow !== 'end') o.arrow = e.arrow;
       if (e.color) o.color = e.color;
       if (e.dash) o.dash = true;
@@ -449,7 +454,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const edges: Edge[] = [];
-  const resolve = (ref: unknown, where: string, side: 'left' | 'right', signal: string, base?: string): EdgeEnd => {
+  const resolve = (ref: unknown, where: string, side: 'left' | 'right', signal: string, base?: string, held = false): EdgeEnd => {
     // NFKC folds full-width alphanumerics / spaces / dots typed with an IME.
     const s = str(ref).normalize('NFKC').trim();
     const dot = s.indexOf('.');
@@ -457,12 +462,14 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     const portName = dot < 0 ? '' : s.slice(dot + 1).trim();
     const node = byId.get(nodeId);
     if (!node) throw new Error(`${where}: "${nodeId}" という id の要素がありません`);
-    if (node.type === 'device' && !portName && signal !== 'other' && signal !== 'flow') {
+    // An end held to a side of the box (fromSide / toSide) goes into the box itself, not a port.
+    if (node.type === 'device' && !portName && !held && signal !== 'other' && signal !== 'flow') {
       // No port named: use a free port of that signal, adding one when all are taken.
       const used = new Set(edges.flatMap((e) => [e.from.node === nodeId ? e.from.port : undefined, e.to.node === nodeId ? e.to.port : undefined]));
       let free = node.ports.find((p) => p.signal === signal && p.side === side && !used.has(p.id));
       if (!free) {
-        free = { id: freshId(new Set(node.ports.map((p) => p.id)), 'p'), name: `${base ?? (signal === 'power' ? 'AC' : signal === 'video' ? 'HDMI' : signal.toUpperCase())} ${node.ports.filter((p) => p.signal === signal && p.side === side).length + 1}`, side, signal };
+        // Named as a port added on the board is (AC 1, HDMI 1, AUD 1).
+        free = { id: freshId(new Set(node.ports.map((p) => p.id)), 'p'), name: `${base ?? portBase(signal)} ${node.ports.filter((p) => p.signal === signal && p.side === side).length + 1}`, side, signal };
         node.ports.push(free);
       }
       return { node: nodeId, port: free.id };
@@ -483,6 +490,21 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     return n?.type === 'device' ? n.ports.find((p) => p.id === end.port)?.signal : undefined;
   };
 
+  // Lines keep the ids they are given (once each, and never one a node has): reserved before any
+  // line without one is numbered, so a new line never takes the id of one listed after it.
+  const lineIds = new Map<string, boolean>();
+  for (const v of [...arr(root.cables), ...arr(root.flows)]) {
+    const id = isObj(v) ? str(v.id).trim() : '';
+    if (id && /^[\w-]+$/.test(id) && !taken.has(id) && !lineIds.has(id)) lineIds.set(id, false);
+  }
+  for (const id of lineIds.keys()) taken.add(id);
+  const keepId = (e: Edge, v: Record<string, unknown>) => {
+    const id = str(v.id).trim();
+    if (lineIds.get(id) === false) {
+      lineIds.set(id, true);
+      e.id = id;
+    }
+  };
   arr(root.cables).forEach((v, i) => {
     if (!isObj(v)) throw new Error(`cables[${i}]: マップではありません`);
     const where = `cables[${i}]`;
@@ -491,9 +513,10 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     // The old video types (type: sdi) are 映像, and the standard they named names any port added.
     const named = VIDEO_STANDARDS[typed] as string | undefined;
     const given = typed && currentSignal(typed);
-    const from = resolve(v.from, where, 'right', given || 'other', named);
-    const to = resolve(v.to, where, 'left', given || portSignal(from) || 'other', named);
+    const from = resolve(v.from, where, 'right', given || 'other', named, !!v.fromSide);
+    const to = resolve(v.to, where, 'left', given || portSignal(from) || 'other', named, !!v.toSide);
     const e = makeEdge(taken, from, to, given || portSignal(from) || portSignal(to) || 'other');
+    keepId(e, v);
     e.length = typeof v.length === 'number' ? v.length : null;
     e.label = str(v.label);
     e.note = str(v.note);
@@ -522,7 +545,10 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (!isObj(v)) throw new Error(`flows[${i}]: マップではありません`);
     const where = `flows[${i}]`;
     const e = makeEdge(taken, resolve(v.from, where, 'right', 'other'), resolve(v.to, where, 'left', 'other'), 'flow');
+    keepId(e, v);
     e.label = str(v.label);
+    if (typeof v.stacked === 'boolean') e.stacked = v.stacked;
+    if (typeof v.fontSize === 'number' && v.fontSize > 0) e.fontSize = v.fontSize;
     if (v.arrow === 'none' || v.arrow === 'both') e.arrow = v.arrow;
     if (HEX.test(str(v.color))) e.color = str(v.color);
     if (v.dash === true) e.dash = true;
