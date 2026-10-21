@@ -2243,3 +2243,61 @@ body.row-dragging .lists td.editable:hover {
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.7);
 }
+
+/* The lists' header, right side: a figure, the tools, then closing. */
+.tabs .ico {
+  width: 15px;
+  height: 15px;
+  flex: none;
+}
+.list-stat {
+  margin-right: 6px;
+  font-size: 12px;
+  color: var(--sub);
+  white-space: nowrap;
+}
+.list-stat b {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.tabs .list-tool,
+.tabs .btn-group button,
+.tabs .list-close {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+}
+.tabs .list-tool {
+  border-color: transparent;
+  background: none;
+  color: var(--sub);
+}
+.tabs .list-tool:hover {
+  color: var(--ink);
+}
+/* Buttons that belong together, joined into one. */
+.btn-group {
+  display: inline-flex;
+}
+.btn-group button {
+  border-radius: 0;
+  margin-left: -1px;
+}
+.btn-group button:first-child {
+  margin-left: 0;
+  border-radius: 6px 0 0 6px;
+}
+.btn-group button:last-child {
+  border-radius: 0 6px 6px 0;
+}
+.tabs .list-close {
+  margin-left: 4px;
+  padding: 5px;
+  border-color: transparent;
+  background: none;
+  color: var(--sub);
+}
+.tabs .list-close:hover {
+  color: var(--ink);
+}

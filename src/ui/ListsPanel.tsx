@@ -5,6 +5,7 @@ import { kindOf } from '../model/kinds';
 import { allSignals, groupSignals } from '../model/signals';
 import { useStore } from '../model/store';
 import { openExport } from './ExportPanel';
+import { ICON } from './icons';
 
 
 export function ListsPanel() {
@@ -12,6 +13,7 @@ export function ListsPanel() {
   const selection = useStore((s) => s.selection);
   const [tab, setTab] = useState(0);
   // The cell being edited in place, by its row and column in the table on show.
+  const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState<{ row: number; col: number } | null>(null);
   // A row being dragged by its handle, and the place it would take if let go now.
   const [drag, setDrag] = useState<{ from: number; to: number } | null>(null);
@@ -156,19 +158,38 @@ export function ListsPanel() {
           </button>
         ))}
         <span className="grow" />
+        {/* What the open list says in sum, then what can be done with it, then closing. */}
+        {(keys[at] === 'cables' || keys[at] === 'summary') && (
+          <span className="list-stat">
+            総ケーブル長 <b>{totalLength}</b> m
+          </span>
+        )}
         {t.reorder && doc.listOrder?.[t.reorder] && (
-          <button title="ドラッグで決めた並びをやめ、この表のいつもの順に戻します" onClick={() => useStore.getState().setDoc(clearOrder(useStore.getState().doc, t.reorder!))}>
+          <button className="list-tool" title="ドラッグで決めた並びをやめ、この表のいつもの順に戻します" onClick={() => useStore.getState().setDoc(clearOrder(useStore.getState().doc, t.reorder!))}>
+            {ICON.reset}
             並びを元に戻す
           </button>
         )}
-        {keys.includes('cables') && <small>総ケーブル長 {totalLength} m</small>}
-        <button title="Excel・CSV への書き出しは、エクスポートの「表」にまとめています" onClick={() => openExport('table')}>
-          Excel / CSV…
+        <div className="btn-group">
+          <button
+            title="この表を、表計算ソフトにそのまま貼れる形でコピーします"
+            onClick={() => {
+              void navigator.clipboard.writeText([t.head, ...t.rows].map((r) => r.join('\t')).join('\n'));
+              setCopied(true);
+              window.setTimeout(() => setCopied(false), 1500);
+            }}
+          >
+            {ICON.duplicate}
+            {copied ? 'コピーしました' : 'コピー'}
+          </button>
+          <button title="Excel・CSV への書き出しは、エクスポートの「表」にまとめています" onClick={() => openExport('table')}>
+            {ICON.download}
+            Excel / CSV…
+          </button>
+        </div>
+        <button className="list-close" aria-label="閉じる" title="表を閉じる" onClick={() => useStore.getState().setPanel(null)}>
+          {ICON.close}
         </button>
-        <button onClick={() => navigator.clipboard.writeText([t.head, ...t.rows].map((r) => r.join('\t')).join('\n'))} title="表計算ソフトにそのまま貼れます">
-          コピー
-        </button>
-        <button onClick={() => useStore.getState().setPanel(null)}>×</button>
       </div>
       <div className="table-wrap">
         <table>
