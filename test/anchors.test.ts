@@ -35,3 +35,14 @@ describe('lines into any place on an edge', () => {
     expect(toYaml(d)).toContain('toAt: 0.25');
   });
 });
+
+describe('a line back into its own box', () => {
+  it('loops out and back round the corner instead of vanishing', () => {
+    const d: Doc = { ...blank(), nodes: [rect('a', 0, 0)], edges: [{ id: 'e', from: { node: 'a', side: 'right' }, to: { node: 'a', side: 'right' }, signal: 'flow', label: '', length: null, arrow: 'end', note: '' }] };
+    const pts = routeEdges(d).get('e')!;
+    expect(pts.length).toBeGreaterThan(2);
+    // It leaves the right side and comes back in from above.
+    expect(pts[0]).toMatchObject({ x: 200, y: 40 });
+    expect(pts.at(-1)).toMatchObject({ x: 100, y: 0 });
+  });
+});

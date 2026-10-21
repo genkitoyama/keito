@@ -281,7 +281,35 @@ export function seqBlocks(d: SeqDiagram): SeqBlock[] {
   return done.sort((a, b) => a.depth - b.depth || a.start - b.start);
 }
 /** A message: who, the arrow (keito and Mermaid "->>", "-x", "-)"; PlantUML "<-", "->x"), who, and its text. */
-const MESSAGE = /^(.+?)\s*(<->|<-->|-->>|->>|-->x|->x|-->|->|--x|-x|--\)|-\)|<--|<-)\s*[+-]?\s*([^:：]+?)\s*(?:\+\+|--)?\s*(?:[:：]\s*(.*))?$/;
+/** Arrows that point (they have < or >), and those that only end in a cross or a half head. */
+const ARROWS = [/<->|<-->|-->>|->>|-->x|->x|-->|->|<--|<-/g, /--x|-x|--\)|-\)/g];
+
+/**
+ * A message line split into its sender, arrow, receiver and text, or null when it is not one. A
+ * pointing arrow is looked for first, so a name with "-x" in it ("my-xbox -> TV") stays whole;
+ * both ends must be named.
+ */
+function splitMessage(line: string): RegExpExecArray | null {
+  const colon = line.search(/[:：]/);
+  const head = colon < 0 ? line : line.slice(0, colon);
+  const text = colon < 0 ? undefined : line.slice(colon + 1).trim();
+  for (const arrows of ARROWS) {
+    arrows.lastIndex = 0;
+    for (let m = arrows.exec(head); m; m = arrows.exec(head)) {
+      const from = head.slice(0, m.index).trim();
+      // Activation marks (+/- before the receiver, ++/-- after it) are dropped.
+      const to = head
+        .slice(m.index + m[0].length)
+        .trim()
+        .replace(/^[+-]\s*/, '')
+        .replace(/\s*(?:\+\+|--)$/, '')
+        .trim();
+      if (!from || !to) continue;
+      return [line, from, m[0], to, text] as unknown as RegExpExecArray;
+    }
+  }
+  return null;
+}
 const unquote = (s: string): string => s.trim().replace(/^"(.*)"$/, '$1').trim();
 
 export function parseSequence(src: string): SeqDiagram {
@@ -332,7 +360,9 @@ export function parseSequence(src: string): SeqDiagram {
       let text = m[2] ?? '';
       if (m[2] === undefined) {
         const close = lines.findIndex((l, i) => i > at && /^\s*end\s*note\b/i.test(l));
-        if (close > at) {
+        // Another note begun before that "end note" means this one is still being typed.
+        const next = lines.findIndex((l, i) => i > at && /^\s*note\b/i.test(l));
+        if (close > at && (next < 0 || next > close)) {
           text = lines
             .slice(at + 1, close)
             .map((l) => l.trim())
@@ -343,7 +373,7 @@ export function parseSequence(src: string): SeqDiagram {
       const [a, b] = m[1].split(',').map((x) => x.trim()).filter(Boolean);
       if (!a) continue;
       items.push({ kind: 'note', over: index(a), ...(b ? { to: index(b) } : {}), text });
-    } else if ((m = MESSAGE.exec(plainLine)) && !/^(?:note|participant|actor)\s/i.test(line)) {
+    } else if ((m = splitMessage(plainLine)) && !/^(?:note|participant|actor)\s/i.test(line)) {
       // "<-" (PlantUML) points the other way; "x" ends lost; activation marks are dropped.
       const back = m[2].startsWith('<') && !m[2].endsWith('>');
       const from = index(back ? m[3] : m[1]);
@@ -368,8 +398,8 @@ export function parseSequence(src: string): SeqDiagram {
       if (boxes > 0) boxes--;
       else items.push({ kind: 'section', text: '', end: true });
     } else if ((m = /^return(?:\s+(.*))?$/i.exec(line))) {
-      // PlantUML's return answers the last message.
-      const num = numbered ? ++count : undefined;
+      // PlantUML's return answers the last message (with none before it, there is nothing to number).
+      const num = numbered && last ? ++count : undefined;
       if (last) items.push({ kind: 'msg', from: last.to, to: last.from, text: (num ? `${num}. ` : '') + (m[1] ?? ''), dashed: true, ...(num ? { num } : {}) });
     }
   }

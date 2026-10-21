@@ -63,10 +63,9 @@ export function newest(entries: Entry[], key: string): Entry | undefined {
   return best;
 }
 
-/** The device behind a key (what software runs on), the newest copy. */
+/** The device behind a key (what software runs on): the copy that wins, as for every shared thing. */
 export function deviceOf(entries: Entry[], key: string): DeviceNode | undefined {
-  const own = entries.filter((e) => e.node.shared === key);
-  return own.sort((a, b) => (b.node.sharedAt ?? 0) - (a.node.sharedAt ?? 0))[0]?.node;
+  return newest(entries, key)?.node;
 }
 
 /** A device's name as the host of software ("メインPC"), first line only. */

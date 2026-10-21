@@ -78,3 +78,27 @@ describe('power', () => {
     expect(powerLoads(d).get('ups')?.watts).toBe(700);
   });
 });
+
+describe('figures typed into a list', () => {
+  const one = (): Doc => ({ ...blank(), nodes: [device('d1', 'ディスプレイ')] });
+  const typed = (col: string, raw: string) => {
+    const d = one();
+    const t = equipmentTable(d);
+    const row = t.rows.findIndex((r) => r.includes('ディスプレイ'));
+    const next = editCell(d, editable(t, row, t.head.indexOf(col))!, t.refs[row], raw);
+    return next.nodes[0] as DeviceNode;
+  };
+
+  it('reads prices as they are written in Japanese', () => {
+    expect(typed('単価(円)', '120,000').price).toBe(120000);
+    expect(typed('単価(円)', '¥3,500').price).toBe(3500);
+    expect(typed('単価(円)', '３５００円').price).toBe(3500);
+  });
+
+  it('takes a quantity only as a whole number of units', () => {
+    expect(typed('数量', '3').qty).toBe(3);
+    expect(typed('数量', '2.6').qty).toBe(3);
+    expect(typed('数量', '0').qty).toBeUndefined();
+    expect(typed('数量', '-3').qty).toBeUndefined();
+  });
+});

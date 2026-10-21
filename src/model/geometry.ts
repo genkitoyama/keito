@@ -267,6 +267,12 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
       out.set(e.id, end([{ x: ea.x, y: ea.y }, { x, y: ea.y }, { x, y: to.y }, { x: to.x, y: to.y }]));
       continue;
     }
+    // A line from a box back into the same place on it (a flow looping on itself) has no run of its
+    // own: it goes out and comes back round the corner, onto the next side.
+    if (a === b && !e.from.port && !e.to.port && Math.hypot(ea.x - to.x, ea.y - to.y) < 1) {
+      out.set(e.id, selfLoop(ea));
+      continue;
+    }
     let pts = route(ea, to, lane);
     // The plain elbow would cut through a node: find a way around. Lines drawn as tags have no run to fix.
     if (a !== b && !tagged && collides(pts, obstacles)) {
@@ -278,6 +284,17 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
   }
   routeCache.set(doc, out);
   return out;
+}
+
+/** A loop out of one side of a box and back in at the next side round (right → top, top → left …). */
+function selfLoop(a: Anchor): Pt[] {
+  const out = 24;
+  const r = a.rect;
+  const c = center(r);
+  if (a.dir === 'right') return [{ x: a.x, y: a.y }, { x: a.x + out, y: a.y }, { x: a.x + out, y: r.y - out }, { x: c.x, y: r.y - out }, { x: c.x, y: r.y }];
+  if (a.dir === 'top') return [{ x: a.x, y: a.y }, { x: a.x, y: a.y - out }, { x: r.x - out, y: a.y - out }, { x: r.x - out, y: c.y }, { x: r.x, y: c.y }];
+  if (a.dir === 'left') return [{ x: a.x, y: a.y }, { x: a.x - out, y: a.y }, { x: a.x - out, y: r.y + r.h + out }, { x: c.x, y: r.y + r.h + out }, { x: c.x, y: r.y + r.h }];
+  return [{ x: a.x, y: a.y }, { x: a.x, y: a.y + out }, { x: r.x + r.w + out, y: a.y + out }, { x: r.x + r.w + out, y: c.y }, { x: r.x + r.w, y: c.y }];
 }
 
 export function pathD(pts: Pt[], radius = 6): string {

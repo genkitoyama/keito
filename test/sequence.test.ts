@@ -41,3 +41,40 @@ describe('text that wraps', () => {
     }
   });
 });
+
+describe('reading messages', () => {
+  const msgs = (src: string) => {
+    const d = parseSequence(src);
+    return d.items.flatMap((it) => (it.kind === 'msg' ? [`${d.participants[it.from].id}>${d.participants[it.to].id}:${it.text}${it.dashed ? ':dashed' : ''}${it.cross ? ':x' : ''}`] : []));
+  };
+
+  it('reads the arrows of Mermaid and PlantUML', () => {
+    expect(msgs(['A->>B: one', 'B-->>A: two', 'A ->+ B: three', 'B --x A: four', 'A <- B: five', 'A-)B: six'].join('\n'))).toEqual([
+      'A>B:one',
+      'B>A:two:dashed',
+      'A>B:three',
+      'B>A:four:dashed:x',
+      'B>A:five',
+      'A>B:six',
+    ]);
+  });
+
+  it('keeps a name with "-x" in it whole', () => {
+    expect(msgs('my-xbox -> TV: on')).toEqual(['my-xbox>TV:on']);
+    expect(msgs('TV -> my-xbox: on')).toEqual(['TV>my-xbox:on']);
+  });
+
+  it('takes no message without both ends', () => {
+    expect(msgs('A -> : hi')).toEqual([]);
+    expect(parseSequence('A -> : hi').participants).toEqual([]);
+  });
+
+  it('numbers a return only when it answers something', () => {
+    expect(msgs(['autonumber', 'return ok', 'A -> B: hi', 'return done'].join('\n'))).toEqual(['A>B:1. hi', 'B>A:2. done:dashed']);
+  });
+
+  it('does not let a note still being typed swallow the lines after it', () => {
+    const d = parseSequence(['participant A', 'note over A', 'A -> B: kept', 'note over A', 'two', 'end note'].join('\n'));
+    expect(d.items.map((it) => it.kind)).toEqual(['note', 'msg', 'note']);
+  });
+});

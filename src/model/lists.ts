@@ -132,8 +132,17 @@ export function editCell(doc: Doc, edit: CellEdit, ids: string[], raw: string): 
   const text = raw.trim();
   let value: unknown = text;
   if (edit.kind === 'number') {
-    const n = Number(text.normalize('NFKC'));
-    if (text && !Number.isFinite(n)) return doc;
+    // Figures as they are typed in Japanese: full-width, "120,000", "¥3,500", "3,500円", "10m".
+    const plainNum = text.normalize('NFKC').replace(/[,¥￥\s]|円$|m$|W$/gi, '');
+    let n = Number(plainNum);
+    if (text && (!plainNum || !Number.isFinite(n))) return doc;
+    // A quantity is a whole number of units, one at least; none typed means the name's own.
+    if (edit.field === 'qty' && text) {
+      n = Math.round(n);
+      if (n < 1) return doc;
+    }
+    // Lengths, prices and power are never below zero.
+    if (text && n < 0) return doc;
     value = text ? n : edit.field === 'length' ? null : undefined;
   } else if (!text && OPTIONAL.has(edit.field)) value = undefined;
   const hit = new Set(ids);
