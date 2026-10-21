@@ -24,7 +24,7 @@ export function SettingsPanel() {
         <div className="modal-body">
           <section className="board-section">
             <h4>ボードの保存場所</h4>
-            {!folder && <p className="hint">ブラウザ版では、開発サーバーのフォルダかブラウザ内に保存されます（README の「保存場所」）。</p>}
+            {!folder && <p className="hint">ブラウザ版では、開発サーバーのフォルダかブラウザ内に保存されます（使い方ガイド docs/guide.md の「保存場所」）。</p>}
             {folder && where && (
               <>
                 <code className="folder-path">{where.path}</code>
