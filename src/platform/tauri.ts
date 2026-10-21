@@ -4,7 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask as askDialog, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { boardKind, readBoard } from '../model/load';
-import { boot, flushBeforeClose } from '../model/store';
+import { boot, flushBeforeClose, useStore } from '../model/store';
 import { upgradePreset } from '../model/video';
 import type { Doc, UserPreset } from '../model/types';
 import { type Platform, usePlatform } from './io';
@@ -128,6 +128,18 @@ const system: Platform = {
   // The webview's own clipboard works from within a click.
   copyText: (text) => navigator.clipboard.writeText(text),
   copyPng: (png) => navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]),
+  boardsFolder: {
+    where: async () => {
+      const folder = await invoke<Folder>('boards_folder');
+      return { path: folder.path, fixed: folder.source === 'env' || folder.source === 'config' };
+    },
+    // The page starts over on the new folder, its boards and all.
+    change: async () => {
+      if (!(await chooseFolder())) return false;
+      location.reload();
+      return true;
+    },
+  },
   // The app's webview cannot print on macOS: the page opens in the user's browser, which can.
   async print(html) {
     await invoke('open_for_print', { html });
@@ -135,13 +147,47 @@ const system: Platform = {
   },
 };
 
-/** Start the desktop app: its ways in, its store connected, and its window closing only once all is written. */
+/** Where boards are kept, as the app knows it: the folder, and who named it. */
+interface Folder {
+  path: string;
+  source: 'env' | 'config' | 'chosen' | 'default';
+}
+
+/** Ask for another folder for boards and keep them there from now on; false when called off. */
+async function chooseFolder(): Promise<boolean> {
+  const picked = await openDialog({ directory: true, multiple: false, title: 'ボードを保存するフォルダ' });
+  if (typeof picked !== 'string') return false;
+  await invoke('set_boards_folder', { path: picked });
+  return true;
+}
+
+/**
+ * On first launch, the user says where boards go: the documents folder's "keito" as offered, or a
+ * folder of their own (one shared with the command line, a synced drive …).
+ */
+async function settleFolder(): Promise<void> {
+  const folder = await invoke<Folder>('boards_folder');
+  if (folder.source !== 'default') return;
+  const offered = await askDialog(`ボードを保存するフォルダを決めてください。\n\n${folder.path}\n\nあとからボード一覧で変えられます。`, { title: 'keito', okLabel: 'このフォルダを使う', cancelLabel: '別の場所を選ぶ…' });
+  if (!offered && (await chooseFolder())) return;
+  await invoke('set_boards_folder', { path: folder.path });
+}
+
+/** Start the desktop app: its ways in, its folder settled, its store connected, and its window closing only once all is written. */
 export async function startDesktop(): Promise<void> {
   usePlatform(system);
+  await settleFolder();
   await boot(desktop);
-  const window = getCurrentWindow();
-  void window.onCloseRequested(async (e) => {
-    if (await flushBeforeClose()) return;
-    if (!(await system.ask('保存できていない変更があります。このまま閉じますか？'))) e.preventDefault();
+  // Closing the window and quitting (⌘Q) are one: what is unsaved is written first, and what
+  // cannot be is only let go when the user says so.
+  const leave = async () => {
+    if ((await flushBeforeClose()) || (await system.ask('保存できていない変更があります。このまま終了しますか？'))) await invoke('quit');
+  };
+  void getCurrentWindow().onCloseRequested((e) => {
+    e.preventDefault();
+    void leave();
   });
+  void listen('quit-requested', () => void leave());
+  // keito > 設定… (⌘,)
+  void listen('open-settings', () => useStore.getState().setPanel('settings'));
 }

@@ -22,6 +22,11 @@ export interface Platform {
   copyPng(png: Promise<Blob>): Promise<void>;
   /** Print a page made for print (to PDF, through the print dialog); what to tell the user. */
   print(html: string): Promise<string>;
+  /**
+   * The folder boards are kept in, where the user picks it (the desktop app): where it is, whether
+   * it is fixed outside the app, and how to move to another (true once moved).
+   */
+  boardsFolder?: { where(): Promise<{ path: string; fixed: boolean }>; change(): Promise<boolean> };
 }
 
 const web: Platform = {
@@ -85,6 +90,8 @@ export const openLink = (url: string): void => platform.openLink(url);
 export const copyText = (text: string): Promise<void> => platform.copyText(text);
 export const copyPng = (png: Promise<Blob>): Promise<void> => platform.copyPng(png);
 export const printPage = (html: string): Promise<string> => platform.print(html);
+/** The boards folder's place and how to change it, where the user picks it; none in a browser. */
+export const boardsFolder = () => platform.boardsFolder;
 
 /** A text file's name and contents, or null when none was picked. */
 export async function pickTextFile(accept: string): Promise<{ name: string; text: string } | null> {

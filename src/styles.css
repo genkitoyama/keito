@@ -2322,3 +2322,13 @@ body.row-dragging .lists td.editable:hover {
 .topbar button.ghost.icon {
   padding: 0 6px;
 }
+.modal.settings {
+  width: min(560px, 92vw);
+  height: auto;
+}
+.folder-path {
+  display: block;
+  margin: 4px 0 10px;
+  padding: 6px 8px;
+  word-break: break-all;
+}
