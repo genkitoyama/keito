@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cableIds, checkTable, editCell, editable, equipmentTable } from '../src/model/lists';
+import { cableIds, checkTable, editCell, editable, equipmentTable, powerLoads } from '../src/model/lists';
 import type { DeviceNode, Doc } from '../src/model/types';
 import { blank, sample } from './helpers';
 
@@ -46,5 +46,35 @@ describe('cables', () => {
 
   it('finds nothing wrong in the type of the sample board', () => {
     expect(checkTable(sample()).rows.some((r) => r.includes('種別の不一致'))).toBe(false);
+  });
+});
+
+describe('power', () => {
+  const ac = (side: 'left' | 'right', id = side === 'left' ? 'in' : 'out') => ({ id, name: id, side, signal: 'power' });
+  const cord = (id: string, from: string, fromPort: string, to: string) => ({ id, from: { node: from, port: fromPort }, to: { node: to, port: 'in' }, signal: 'power', label: '', length: null, arrow: 'none' as const, note: '' });
+  // UPS 300W: two speakers (x2, 100W each) directly, two 250W projectors through a power strip.
+  const board = (): Doc => ({
+    ...blank(),
+    nodes: [
+      device('ups', 'UPS', [ac('right', 'o1'), ac('right', 'o2')], { capacity: 300 }),
+      device('sp', 'スピーカー x2', [ac('left')], { watts: 100 }),
+      device('tap', '電源タップ', [ac('left'), ac('right', 'o1'), ac('right', 'o2')]),
+      device('pj1', 'プロジェクター', [ac('left')], { watts: 250 }),
+      device('pj2', 'プロジェクター', [ac('left')], { watts: 250 }),
+    ],
+    edges: [cord('e1', 'ups', 'o1', 'sp'), cord('e2', 'ups', 'o2', 'tap'), cord('e3', 'tap', 'o1', 'pj1'), cord('e4', 'tap', 'o2', 'pj2')],
+  });
+
+  it('counts every unit and what is fed through a strip', () => {
+    const loads = powerLoads(board());
+    expect(loads.get('ups')).toMatchObject({ watts: 700, over: true });
+    expect(loads.get('tap')).toMatchObject({ watts: 500 });
+    expect(checkTable(board()).rows.some((r) => r.includes('給電容量の超過'))).toBe(true);
+  });
+
+  it('follows a loop of power lines only once', () => {
+    const d = board();
+    d.edges.push(cord('e5', 'pj1', 'in', 'ups'));
+    expect(powerLoads(d).get('ups')?.watts).toBe(700);
   });
 });

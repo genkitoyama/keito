@@ -493,22 +493,45 @@ export function powerLoads(doc: Doc): Map<string, PowerLoad> {
   const hit = loadCache.get(doc);
   if (hit) return hit;
   const byId = new Map(doc.nodes.map((n) => [n.id, n]));
-  const out = new Map<string, PowerLoad>();
+  // What each device feeds directly, in the order the lines were drawn.
+  const feeds = new Map<string, string[]>();
   for (const e of doc.edges) {
-    if (e.signal !== 'power') continue;
-    const src = byId.get(e.from.node);
-    const dst = byId.get(e.to.node);
-    if (src?.type !== 'device' || !dst) continue;
-    const load = out.get(src.id) ?? { ids: [], watts: 0, capacity: src.capacity ?? null, over: false };
-    if (!load.ids.includes(dst.id)) {
-      load.ids.push(dst.id);
-      load.watts += dst.type === 'device' ? (dst.watts ?? 0) : 0;
-    }
-    load.over = load.capacity != null && load.watts > load.capacity;
-    out.set(src.id, load);
+    if (e.signal !== 'power' || byId.get(e.from.node)?.type !== 'device' || !byId.has(e.to.node)) continue;
+    const list = feeds.get(e.from.node) ?? [];
+    if (!list.includes(e.to.node)) list.push(e.to.node);
+    feeds.set(e.from.node, list);
+  }
+  const out = new Map<string, PowerLoad>();
+  for (const [id, ids] of feeds) {
+    const src = byId.get(id) as DeviceNode;
+    const watts = ids.reduce((sum, d) => sum + powerDraw(byId, d, feeds, new Set([id])), 0);
+    const capacity = src.capacity ?? null;
+    out.set(id, { ids, watts, capacity, over: capacity != null && watts > capacity });
   }
   loadCache.set(doc, out);
   return out;
+}
+
+/**
+ * What a device draws from the source it is plugged into: its own power for every unit it stands
+ * for ("スピーカー x2"), and all that it feeds in turn (a power strip passes on its projectors').
+ * A loop of power lines is followed once round.
+ */
+function powerDraw(byId: Map<string, Node>, id: string, feeds: Map<string, string[]>, seen: Set<string>): number {
+  if (seen.has(id)) return 0;
+  seen.add(id);
+  const n = byId.get(id);
+  const own = n?.type === 'device' && n.watts != null ? n.watts * unitsOf(n).count : 0;
+  return own + (feeds.get(id) ?? []).reduce((sum, d) => sum + powerDraw(byId, d, feeds, seen), 0);
+}
+
+/** What a device draws, as shown on its row of the power table (its units and what it feeds included). */
+export function drawOf(doc: Doc, id: string): number | null {
+  const whole = doc.whole ?? doc;
+  const n = whole.nodes.find((x) => x.id === id);
+  const passes = powerLoads(whole).get(id);
+  if (n?.type !== 'device' || (n.watts == null && !passes)) return null;
+  return (n.watts ?? 0) * unitsOf(n).count + (passes?.watts ?? 0);
 }
 
 /** Power distribution: one row per fed device, with a total per source. */
@@ -524,7 +547,8 @@ export function powerTable(doc: Doc): Table {
     if (!shown.has(id)) continue;
     for (const d of load.ids) {
       const n = byId.get(d);
-      rows.push([name(id), name(d), n?.type === 'device' && n.watts != null ? String(n.watts) : '', '', '']);
+      const draw = n?.type === 'device' ? drawOf(doc, d) : null;
+      rows.push([name(id), name(d), draw == null ? '' : String(draw), '', '']);
       refs.push([d]);
       rowClass.push('member');
     }
