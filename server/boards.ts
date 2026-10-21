@@ -48,9 +48,11 @@ export function keitoBoards(root = boardsRoot()): Plugin {
   // Pages that want to hear when a board changes on disk (a command-line write, an edit by hand).
   const listeners = new Set<ServerResponse>();
   // The serial this server last wrote for each board: its own writes are not news to anyone.
-  const ours = new Map<string, number>();
-  const announce = (id: string, serial: number) => {
-    const msg = `data: ${JSON.stringify({ id, serial })}\n\n`;
+  // Which page wrote each board last through this server, and at which serial: the news of a write
+  // says who made it, so that page alone knows it for its own and every other page hears of it.
+  const ours = new Map<string, { serial: number; writer: string }>();
+  const announce = (id: string, serial: number, writer?: string) => {
+    const msg = `data: ${JSON.stringify({ id, serial, ...(writer ? { writer } : {}) })}\n\n`;
     for (const res of listeners) res.write(msg);
   };
   const pending = new Map<string, NodeJS.Timeout>();
@@ -70,7 +72,9 @@ export function keitoBoards(root = boardsRoot()): Plugin {
             try {
               const doc = JSON.parse(fs.readFileSync(path.join(root, folder, 'board.json'), 'utf8'));
               const serial = Number(doc.serial) || 0;
-              if (typeof doc.id === 'string' && ours.get(doc.id) !== serial) announce(doc.id, serial);
+              if (typeof doc.id !== 'string') return;
+              const by = ours.get(doc.id);
+              announce(doc.id, serial, by?.serial === serial ? by.writer : undefined);
             } catch {
               // Mid-write or gone: the next event will tell.
             }
@@ -211,7 +215,7 @@ export function keitoBoards(root = boardsRoot()): Plugin {
         const base = match === undefined || match === '*' ? undefined : Number(match);
         try {
           const done = boards.write(doc, Number.isFinite(base) ? base : undefined);
-          ours.set(id, done.serial);
+          ours.set(id, { serial: done.serial, writer: String(req.headers['x-keito-writer'] ?? '') });
           return send(200, { updated: Date.now(), ...done });
         } catch (e) {
           if (e instanceof Conflict) return send(409, { error: e.message, serial: e.serial });

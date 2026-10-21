@@ -2,7 +2,7 @@ import { pinComments } from './comments';
 import { fitLegends } from './legend';
 import { drawingOf, entryFor, fingerprint, thin } from './history';
 import { create } from 'zustand';
-import { type Backend, type BoardInfo, Conflict, Gone, type TrashedBoard, connect, externalize, localBoards } from '../platform/storage';
+import { type Backend, type BoardInfo, Conflict, Gone, type TrashedBoard, WRITER, connect, externalize, localBoards } from '../platform/storage';
 import { fromYaml } from './dsl';
 import { type BoardKind, KINDS, kindOf } from './kinds';
 import { SEQUENCE_SAMPLE } from './sequence';
@@ -321,12 +321,15 @@ export const useStore = create<State>((set, get) => ({
       url: d.url,
       color: d.color,
     };
-    const presets = [preset, ...get().presets.filter((p) => !same(p))];
+    // Read anew first: another window may have saved presets of its own since this one read them.
+    const now = await b.loadPresets().catch(() => get().presets);
+    const presets = [preset, ...now.filter((p) => !same(p) && p.id !== preset.id)];
     await b.savePresets(presets);
     set({ presets });
   }),
   deletePreset: (id) => void run(async (b) => {
-    const presets = get().presets.filter((p) => p.id !== id);
+    const now = await b.loadPresets().catch(() => get().presets);
+    const presets = now.filter((p) => p.id !== id);
     await b.savePresets(presets);
     set({ presets });
   }),
@@ -880,8 +883,12 @@ async function pickUp(b: Backend): Promise<void> {
   // Unsaved edits here (or text being typed) and a change on disk: the user decides which stays.
   if (s.editing || s.doc !== stored) return void useStore.setState({ saving: 'conflict' });
   const fresh = await b.load(s.doc.id);
-  if (!fresh || useStore.getState().doc !== s.doc) return;
-  if (JSON.stringify(fresh) === JSON.stringify(s.doc)) return;
+  if (!fresh) return;
+  // Reading it took the version on disk as the one to write on next. An edit made here meanwhile
+  // must not go out over the change read: the user decides which stays.
+  const same = JSON.stringify(fresh) === JSON.stringify(s.doc);
+  if (useStore.getState().doc !== s.doc) return void (same ? undefined : useStore.setState({ saving: 'conflict' }));
+  if (same) return;
   stored = fresh;
   const shown = fitLegends(fresh);
   // The board as written elsewhere is the new base; it goes into the history at the next edit here.
@@ -890,7 +897,8 @@ async function pickUp(b: Backend): Promise<void> {
     // version back over what was saved elsewhere. It starts over from the version read in.
     const keep = (id: string) => fresh.nodes.some((n) => n.id === id) || fresh.edges.some((e) => e.id === id);
     useStore.setState({ doc: shown, selection: s.selection.filter(keep), past: [], future: [] });
-  });  pullIn();
+  });
+  pullIn();
 }
 
 window.addEventListener('focus', () => {
@@ -914,12 +922,14 @@ function listen(b: Backend): void {
   if (b.mode !== 'server' || typeof EventSource === 'undefined') return;
   const events = new EventSource('/api/events');
   events.onmessage = (m) => {
-    let news: { id?: string; serial?: number };
+    let news: { id?: string; serial?: number; writer?: string };
     try {
       news = JSON.parse(m.data);
     } catch {
       return;
     }
+    // Its own writes this page knows already.
+    if (news.writer === WRITER) return;
     const s = useStore.getState();
     if (news.id === s.doc.id) {
       if (b.serialOf?.(news.id) !== news.serial) void run(pickUp);

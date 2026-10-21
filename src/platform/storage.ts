@@ -192,6 +192,9 @@ async function ok(res: Response): Promise<Response> {
 // The version of each board on disk as this page last read or wrote it.
 const serials = new Map<string, number>();
 
+/** This page, as the writer of the boards it saves: news of its own writes is not news to it. */
+export const WRITER = Math.random().toString(36).slice(2, 12);
+
 const server: Backend = {
   mode: 'server',
   list: async () => ((await (await ok(await fetch(API))).json()) as BoardInfo[]).map((b) => ({ ...b, kind: boardKind(b.kind) })),
@@ -207,7 +210,7 @@ const server: Backend = {
     const res = await fetch(`${API}/${doc.id}`, {
       method: 'PUT',
       // Written on the version read; a board never read here (just made) has nothing to check.
-      headers: { 'Content-Type': 'application/json', ...(force || known === undefined ? { 'If-Match': '*' } : { 'If-Match': String(known) }) },
+      headers: { 'Content-Type': 'application/json', 'X-Keito-Writer': WRITER, ...(force || known === undefined ? { 'If-Match': '*' } : { 'If-Match': String(known) }) },
       body: JSON.stringify(doc),
     });
     if (res.status === 409) throw new Conflict(Number((await res.json()).serial) || 0);
