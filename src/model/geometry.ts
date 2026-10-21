@@ -158,6 +158,7 @@ export const isTagged = (doc: Doc, e: Edge): boolean => e.tag ?? (e.signal === '
 const orthogonal = (pts: Pt[]): boolean => pts.every((p, i) => i === 0 || Math.abs(p.x - pts[i - 1].x) < 0.5 || Math.abs(p.y - pts[i - 1].y) < 0.5);
 
 const routeCache = new WeakMap<Doc, Map<string, Pt[]>>();
+const chipCache = new WeakMap<Doc, Rect[]>();
 
 /** How far out from a shared end merging lines meet, before running in together. */
 const MERGE = 22;
@@ -283,7 +284,14 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
     out.set(e.id, end(pts));
   }
   routeCache.set(doc, out);
+  chipCache.set(doc, chips);
   return out;
+}
+
+/** Where the tags of lines drawn as tags (power, by default) sit beside their ports, as routing keeps clear of them. */
+export function tagChips(doc: Doc): Rect[] {
+  routeEdges(doc);
+  return chipCache.get(doc) ?? [];
 }
 
 /** A loop out of one side of a box and back in at the next side round (right → top, top → left …). */

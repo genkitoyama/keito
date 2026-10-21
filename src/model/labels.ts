@@ -1,4 +1,4 @@
-import { isTagged, isUnderlay, labelPoint, nodeRect, routeEdges } from './geometry';
+import { isTagged, isUnderlay, labelPoint, nodeRect, routeEdges, tagChips } from './geometry';
 import { cableIds, idShown, labelStacked, lengthShown } from './lists';
 import { signalOf } from './signals';
 import { UI_FONT, measure } from './text';
@@ -83,7 +83,7 @@ const SPOTS = [0.5, ...Array.from({ length: 18 }, (_, i) => 0.5 + (i % 2 ? -1 : 
 
 /**
  * Slide every line's label along its line to where it is easiest to read: clear of the other
- * labels, the boxes, the area titles and the other lines, on a straight run rather than over a
+ * labels, the boxes, the tags beside ports, the area titles and the other lines, on a straight run rather than over a
  * bend, and as near the middle as that allows. Lines with the least room are placed first.
  * Only where a label sits along its own line changes; the same board always gives the same result.
  */
@@ -99,6 +99,8 @@ export function placeLabels(doc: Doc): Doc {
     }
     boxes.push(nodeRect(n));
   }
+  // The tags beside ports (power lines drawn as tags) are read like boxes: a label keeps off them.
+  boxes.push(...tagChips(doc));
   const lines = doc.edges.filter((e) => !isTagged(doc, e) && (routes.get(e.id)?.length ?? 0) >= 2);
   const todo = lines
     .map((e) => ({ e, pts: routes.get(e.id)!, label: edgeLabel(doc, e) }))
