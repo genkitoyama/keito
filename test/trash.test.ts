@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { store } from '../server/store';
+import { Gone, store } from '../server/store';
 
 let root = '';
 beforeEach(() => void (root = fs.mkdtempSync(path.join(os.tmpdir(), 'keito-trash-'))));
@@ -34,5 +34,19 @@ describe('deleted boards on disk', () => {
   it('refuses keys that point outside the trash', () => {
     const s = store(root);
     for (const key of ['../x', '.hidden', 'missing']) expect(() => s.restore(key)).toThrow();
+  });
+});
+
+describe('writes made on an older version', () => {
+  it('never bring back a board deleted meanwhile', () => {
+    const s = store(root);
+    const { serial } = s.write(board('aaa111', '配置図'), undefined);
+    s.remove('aaa111');
+    // A page that read version `serial` before the delete saves again.
+    expect(() => s.write(board('aaa111', '配置図'), serial)).toThrow(Gone);
+    expect(s.list()).toHaveLength(0);
+    // Asked to (no version given), it is written anew.
+    s.write(board('aaa111', '配置図'), undefined);
+    expect(s.list()).toHaveLength(1);
   });
 });

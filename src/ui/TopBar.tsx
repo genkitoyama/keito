@@ -87,7 +87,15 @@ export function TopBar() {
         整頓
       </button>
       <span className="sep" />
-      {saving === 'conflict' ? (
+      {saving === 'gone' ? (
+        // Deleted elsewhere (another tab, the command line) while it was open here.
+        <span className="save-state conflict">
+          ほかの場所で削除されました
+          <button data-tip="この画面の内容でボードを作り直します（削除したものはボード一覧の「最近削除したボード」に残ります）" onClick={() => st().resolveConflict('overwrite')}>
+            この画面で作り直す
+          </button>
+        </span>
+      ) : saving === 'conflict' ? (
         // The board was written elsewhere (the command line …) while this page had changes of its own.
         <span className="save-state conflict">
           ほかの場所で更新されました

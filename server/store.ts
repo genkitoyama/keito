@@ -36,6 +36,13 @@ export class Conflict extends Error {
   }
 }
 
+/** A board written on a version read earlier, though it has been deleted since. */
+export class Gone extends Error {
+  constructor() {
+    super('ボードはほかの場所で削除されています');
+  }
+}
+
 /** A deleted board, lying in .trash until it is put back. */
 export interface TrashedFile {
   /** Its folder's name under .trash (the board's folder, with the time it was deleted). */
@@ -120,6 +127,8 @@ export function store(root: string) {
     write(doc: Stored, base: number | undefined): { serial: number; folder: string } {
       const dir = dirOf(doc.id);
       const now = serialAt(dir);
+      // Made on a version read earlier, of a board deleted since: never brought back unasked.
+      if (base !== undefined && !dir) throw new Gone();
       if (base !== undefined && dir && base !== now) throw new Conflict(now);
       const wanted = path.join(root, `${slug(String(doc.meta?.title ?? ''))}__${doc.id}`);
       let target = dir ?? wanted;

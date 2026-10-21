@@ -65,6 +65,13 @@ export class Conflict extends Error {
   }
 }
 
+/** A board on disk was deleted elsewhere since it was read: a write would bring it back. */
+export class Gone extends Error {
+  constructor() {
+    super('ボードはほかの場所で削除されています');
+  }
+}
+
 const INDEX = 'keito:boards';
 const key = (id: string): string => `keito:board:${id}`;
 /** A deleted board in this browser: keito:trash:<id>:<when deleted>, holding the board as it was. */
@@ -204,6 +211,7 @@ const server: Backend = {
       body: JSON.stringify(doc),
     });
     if (res.status === 409) throw new Conflict(Number((await res.json()).serial) || 0);
+    if (res.status === 410) throw new Gone();
     const done = await (await ok(res)).json();
     if (typeof done?.serial === 'number') serials.set(doc.id, done.serial);
   },

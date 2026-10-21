@@ -2,7 +2,7 @@ import { pinComments } from './comments';
 import { fitLegends } from './legend';
 import { drawingOf, entryFor, fingerprint, thin } from './history';
 import { create } from 'zustand';
-import { type Backend, type BoardInfo, Conflict, type TrashedBoard, connect, externalize, localBoards } from '../platform/storage';
+import { type Backend, type BoardInfo, Conflict, Gone, type TrashedBoard, connect, externalize, localBoards } from '../platform/storage';
 import { fromYaml } from './dsl';
 import { type BoardKind, KINDS, kindOf } from './kinds';
 import { SEQUENCE_SAMPLE } from './sequence';
@@ -80,7 +80,8 @@ interface State {
   /** Where boards are kept: a folder on disk (server) or this browser (local). */
   mode: 'server' | 'local';
   /** `conflict`: the board on disk changed elsewhere (the command line …) while it had unsaved edits here. */
-  saving: 'saved' | 'saving' | 'error' | 'conflict';
+  /** 'gone': deleted elsewhere while open here; written again only when asked. */
+  saving: 'saved' | 'saving' | 'error' | 'conflict' | 'gone';
   /** Set while an old revision is on screen in place of the live board (which is not touched). */
   viewing: { entry: Revision; all: Revision[] } | null;
 
@@ -209,11 +210,12 @@ export const useStore = create<State>((set, get) => ({
   },
   openBoard: (id) => void run(async (b) => {
     if (id === get().doc.id) return;
-    // Leaving now would drop the edits that could not be written: they are settled first.
-    if (get().saving === 'conflict') return void alert('このボードはほかの場所で更新されています。先に上の「読み込む」か「この画面で上書き」を選んでください。');
+    const ticket = ++opening;
     await quietly(() => settle(b));
-    await flush();
+    if (!(await mayLeave())) return showInUrl(get().doc.id);
     const doc = await b.load(id);
+    // Another board was asked for meanwhile: that one is shown, not this.
+    if (ticket !== opening) return;
     if (doc) return show(doc);
     // Deleted elsewhere (another tab, the command line): the list stops offering it.
     set({ boards: await b.list() });
@@ -221,7 +223,7 @@ export const useStore = create<State>((set, get) => ({
   }),
   newBoard: (doc = emptyDoc()) => void run(async (b) => {
     await quietly(() => settle(b));
-    await flush();
+    if (!(await mayLeave())) return;
     // A file opened from elsewhere may carry its pictures inline; give them a home in the board's folder.
     // History belongs to the board it was recorded on; a copy or an opened file starts without one.
     // An opened file may be of an older form: it is read the way a stored board is.
@@ -245,7 +247,7 @@ export const useStore = create<State>((set, get) => ({
     // The board as it is goes into the history before an older state takes its place on screen.
     if (!get().viewing) {
       await quietly(() => settle(b));
-      await flush();
+      if (!(await mayLeave())) return;
     }
     const base = live ?? get().doc;
     const all = base.revisions ?? [];
@@ -346,7 +348,9 @@ export const useStore = create<State>((set, get) => ({
       if (choice === 'overwrite') {
         await b.save(mine, true);
         stored = mine;
-        return set({ saving: get().doc === mine ? 'saved' : 'saving' });
+        // Edits made while it was being written go out after it.
+        if (get().doc !== mine) return void persist(get().doc);
+        return set({ saving: 'saved' });
       }
       const fresh = await b.load(mine.id);
       if (!fresh) return;
@@ -377,7 +381,7 @@ export const useStore = create<State>((set, get) => ({
     void run(async (b) => {
       if (boardId !== get().doc.id) {
         await quietly(() => settle(b));
-        await flush();
+        if (!(await mayLeave())) return;
         const doc = await b.load(boardId);
         if (!doc) return;
         show(doc);
@@ -390,7 +394,8 @@ export const useStore = create<State>((set, get) => ({
     if (id === get().doc.id) clearTimeout(timer);
     await b.remove(id);
     const boards = await b.list();
-    set({ boards });
+    // A deleted fellow of the project is no longer written to when something shared changes.
+    set({ boards, others: get().others.filter((d) => d.id !== id) });
     if (id !== get().doc.id) return;
     let next: Doc | null = null;
     for (const info of boards) if ((next = await b.load(info.id))) break;
@@ -568,29 +573,65 @@ export function centerOn(nodeId: string): void {
   useStore.setState({ view: { ...view, x: width / 2 - (r.x + r.w / 2) * view.k, y: height / 2 - (r.y + r.h / 2) * view.k } });
 }
 
-async function persist(doc: Doc): Promise<void> {
+/**
+ * Writes go out one after another. Two at once would both be made on the same version of the
+ * board, and the second be refused as if the board had been changed elsewhere.
+ */
+let writing: Promise<void> = Promise.resolve();
+function persist(doc: Doc): Promise<void> {
+  const next = writing.then(() => write(doc));
+  writing = next.catch(() => {});
+  return next;
+}
+
+async function write(doc: Doc): Promise<void> {
   if (!backend) return;
-  useStore.setState({ saving: 'saving' });
+  // A write left over from a board no longer on screen goes out, but says nothing about this one.
+  const here = () => useStore.getState().doc.id === doc.id;
+  if (here()) useStore.setState({ saving: 'saving' });
   try {
     await backend.save(doc);
     stored = doc;
     const info: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now(), project: doc.meta.project || undefined, kind: doc.kind };
-    useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], saving: s.doc === doc ? 'saved' : 'saving' }));
+    useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], ...(here() ? { saving: s.doc === doc ? 'saved' : 'saving' } : {}) }));
   } catch (e) {
-    // Written elsewhere since it was read here: the user settles it (see resolveConflict).
+    if (!here()) return console.error(e);
+    // Written or deleted elsewhere since it was read here: the user settles it (see resolveConflict).
     if (e instanceof Conflict) return void useStore.setState({ saving: 'conflict' });
+    if (e instanceof Gone) return void useStore.setState({ saving: 'gone' });
     console.error(e);
     useStore.setState({ saving: 'error' });
   }
 }
 
-/** Write any pending change now (before switching boards or leaving the page). */
-async function flush(): Promise<void> {
+/** Write any pending change now (before switching boards or leaving the page); whether it is all written. */
+async function flush(): Promise<boolean> {
   clearTimeout(timer);
   if (pushTimer !== undefined) await pushOut().catch(() => {});
   const { doc, ready, viewing, saving } = useStore.getState();
   // An old revision on screen is never written over the live board, nor a conflict settled unasked.
-  if (ready && !viewing && saving !== 'conflict' && doc !== stored) await persist(doc);
+  if (ready && !viewing && saving !== 'conflict' && saving !== 'gone' && doc !== stored) await persist(doc);
+  else await writing;
+  const s = useStore.getState();
+  return !!s.viewing || !s.ready || (s.doc === stored && s.saving !== 'conflict' && s.saving !== 'gone' && s.saving !== 'error');
+}
+
+/** The latest request to open a board: an earlier one that finishes later is dropped. */
+let opening = 0;
+
+/**
+ * Whether the board on screen may be left: its changes written, or the user choosing to let go of
+ * those that cannot be (changed or deleted elsewhere, or the store unreachable).
+ */
+async function mayLeave(): Promise<boolean> {
+  if (await flush()) return true;
+  const saving = useStore.getState().saving;
+  if (saving === 'conflict') {
+    alert('このボードはほかの場所で更新されています。先に上の「読み込む」か「この画面で上書き」を選んでください。');
+    return false;
+  }
+  const why = saving === 'gone' ? 'このボードはほかの場所で削除されています。' : 'このボードの変更を保存できていません。';
+  return confirm(`${why}\n保存されていない変更を捨てて、切り替えますか？`);
 }
 
 // Keep the signal-type registry in step with the board on screen.
@@ -715,8 +756,10 @@ async function pushOut(): Promise<void> {
   const others = [...s.others];
   for (const [i, d] of others.entries()) {
     try {
-      // Read anew, so as not to write over a change made to it elsewhere meanwhile.
-      const fresh = (await b.load(d.id)) ?? d;
+      // Read anew, so as not to write over a change made to it elsewhere meanwhile; one deleted
+      // elsewhere is left deleted.
+      const fresh = await b.load(d.id);
+      if (!fresh) continue;
       const next = pull(fresh, mine);
       if (next !== fresh) await b.save(next);
       others[i] = next;
@@ -747,9 +790,9 @@ useStore.subscribe((s, prev) => {
 
 // Autosave shortly after every change.
 useStore.subscribe((s, prev) => {
-  if (!s.ready || s.viewing || s.doc === prev.doc || s.doc === stored || s.saving === 'conflict') return;
+  if (!s.ready || s.viewing || s.doc === prev.doc || s.doc === stored || s.saving === 'conflict' || s.saving === 'gone') return;
   clearTimeout(timer);
-  useStore.setState({ saving: 'saving' });
+  if (s.saving !== 'saving') useStore.setState({ saving: 'saving' });
   timer = window.setTimeout(() => void persist(useStore.getState().doc), 500);
 });
 
@@ -866,6 +909,9 @@ function listen(b: Backend): void {
   };
 }
 
+/** The size of a request body as sent (UTF-8: a Japanese character takes three bytes). */
+const bytes = (s: string): number => new TextEncoder().encode(s).length;
+
 /** Browsers drop a keepalive request whose body is over 64KB. */
 const KEEPALIVE_LIMIT = 60_000;
 const unsaved = (): Doc | null => {
@@ -879,7 +925,10 @@ window.addEventListener('beforeunload', (e) => {
   const doc = unsaved();
   if (!doc || !backend) return;
   if (backend.mode === 'local') return void backend.save(doc);
-  if (JSON.stringify(doc).length <= KEEPALIVE_LIMIT) return;
+  // Changes that cannot be written as the page goes (changed or deleted elsewhere, a failed
+  // write): the browser asks before they are lost.
+  const stuck = ['conflict', 'gone', 'error'].includes(useStore.getState().saving);
+  if (!stuck && bytes(JSON.stringify(doc)) <= KEEPALIVE_LIMIT) return;
   void flush();
   e.preventDefault();
   e.returnValue = '';
@@ -894,7 +943,7 @@ window.addEventListener('pagehide', () => {
   // Made on the version this page read: never over a change made elsewhere meanwhile.
   const serial = backend.serialOf?.(doc.id);
   const headers = { 'Content-Type': 'application/json', 'If-Match': serial === undefined ? '*' : String(serial) };
-  if (body.length <= KEEPALIVE_LIMIT && useStore.getState().saving !== 'conflict') void fetch(`/api/boards/${doc.id}`, { method: 'PUT', keepalive: true, headers, body }).catch(() => {});
+  if (bytes(body) <= KEEPALIVE_LIMIT && !['conflict', 'gone'].includes(useStore.getState().saving)) void fetch(`/api/boards/${doc.id}`, { method: 'PUT', keepalive: true, headers, body }).catch(() => {});
 });
 
 /** What was copied, and from which board (and project). */

@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ServerResponse } from 'node:http';
 import type { Connect, Plugin } from 'vite';
-import { Conflict, ID, boardsRoot, store } from './store';
+import { Conflict, Gone, ID, boardsRoot, store } from './store';
 
 /**
  * Board storage on disk, served by the dev / preview server:
@@ -215,6 +215,7 @@ export function keitoBoards(root = boardsRoot()): Plugin {
           return send(200, { updated: Date.now(), ...done });
         } catch (e) {
           if (e instanceof Conflict) return send(409, { error: e.message, serial: e.serial });
+          if (e instanceof Gone) return send(410, { error: e.message });
           throw e;
         }
       }
