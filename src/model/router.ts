@@ -9,6 +9,8 @@ import type { Pt, Rect } from './types';
  */
 const STUB = 18;
 const BEND = 36;
+/** Size of the cells obstacles are filed under for quick look-up (px). */
+const CELL = 160;
 const STEP: [number, number][] = [
   [1, 0],
   [0, 1],
@@ -79,29 +81,73 @@ class Heap {
   }
 }
 
+/** What a search needs to know of the obstacles at one margin, made once for all the lines routed among them. */
+interface Prepared {
+  inside(x: number, y: number): boolean;
+  /** The boxes' edges across and down, sorted, each once. */
+  xb: number[];
+  yb: number[];
+}
+const preparedFor = new WeakMap<Rect[], Map<number, Prepared>>();
+
+function prepared(obstacles: Rect[], margin: number): Prepared {
+  let byMargin = preparedFor.get(obstacles);
+  if (!byMargin) preparedFor.set(obstacles, (byMargin = new Map()));
+  const hit = byMargin.get(margin);
+  if (hit) return hit;
+  const boxes = obstacles.map((r) => [r.x - margin, r.y - margin, r.x + r.w + margin, r.y + r.h + margin]);
+  // The boxes by the cells of a coarse grid they cover, so a point is checked against its
+  // neighbours only: the search asks this for every grid edge it tries, and a large board has
+  // hundreds of boxes.
+  const cells = new Map<number, number[][]>();
+  const cellOf = (v: number) => Math.floor(v / CELL);
+  const key = (cx: number, cy: number) => cx * 65536 + cy;
+  for (const k of boxes) {
+    for (let cx = cellOf(k[0]); cx <= cellOf(k[2]); cx++) {
+      for (let cy = cellOf(k[1]); cy <= cellOf(k[3]); cy++) {
+        const list = cells.get(key(cx, cy));
+        if (list) list.push(k);
+        else cells.set(key(cx, cy), [k]);
+      }
+    }
+  }
+  const inside = (x: number, y: number): boolean => {
+    const near = cells.get(key(cellOf(x), cellOf(y)));
+    if (near) for (const k of near) if (x > k[0] + 0.01 && x < k[2] - 0.01 && y > k[1] + 0.01 && y < k[3] - 0.01) return true;
+    return false;
+  };
+  const sorted = (v: number[]) => [...new Set(v)].sort((p, q) => p - q);
+  const made = { inside, xb: sorted(boxes.flatMap((k) => [k[0], k[2]])), yb: sorted(boxes.flatMap((k) => [k[1], k[3]])) };
+  byMargin.set(margin, made);
+  return made;
+}
+
+/** The sorted lines `base` with the two ends added, and a lane 24 px outside all of them. */
+function withLines(base: number[], s: number, t: number): number[] {
+  const lo = Math.min(s, t, base.length ? base[0] : Infinity) - 24;
+  const hi = Math.max(s, t, base.length ? base[base.length - 1] : -Infinity) + 24;
+  const extra = [...new Set([lo, s, t, hi])].sort((p, q) => p - q);
+  const out: number[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < base.length || j < extra.length) {
+    const v = j >= extra.length || (i < base.length && base[i] <= extra[j]) ? base[i++] : extra[j++];
+    if (out[out.length - 1] !== v) out.push(v);
+  }
+  return out;
+}
+
 function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number): Pt[] | null {
   const out = (p: Anchor): Pt => ({ x: p.x + STEP[INDEX[p.dir]][0] * STUB, y: p.y + STEP[INDEX[p.dir]][1] * STUB });
   const s = out(a);
   const t = out(b);
-  const boxes = obstacles.map((r) => [r.x - margin, r.y - margin, r.x + r.w + margin, r.y + r.h + margin]);
-  const inside = (x: number, y: number): boolean => {
-    for (const k of boxes) if (x > k[0] + 0.01 && x < k[2] - 0.01 && y > k[1] + 0.01 && y < k[3] - 0.01) return true;
-    return false;
-  };
+  const { inside, xb, yb } = prepared(obstacles, margin);
   // An end hemmed in by a neighbour leaves no room at this margin.
   if (inside(s.x, s.y) || inside(t.x, t.y)) return null;
 
   // Grid lines: every inflated node edge, the two ends, and a lane around the outside.
-  const xl = [s.x, t.x];
-  const yl = [s.y, t.y];
-  for (const k of boxes) {
-    xl.push(k[0], k[2]);
-    yl.push(k[1], k[3]);
-  }
-  xl.push(Math.min(...xl) - 24, Math.max(...xl) + 24);
-  yl.push(Math.min(...yl) - 24, Math.max(...yl) + 24);
-  const xs = [...new Set(xl)].sort((p, q) => p - q);
-  const ys = [...new Set(yl)].sort((p, q) => p - q);
+  const xs = withLines(xb, s.x, t.x);
+  const ys = withLines(yb, s.y, t.y);
   const W = xs.length;
   const H = ys.length;
   if (W * H > 40000) return null;
