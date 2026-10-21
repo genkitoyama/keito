@@ -379,3 +379,10 @@ export async function readImageFile(file: File): Promise<LoadedImage> {
   }
   return { src, w, h, name: file.name.replace(/\.[^.]+$/, '') };
 }
+
+// The in-app AI panel is gone: an API key it kept in this browser is not left lying there.
+try {
+  localStorage.removeItem('keito:setting:anthropicKey');
+} catch {
+  // No browser storage (the command line, tests): nothing was kept.
+}

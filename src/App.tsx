@@ -12,7 +12,6 @@ import { CommentsPanel } from './ui/Comments';
 import { Inspector } from './ui/Inspector';
 import { ListsPanel } from './ui/ListsPanel';
 import { RevisionBanner } from './ui/Revisions';
-import { TextPanel } from './ui/TextPanel';
 import { TOOL_KEYS, Toolbar } from './ui/Toolbar';
 import { TopBar, saveFile } from './ui/TopBar';
 import { kindOf } from './model/kinds';
@@ -167,7 +166,6 @@ export function App() {
         <Splitter axis="x" onDrag={(d) => growSide(-d)} />
         <Inspector />
       </div>
-      {panel === 'text' && <TextPanel />}
       {panel === 'export' && <ExportPanel />}
       {panel === 'boards' && <BoardsPanel />}
     </div>

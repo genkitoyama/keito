@@ -98,7 +98,6 @@ export function TopBar() {
       <button className={panel === 'comments' ? 'on' : ''} onClick={() => toggle('comments')} data-tip="付箋（コメント）の一覧">
         コメント{comments > 0 && <b className="count">{comments}</b>}
       </button>
-      <button className={panel === 'text' ? 'on' : ''} onClick={() => toggle('text')}>テキスト / AI</button>
       <button className="primary" onClick={() => toggle('export')}>エクスポート</button>
     </header>
   );
