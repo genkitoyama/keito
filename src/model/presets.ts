@@ -345,9 +345,9 @@ export function makeEdge(taken: Set<string>, from: Edge['from'], to: Edge['to'],
  * dozen devices up to a UPS never means adding ports by hand.
  */
 /** `held`: the side a port-less end is held to (kept when there is no port to take). */
-export function claimPort(doc: Doc, nodeId: string, signal: string, side: Port['side'], held?: EdgeEnd['side']): { end: EdgeEnd; doc: Doc } {
+export function claimPort(doc: Doc, nodeId: string, signal: string, side: Port['side'], held?: EdgeEnd['side'], at?: number): { end: EdgeEnd; doc: Doc } {
   const n = doc.nodes.find((x) => x.id === nodeId);
-  if (!n || n.type !== 'device' || signal === 'flow') return { end: { node: nodeId, ...(held ? { side: held } : {}) }, doc };
+  if (!n || n.type !== 'device' || signal === 'flow') return { end: { node: nodeId, ...(held ? { side: held } : {}), ...(held && at != null ? { at } : {}) }, doc };
   const used = new Set<string | undefined>();
   for (const e of doc.edges) {
     if (e.from.node === nodeId) used.add(e.from.port);

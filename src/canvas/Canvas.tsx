@@ -929,9 +929,11 @@ export function Canvas() {
 interface Plan {
   doc: Doc;
   edge: string;
-  /** The box it goes into, and the side it is held to (when let go on one of the box's dots). */
+  /** The box it goes into, and the side it is held to (when let go on one of the box's dots, or on its edge). */
   box?: string;
   side?: Dir;
+  /** Where along that side, when let go on the edge away from the dot. */
+  at?: number;
   /** The line it merges with. */
   line?: string;
   /** The box made for it, let go on empty canvas. */
@@ -942,6 +944,28 @@ interface Plan {
 
 /** How near (screen px) to a box's side dot the end goes in at that side. */
 const SNAP = 18;
+/** How near (screen px) to a rectangle's edge the end goes in at that very place on it. */
+const RIM = 10;
+
+/** Boxes whose edge is straight all along, so a line may go in anywhere on it (not a diamond or an ellipse). */
+const straightEdged = (n: Node): boolean => (n.type === 'shape' && n.shape === 'rect') || n.type === 'sticky' || n.type === 'text';
+
+/**
+ * The place on a rectangle's edge nearest `p`, when `p` is within `reach` of it: the side, and
+ * how far along it (on a 5px step, kept off the corners). Near the middle it is the side's dot.
+ */
+function rimAt(r: Rect, p: Pt, reach: number): { side: Dir; at?: number } | null {
+  const hits = SIDES.map((side) => {
+    const across = side === 'left' ? p.x - r.x : side === 'right' ? p.x - (r.x + r.w) : side === 'top' ? p.y - r.y : p.y - (r.y + r.h);
+    const along = side === 'left' || side === 'right' ? p.y - r.y : p.x - r.x;
+    const len = side === 'left' || side === 'right' ? r.h : r.w;
+    return { side, gap: Math.abs(across), along, len };
+  }).filter((h) => h.gap <= reach && h.along >= -reach && h.along <= h.len + reach);
+  const hit = hits.sort((a, b) => a.gap - b.gap)[0];
+  if (!hit || hit.len <= 0) return null;
+  const at = Math.min(0.95, Math.max(0.05, (Math.round(hit.along / 5) * 5) / hit.len));
+  return Math.abs(at - 0.5) * hit.len < 5 ? { side: hit.side } : { side: hit.side, at: Math.round(at * 1000) / 1000 };
+}
 
 /** What an end let go at `p` lands on: a port, a box (at one of its sides, or the side facing the line), or a line to merge with. */
 function dropAt(doc: Doc, p: Pt, k: number, which: 'from' | 'to', skip?: string): { end: EdgeEnd; doc: Doc; box?: string; line?: string } | null {
@@ -957,6 +981,9 @@ function dropAt(doc: Doc, p: Pt, k: number, which: 'from' | 'to', skip?: string)
       return Math.hypot(q.x - p.x, q.y - p.y) <= SNAP / k;
     });
     if (side) return { end: { node: n.id, side }, doc, box: n.id };
+    // Anywhere else along a rectangle's edge: the line goes in at that place.
+    const rim = straightEdged(n) ? rimAt(r, p, RIM / k) : null;
+    if (rim) return { end: { node: n.id, ...rim }, doc, box: n.id };
   }
   const over = nodeAt(doc, p);
   if (over && over.type !== 'frame') return { end: { node: over.id }, doc, box: over.id };
@@ -965,7 +992,7 @@ function dropAt(doc: Doc, p: Pt, k: number, which: 'from' | 'to', skip?: string)
   return { ...mergeAt(doc, line.edge, which), line: line.edge.id };
 }
 
-const planKey = (t: { end: EdgeEnd; box?: string; line?: string }): string => `${t.end.node}|${t.end.port ?? ''}|${t.end.side ?? ''}|${t.line ?? ''}`;
+const planKey = (t: { end: EdgeEnd; box?: string; line?: string }): string => `${t.end.node}|${t.end.port ?? ''}|${t.end.side ?? ''}|${t.end.at ?? ''}|${t.line ?? ''}`;
 
 /** A new line pulled from a dot or a port and let go at `p`. */
 function planConnect(doc: Doc, d: ConnectDrag, p: Pt, k: number): Plan | null {
@@ -986,11 +1013,11 @@ function planConnect(doc: Doc, d: ConnectDrag, p: Pt, k: number): Plan | null {
   // An end dropped on a device body takes a free port of that signal (a new one if all are used),
   // so a row of devices can be plugged into a UPS without managing its outlets by hand.
   let next = base;
-  if (!from.port) ({ end: from, doc: next } = claimPort(next, from.node, signal, 'right', from.side));
-  if (!to.port) ({ end: to, doc: next } = claimPort(next, to.node, signal, 'left', to.side));
+  if (!from.port) ({ end: from, doc: next } = claimPort(next, from.node, signal, 'right', from.side, from.at));
+  if (!to.port) ({ end: to, doc: next } = claimPort(next, to.node, signal, 'left', to.side, to.at));
   // A line merging into another looks like it, so the two read as one from where they meet.
   const edge = { ...makeEdge(allIds(base), from, to, signal), ...(merged ? { arrow: merged.arrow, color: merged.color, dash: merged.dash } : {}) };
-  return { doc: { ...next, edges: [...next.edges, edge] }, edge: edge.id, box: t.box, side: t.end.side, line: t.line, key: planKey(t) };
+  return { doc: { ...next, edges: [...next.edges, edge] }, edge: edge.id, box: t.box, side: t.end.side, at: t.end.at, line: t.line, key: planKey(t) };
 }
 
 /** One end of a line dragged elsewhere and let go at `p`. */
@@ -1001,9 +1028,9 @@ function planReconnect(doc: Doc, d: ReconnectDrag, p: Pt, k: number): Plan | nul
   const t = dropAt(doc, p, k, d.end, d.id);
   if (!t || t.end.node === keep.node) return null;
   // Dropped on a device body: take a free port of the cable's type on the matching side.
-  const claimed = t.end.port ? { end: t.end, doc: t.doc } : claimPort(t.doc, t.end.node, edge.signal, d.end === 'from' ? 'right' : 'left', t.end.side);
+  const claimed = t.end.port ? { end: t.end, doc: t.doc } : claimPort(t.doc, t.end.node, edge.signal, d.end === 'from' ? 'right' : 'left', t.end.side, t.end.at);
   const next = { ...claimed.doc, edges: claimed.doc.edges.map((x) => (x.id === d.id ? { ...x, [d.end]: claimed.end, route: undefined } : x)) };
-  return { doc: next, edge: d.id, box: t.box, side: t.end.side, line: t.line, key: planKey(t) };
+  return { doc: next, edge: d.id, box: t.box, side: t.end.side, at: t.end.at, line: t.line, key: planKey(t) };
 }
 
 /** Let go on no box (an area is open ground): back on the box it came from, it is called off. */
@@ -1053,9 +1080,14 @@ function ConnectGhost({ ghost, doc, k }: { ghost: Extract<Ghost, { kind: 'connec
         canConnect(box) &&
         SIDES.map((side) => {
           const q = sidePoint(r, side);
-          const on = plan.side === side;
+          const on = plan.side === side && plan.at == null;
           return <circle key={side} cx={q.x} cy={q.y} r={(on ? 7 : 3.5) / k} fill={on ? ACCENT : '#fff'} stroke={ACCENT} strokeWidth={1.5 / k} />;
         })}
+      {/* Let go on the edge away from a dot: the very place it will go in. */}
+      {r && plan.side && plan.at != null && (() => {
+        const q = sidePoint(r, plan.side, plan.at);
+        return <circle cx={q.x} cy={q.y} r={6 / k} fill={ACCENT} stroke="#fff" strokeWidth={1.5 / k} />;
+      })()}
       {m && <rect x={m.x} y={m.y} width={m.w} height={m.h} rx={6} fill="rgba(37,99,235,0.06)" stroke={ACCENT} strokeOpacity={0.6} strokeWidth={1.5 / k} strokeDasharray={`${5 / k} ${4 / k}`} />}
       {edge && (
         <g opacity={0.7}>

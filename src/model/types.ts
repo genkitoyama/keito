@@ -162,6 +162,8 @@ export interface EdgeEnd {
   port?: string;
   /** A port-less end held to one side of its box (lines merging there keep together); else the side facing the other end. */
   side?: 'left' | 'right' | 'top' | 'bottom';
+  /** Where along that side, 0–1 from its left or top end; unset is the middle. */
+  at?: number;
 }
 export interface Edge {
   id: string;

@@ -73,7 +73,7 @@ shapes:                    # フローチャート・付箋
     fill: solid            # 任意。tint(既定・淡色) solid(ベタ塗り。red で真っ赤) outline(白地) none(透過)
     dash: true             # 任意。枠を点線に（cables / flows でも dash: true で点線）
 flows:                     # 矢印コネクタ（shapes / devices どちらも可）
-  - { from: s1, to: s2, label: はい }   # toSide: left などで入る辺を固定（同じ辺に入る線は手前で合流する。fromSide も可）
+  - { from: s1, to: s2, label: はい }   # toSide: left などで入る辺を固定（同じ辺に入る線は手前で合流する。fromSide も可）。toAt: 0.3 でその辺のどこか（0〜1、左端・上端から。省略で真ん中）
 images:                    # 埋め込み画像。データ本体は id で引き継がれる（src に data URL / URL も可）
   - { id: img1, name: logo, pos: [x, y], size: [w, h] }   # under: true で下敷き（一番下に薄く敷き、クリックで選ばれない）
 legends:                   # 凡例。使っている線の色が自動で並ぶ。names で行の呼び名を付けられる
@@ -111,14 +111,17 @@ const portKey = (name: string): string => name.normalize('NFKC').toLowerCase();
  */
 const SIDES = ['left', 'right', 'top', 'bottom'] as const;
 
-/** `fromSide` / `toSide`: the side of its box a port-less end is held to. */
+/** `fromSide` / `toSide`: the side of its box a port-less end is held to; `fromAt` / `toAt`: where along it (0–1). */
 function sidesOf(e: Edge): Obj {
-  return { ...(e.from.side && !e.from.port ? { fromSide: e.from.side } : {}), ...(e.to.side && !e.to.port ? { toSide: e.to.side } : {}) };
+  const held = (end: EdgeEnd, side: string, at: string): Obj => (end.side && !end.port ? { [side]: end.side, ...(end.at != null ? { [at]: end.at } : {}) } : {});
+  return { ...held(e.from, 'fromSide', 'fromAt'), ...held(e.to, 'toSide', 'toAt') };
 }
 function holdSides(e: Edge, v: Record<string, unknown>): void {
   const side = (x: unknown) => SIDES.find((s) => s === str(x));
-  if (side(v.fromSide) && !e.from.port) e.from = { ...e.from, side: side(v.fromSide) };
-  if (side(v.toSide) && !e.to.port) e.to = { ...e.to, side: side(v.toSide) };
+  // Only a place within the side counts; anything else leaves the end in the middle.
+  const at = (x: unknown) => (typeof x === 'number' && x >= 0 && x <= 1 ? { at: x } : {});
+  if (side(v.fromSide) && !e.from.port) e.from = { ...e.from, side: side(v.fromSide), ...at(v.fromAt) };
+  if (side(v.toSide) && !e.to.port) e.to = { ...e.to, side: side(v.toSide), ...at(v.toAt) };
 }
 
 function refOf(doc: Doc, end: EdgeEnd): string {

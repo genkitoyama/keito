@@ -52,12 +52,14 @@ export function portPos(d: DeviceNode, portId: string): (Pt & { side: PortSide }
   };
 }
 
-export function sidePoint(r: Rect, dir: Dir): Pt {
-  const c = center(r);
-  if (dir === 'left') return { x: r.x, y: c.y };
-  if (dir === 'right') return { x: r.x + r.w, y: c.y };
-  if (dir === 'top') return { x: c.x, y: r.y };
-  return { x: c.x, y: r.y + r.h };
+/** The point on one side of a box, `at` of the way along it from its left or top end (the middle by default). */
+export function sidePoint(r: Rect, dir: Dir, at = 0.5): Pt {
+  const x = r.x + r.w * at;
+  const y = r.y + r.h * at;
+  if (dir === 'left') return { x: r.x, y };
+  if (dir === 'right') return { x: r.x + r.w, y };
+  if (dir === 'top') return { x, y: r.y };
+  return { x, y: r.y + r.h };
 }
 
 /** Where an edge end attaches. Ends without a port pick the side facing `toward`. */
@@ -67,7 +69,7 @@ export function anchorOf(node: Node, end: EdgeEnd, toward: Pt): Anchor {
     const p = portPos(node, end.port);
     if (p) return { x: p.x, y: p.y, dir: p.side, rect };
   }
-  if (end.side && node.type !== 'junction') return { ...sidePoint(rect, end.side), dir: end.side, rect };
+  if (end.side && node.type !== 'junction') return { ...sidePoint(rect, end.side, end.at), dir: end.side, rect };
   const c = center(rect);
   const dx = (toward.x - c.x) / Math.max(1, rect.w);
   const dy = (toward.y - c.y) / Math.max(1, rect.h);
