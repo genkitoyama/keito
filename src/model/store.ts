@@ -4,19 +4,18 @@ import { drawingOf, entryFor, fingerprint, thin } from './history';
 import { create } from 'zustand';
 import { type Backend, type BoardInfo, Conflict, Gone, type TrashedBoard, WRITER, connect, externalize, localBoards } from '../platform/storage';
 import { ask, tell } from '../platform/io';
-import { fromYaml } from './dsl';
 import { type BoardKind, KINDS, kindOf } from './kinds';
 import { SEQUENCE_SAMPLE } from './sequence';
 import { BOARD_ID, readBoard } from './load';
 import { docBounds, nodeRect } from './geometry';
 import { allIds, freshId, makeNode, randomId } from './presets';
-import { SAMPLE_YAML } from './sample';
+import { sampleBoards } from './sample';
 import { registerSignals } from './signals';
 import { type Entry, type ShareNode, catalog, newKey, pull, stamp, takeFrom } from './shared';
 import { type Doc, type Edge, type Node, type Revision, type UserPreset, emptyMeta } from './types';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
-export type Panel = null | 'lists' | 'export' | 'library' | 'boards' | 'comments';
+export type Panel = null | 'lists' | 'export' | 'library' | 'boards' | 'comments' | 'settings';
 /**
  * Something picked from the toolbar or a library, waiting to be put where the user clicks (its
  * outline follows the pointer). `place` puts it centred on a point of the board.
@@ -51,13 +50,6 @@ export function startBoard(kind: BoardKind, title: string, project: string): Doc
   return doc;
 }
 
-function sampleDoc(): Doc {
-  try {
-    return fromYaml(SAMPLE_YAML, emptyDoc());
-  } catch {
-    return emptyDoc();
-  }
-}
 
 /** Each board has its own address: `#/b/<id>`. */
 const boardInUrl = (): string | null => /^#\/b\/([\w-]+)/.exec(location.hash)?.[1] ?? null;
@@ -859,9 +851,11 @@ export async function boot(given?: Backend): Promise<void> {
       if (doc) break;
       doc = await tryLoad(backend, info.id);
     }
+    // A first run: the sample project, opened on its system diagram.
     if (!doc) {
-      doc = sampleDoc();
-      await backend.save(doc);
+      const docs = sampleBoards();
+      for (const d of [...docs].reverse()) await backend.save(d);
+      doc = docs[0];
       boards = await backend.list();
     }
     useStore.setState({ boards, mode: backend.mode, ready: true, presets: await backend.loadPresets().catch(() => []) });

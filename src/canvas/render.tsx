@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { CAPTION_SIZE, DEV, DEVICE_NAME, captionBox, crossings, deviceHead, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { edgeLabel, labelFont, labelSize, tagFont } from '../model/labels';
 import { LEGEND, shownRows } from '../model/legend';
 import { lineColor, mix, signalColor } from '../model/lineColor';
@@ -507,8 +507,15 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
         </g>
       );
     }
-    case 'image':
-      return <image href={assetUrl(doc?.id, n.src)} x={x} y={y} width={w} height={h} preserveAspectRatio="xMidYMid meet" opacity={n.under ? (n.opacity ?? 0.55) : undefined} pointerEvents={n.under ? 'none' : undefined} />;
+    case 'image': {
+      const caption = captionBox(n);
+      return (
+        <g opacity={n.under ? (n.opacity ?? 0.55) : undefined} pointerEvents={n.under ? 'none' : undefined}>
+          <image href={assetUrl(doc?.id, n.src)} x={x} y={y} width={w} height={h} preserveAspectRatio="xMidYMid meet" />
+          {caption && <TextBlock x={cx} y={caption.y + caption.h / 2} w={w} text={n.caption!} size={n.fontSize ?? CAPTION_SIZE} theme={theme} />}
+        </g>
+      );
+    }
     case 'text':
       return (
         <g>

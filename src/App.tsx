@@ -17,6 +17,7 @@ import { TOOL_KEYS, Toolbar } from './ui/Toolbar';
 import { TopBar, saveBoardFile } from './ui/TopBar';
 import { kindOf } from './model/kinds';
 import { isUnderlay } from './model/geometry';
+import { SettingsPanel } from './ui/Settings';
 
 /** Copy on the board, and clear any picture left on the system clipboard so the next paste is this copy. */
 function copyOut() {
@@ -178,6 +179,7 @@ export function App() {
         <Inspector />
       </div>
       {panel === 'export' && <ExportPanel />}
+      {panel === 'settings' && <SettingsPanel />}
       {panel === 'boards' && <BoardsPanel />}
     </div>
   );

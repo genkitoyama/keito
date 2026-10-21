@@ -333,6 +333,20 @@ export function labelPoint(pts: Pt[], at = 0.5): Pt {
   return pts[0] ?? { x: 0, y: 0 };
 }
 
+/** Caption size of a picture when none is chosen. */
+export const CAPTION_SIZE = 13;
+/** Room between a picture and its caption. */
+const CAPTION_GAP = 6;
+
+/** Where a picture's caption is drawn, just above or below it and as wide; null with none. */
+export function captionBox(n: Node): Rect | null {
+  if (n.type !== 'image' || !n.caption?.trim()) return null;
+  const size = n.fontSize ?? CAPTION_SIZE;
+  // Line height as in the board's text blocks (TEXT.lineHeight).
+  const h = wrapText(n.caption, n.w, `400 ${size}px ${UI_FONT}`).length * size * 1.4;
+  return { x: n.x, y: n.captionAt === 'top' ? n.y - CAPTION_GAP - h : n.y + n.h + CAPTION_GAP, w: n.w, h };
+}
+
 export function docBounds(doc: Doc, ids?: Set<string>): Rect | null {
   let x0 = Infinity;
   let y0 = Infinity;
@@ -349,6 +363,11 @@ export function docBounds(doc: Doc, ids?: Set<string>): Rect | null {
     const r = nodeRect(n);
     add(r.x, r.y);
     add(r.x + r.w, r.y + r.h);
+    const c = captionBox(n);
+    if (c) {
+      add(c.x, c.y);
+      add(c.x + c.w, c.y + c.h);
+    }
   }
   if (!ids) for (const pts of routeEdges(doc).values()) for (const p of pts) add(p.x, p.y);
   return x0 === Infinity ? null : { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
@@ -363,7 +382,9 @@ export function nodeAt(doc: Doc, p: Pt): Node | null {
   let frame: Node | null = null;
   for (let i = doc.nodes.length - 1; i >= 0; i--) {
     const n = doc.nodes[i];
-    if (isUnderlay(n) || !contains(nodeRect(n), p)) continue;
+    // A picture's caption is part of it.
+    const caption = captionBox(n);
+    if (isUnderlay(n) || !(contains(nodeRect(n), p) || (caption && contains(caption, p)))) continue;
     // An area is only hit where nothing on it is.
     if (n.type !== 'frame') return n;
     frame ??= n;

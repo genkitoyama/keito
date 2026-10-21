@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { fromYaml, toYaml } from '../src/model/dsl';
+import { docBounds, nodeAt } from '../src/model/geometry';
 import type { DeviceNode } from '../src/model/types';
 import { sample } from './helpers';
 
@@ -18,6 +19,18 @@ describe('YAML', () => {
     expect(back.labelSize).toBe(9);
     expect(back.nodes.find((n) => n.id === dev.id)).toMatchObject({ qty: 3, price: 120000 });
     expect(back.edges.find((e) => e.id === edge.id)?.fontSize).toBe(12);
+  });
+
+  it('keeps a picture caption, its side and size, and counts it in the drawing', () => {
+    const pic = { id: 'img1', type: 'image' as const, x: 0, y: 100, w: 200, h: 100, text: 'plan', src: 'asset:plan.png', caption: '会場平面図', captionAt: 'top' as const, fontSize: 18 };
+    const doc = { version: 1 as const, id: 't', meta: { title: '', project: '' }, nodes: [pic], edges: [] };
+    const back = fromYaml(toYaml(doc), doc);
+    expect(back.nodes[0]).toMatchObject({ caption: '会場平面図', captionAt: 'top', fontSize: 18, src: 'asset:plan.png' });
+    // Above the picture: the drawing reaches up to it, and a click on it picks the picture.
+    const box = docBounds(back)!;
+    expect(box.y).toBeLessThan(100 - 18);
+    expect(box.y + box.h).toBe(200);
+    expect(nodeAt(back, { x: 100, y: box.y + 4 })?.id).toBe('img1');
   });
 
   it('gives the same YAML back for the sample board', () => {

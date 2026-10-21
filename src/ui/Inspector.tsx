@@ -707,6 +707,27 @@ function NodePanel({ n }: { n: Node }) {
           </p>
           <button onClick={replace}>画像を差し替え</button>
         </Section>
+        <Section title="キャプション">
+          <Field label="テキスト（画像の上か下に出ます）" value={n.caption ?? ''} onChange={(v) => patch({ caption: v || undefined })} multiline />
+          <div className="grid2">
+            <label className="field">
+              <span>位置</span>
+              <select value={n.captionAt ?? 'bottom'} onChange={(e) => patch({ captionAt: e.target.value === 'top' ? 'top' : undefined }, true)}>
+                <option value="bottom">画像の下</option>
+                <option value="top">画像の上</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>文字の大きさ</span>
+              <select value={String(n.fontSize ?? '')} onChange={(e) => patch({ fontSize: e.target.value ? Number(e.target.value) : undefined }, true)}>
+                {sizesFor('image').map((o) => (
+                  <option key={o.label} value={o.px ?? ''}>{o.label}</option>
+                ))}
+                {n.fontSize != null && !sizesFor('image').some((o) => o.px === n.fontSize) && <option value={n.fontSize}>{n.fontSize}px</option>}
+              </select>
+            </label>
+          </div>
+        </Section>
         <button className="wide" data-tip="平面図などを一番下に敷き、クリックで選ばれないようにします（戻すのはボード設定から）" onClick={() => patch({ under: true }, true)}>
           下敷きにする
         </button>

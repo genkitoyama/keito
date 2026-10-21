@@ -213,7 +213,19 @@ export function ipIssues(doc: Doc): Map<string, 'dup' | 'bad'> {
     const key = ip.replace(/\/\d+$/, '').toLowerCase();
     owners.set(key, [...(owners.get(key) ?? []), n.id]);
   }
-  for (const ids of owners.values()) if (ids.length > 1) for (const id of ids) if (!out.has(id)) out.set(id, 'dup');
+  // Pieces of software on one machine share its address: on a software board an address clashes
+  // only between different hosts (or where no host is named).
+  const soft = (doc.whole ?? doc).kind === 'software';
+  const hostOf = (id: string): string => {
+    const n = (doc.whole ?? doc).nodes.find((x) => x.id === id);
+    return n?.type === 'device' ? (n.host?.trim().toLowerCase() ?? '') : '';
+  };
+  for (const ids of owners.values()) {
+    if (ids.length < 2) continue;
+    const hosts = new Set(ids.map(hostOf));
+    if (soft && hosts.size === 1 && !hosts.has('')) continue;
+    for (const id of ids) if (!out.has(id)) out.set(id, 'dup');
+  }
   issueCache.set(doc, out);
   return out;
 }
@@ -625,7 +637,8 @@ export function checkTable(doc: Doc): Table {
     if (powerIn.length && !fed && touches(d).length) found.push({ level: 1, what: '電源が未接続', target: name(d.id), detail: `${powerIn.map((p) => p.name).join('・')} に電源がつながっていません`, ref: [d.id] });
     if (!touches(d).length) found.push({ level: 1, what: '接続のない機材', target: name(d.id), detail: 'どこにもつながっていません', ref: [d.id] });
     const feeding = [...powerLoads(doc)].find(([, l]) => l.ids.includes(d.id));
-    if (feeding && d.watts == null) found.push({ level: 1, what: '消費電力が未入力', target: name(d.id), detail: `${name(feeding[0])} の負荷の合計に入りません`, ref: [d.id] });
+    // A power strip or supply passes on what it feeds: its draw is known without a figure of its own.
+    if (feeding && d.watts == null && !powerLoads(doc).has(d.id)) found.push({ level: 1, what: '消費電力が未入力', target: name(d.id), detail: `${name(feeding[0])} の負荷の合計に入りません`, ref: [d.id] });
   }
   for (const [id, load] of powerLoads(doc)) {
     if (load.capacity == null) found.push({ level: 1, what: '給電容量が未入力', target: name(id), detail: `${load.ids.length} 台に給電していますが、容量がわからないため超過を判定できません`, ref: [id] });
