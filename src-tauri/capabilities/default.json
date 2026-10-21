@@ -12,6 +12,9 @@
     "dialog:allow-open",
     "dialog:allow-ask",
     "dialog:allow-message",
-    "opener:allow-open-url"
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [{ "url": "https://*" }, { "url": "http://*" }]
+    }
   ]
 }

@@ -123,7 +123,7 @@ const system: Platform = {
   },
   ask: (text) => askDialog(text, { title: 'keito', kind: 'warning', okLabel: 'はい', cancelLabel: 'いいえ' }),
   tell: async (text) => void (await message(text, { title: 'keito', okLabel: 'OK' })),
-  openLink: (url) => void openUrl(url),
+  openLink: (url) => void openUrl(url).catch(() => system.tell(`このリンクは開けませんでした。\n\n${url}`)),
   ownsLinks: true,
   // The webview's own clipboard works from within a click.
   copyText: (text) => navigator.clipboard.writeText(text),
