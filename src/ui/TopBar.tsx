@@ -59,7 +59,7 @@ export function TopBar() {
       <button onClick={async () => st().newBoard({ ...(await inlineImages(doc)), id: randomId(), meta: { ...doc.meta, title: `${doc.meta.title} のコピー` } })}>複製</button>
       <button
         onClick={() => {
-          if (confirm(`「${doc.meta.title}」を削除しますか？`)) st().deleteBoard(doc.id);
+          if (confirm(`「${doc.meta.title}」を削除しますか？\n（ボード一覧の「最近削除したボード」から戻せます）`)) st().deleteBoard(doc.id);
         }}
       >
         削除

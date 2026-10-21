@@ -2,7 +2,7 @@ import { pinComments } from './comments';
 import { fitLegends } from './legend';
 import { drawingOf, entryFor, fingerprint, thin } from './history';
 import { create } from 'zustand';
-import { type Backend, type BoardInfo, Conflict, connect, externalize, localBoards } from '../platform/storage';
+import { type Backend, type BoardInfo, Conflict, type TrashedBoard, connect, externalize, localBoards } from '../platform/storage';
 import { fromYaml } from './dsl';
 import { type BoardKind, KINDS, kindOf } from './kinds';
 import { SEQUENCE_SAMPLE } from './sequence';
@@ -402,6 +402,17 @@ export const useStore = create<State>((set, get) => ({
 }));
 
 /** Run a storage action; a failure surfaces as the "save failed" state instead of an unhandled rejection. */
+/** Deleted boards that can be put back (none before storage is connected). */
+export const deletedBoards = async (): Promise<TrashedBoard[]> => (backend ? backend.trash() : []);
+
+/** Put a deleted board back and open it. Throws, in words for the user, when it cannot be. */
+export async function restoreBoard(key: string): Promise<void> {
+  if (!backend) return;
+  const id = await backend.restore(key);
+  useStore.setState({ boards: await backend.list() });
+  useStore.getState().openBoard(id);
+}
+
 async function run(fn: (b: Backend) => Promise<void>): Promise<void> {
   if (!backend) return;
   try {

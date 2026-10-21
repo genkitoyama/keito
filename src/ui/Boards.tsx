@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { type BoardKind, KINDS, KIND_ORDER } from '../model/kinds';
-import { startBoard, useStore } from '../model/store';
-import type { BoardInfo } from '../platform/storage';
+import { deletedBoards, restoreBoard, startBoard, useStore } from '../model/store';
+import type { BoardInfo, TrashedBoard } from '../platform/storage';
 
 /** The boards window opens on the list, or straight on the form for a new board. */
 let startWithForm = false;
@@ -18,6 +18,51 @@ function when(t: number): string {
   const d = new Date(t);
   const today = new Date();
   return d.toDateString() === today.toDateString() ? d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+/** When a board was deleted, in words: today's by the time, older ones by the date. */
+function whenDeleted(t: number): string {
+  const d = new Date(t);
+  const today = new Date();
+  const time = d.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === today.toDateString() ? `今日 ${time}` : `${d.getMonth() + 1}/${d.getDate()} ${time}`;
+}
+
+/** Boards deleted lately, each one click from coming back (and opening). */
+function Trash({ done }: { done: () => void }) {
+  const [list, setList] = useState<TrashedBoard[] | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    deletedBoards().then(setList, (e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  }, []);
+  if (error) return <p className="error">{error}</p>;
+  if (!list) return <p className="hint">読み込み中…</p>;
+  if (!list.length) return <p className="hint">削除したボードはありません。</p>;
+  return (
+    <>
+      <p className="hint">削除したボードは、ここから元の案件に戻せます。戻すと、そのボードが開きます。</p>
+      <div className="board-cards">
+        {list.map((t) => (
+          <div key={t.key} className="board-card trashed">
+            <b className={`kind-badge ${t.kind ?? 'system'}`}>{KINDS[t.kind ?? 'system']?.label ?? 'システム図'}</b>
+            <span className="title">
+              {t.title}
+              <small>{projectLabel(t.project ?? NO_PROJECT)}</small>
+            </span>
+            <small>{whenDeleted(t.deleted)}に削除</small>
+            <button
+              className="mini"
+              onClick={() =>
+                restoreBoard(t.key).then(done, (e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+              }
+            >
+              戻す
+            </button>
+          </div>
+        ))}
+      </div>
+    </>
+  );
 }
 
 /**
@@ -46,6 +91,7 @@ export function BoardsPanel() {
     startWithForm ? { kind: 'system', title: '', project: doc.meta.project ?? NO_PROJECT } : null,
   );
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [trash, setTrash] = useState(false);
   const shown = all.filter((b) => (b.project ?? NO_PROJECT) === project).sort((a, b) => b.updated - a.updated);
   const close = () => st().setPanel(null);
 
@@ -60,7 +106,14 @@ export function BoardsPanel() {
           <div className="col side projects">
             <h4>案件</h4>
             {projects.map((p) => (
-              <button key={p || '-'} className={`project${p === project ? ' on' : ''}`} onClick={() => setProject(p)}>
+              <button
+                key={p || '-'}
+                className={`project${p === project && !trash ? ' on' : ''}`}
+                onClick={() => {
+                  setProject(p);
+                  setTrash(false);
+                }}
+              >
                 <span>{projectLabel(p)}</span>
                 <small>{all.filter((b) => (b.project ?? NO_PROJECT) === p).length}</small>
               </button>
@@ -75,7 +128,18 @@ export function BoardsPanel() {
             <button className="mini new-project" onClick={() => setForm({ kind: 'system', title: '', project: '' })}>
               ＋ 新しい案件
             </button>
+            <button className={`project trash-link${trash ? ' on' : ''}`} onClick={() => setTrash(true)}>
+              <span>最近削除したボード</span>
+            </button>
           </div>
+          {trash ? (
+            <div className="col">
+              <div className="project-head">
+                <h3>最近削除したボード</h3>
+              </div>
+              <Trash done={close} />
+            </div>
+          ) : (
           <div className="col">
             <div className="project-head">
               {renaming !== null ? (
@@ -157,6 +221,7 @@ export function BoardsPanel() {
               {!shown.length && !form && <p className="hint">この案件にはまだボードがありません。「＋ 新しいボード」から作れます。</p>}
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>

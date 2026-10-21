@@ -1,4 +1,3 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { DSL_GUIDE } from './dsl';
 
 export const AI_SYSTEM = `あなたは映像・インタラクティブ展示のテクニカルディレクターを補佐し、システム構成図（系統図）を keito YAML で書くアシスタントです。
@@ -21,6 +20,8 @@ export function extractYaml(text: string): string {
 }
 
 export async function generateYaml(apiKey: string, instruction: string, yaml: string): Promise<string> {
+  // The SDK is loaded only when asked for: most sessions never call it, and it is large.
+  const { default: Anthropic } = await import('@anthropic-ai/sdk');
   // The key stays in this browser's localStorage and is sent only to api.anthropic.com.
   const client = new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
   try {

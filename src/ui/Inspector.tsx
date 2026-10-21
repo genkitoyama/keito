@@ -415,10 +415,15 @@ function DevicePanel({ n }: { n: DeviceNode }) {
       <Head title={soft ? '部品' : '機材'} id={n.id} />
       <Section title="基本情報">
         <Field wrap label="名称（改行できます）" value={n.text} onChange={(v) => patch({ text: v })} />
-        <div className="grid2">
-          <CategoryField id={n.id} soft={soft} value={n.category} onChange={(v, record) => patch({ category: v }, record)} />
-          {soft && <Field label="バージョン・実装" placeholder="例: Node 22 / TD 2025" value={n.model} onChange={(v) => patch({ model: v })} />}
-        </div>
+        {/* A device's category has the row to itself; a piece of software's shares it with its version. */}
+        {soft ? (
+          <div className="grid2">
+            <CategoryField id={n.id} soft value={n.category} onChange={(v, record) => patch({ category: v }, record)} />
+            <Field label="バージョン・実装" placeholder="例: Node 22 / TD 2025" value={n.model} onChange={(v) => patch({ model: v })} />
+          </div>
+        ) : (
+          <CategoryField id={n.id} value={n.category} onChange={(v, record) => patch({ category: v }, record)} />
+        )}
         {!soft && (
           <div className="grid2">
             <Field label="メーカー" value={n.maker} onChange={(v) => patch({ maker: v })} />
@@ -615,9 +620,9 @@ function NodePanel({ n }: { n: Node }) {
       <>
         <Head title="凡例" id={n.id} />
         <Section title="見出し">
-          <Field label="見出し（空にすると出しません）" value={n.text} onChange={(v) => patch({ text: v })} />
+          <Field label="空にすると見出しを出しません" value={n.text} onChange={(v) => patch({ text: v })} />
         </Section>
-        <Section title="並ぶ行" note="チェックを外すと出しません">
+        <Section title="並べる行" note="チェックを外すと出しません">
           {rows.map((row) => (
             <div key={row.color} className={`legend-row${row.hidden ? ' off' : ''}`}>
               <input
@@ -642,7 +647,7 @@ function NodePanel({ n }: { n: Node }) {
             </div>
           ))}
           <p className="hint">
-            このボードで使っている線の色が 1 行ずつ並びます。同じ色の種別は 1 行にまとまり、名前を書くとその行の呼び名になります（空なら種別の名前）。チェックを外した行は凡例に出しません。線の色を変えると自動で追従します。
+            このボードで使っている線の色が 1 行ずつ並びます。同じ色の種別は 1 行にまとまり、名前を書くとその行の呼び名になります（空なら種別の名前）。線の色を変えると自動で追従します。
           </p>
         </Section>
       </>
@@ -777,7 +782,7 @@ function TextStyle({ n }: { n: Extract<Node, { type: 'shape' | 'sticky' | 'text'
         </select>
       </label>
       {n.type !== 'sequence' && (
-        <label className="check" style={{ alignSelf: 'end' }}>
+        <label className="check text-bold">
           <input type="checkbox" checked={textWeight(n) === 700} onChange={(e) => restyle({ bold: e.target.checked })} />
           太字
         </label>

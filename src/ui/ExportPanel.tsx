@@ -4,7 +4,7 @@ import { TABLES, type Table, compact, toCsv } from '../model/lists';
 import { KINDS, type ListKey, kindOf } from '../model/kinds';
 import { toYaml } from '../model/dsl';
 import { saveFile } from './TopBar';
-import { sheetTables } from '../export/xlsx';
+import { sheetTables } from '../export/sheets';
 import { subset } from '../model/geometry';
 import { loadBoards, useStore } from '../model/store';
 import { withoutComments } from '../model/comments';

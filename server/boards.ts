@@ -125,6 +125,20 @@ export function keitoBoards(root = boardsRoot()): Plugin {
       req.on('close', () => listeners.delete(res));
       return;
     }
+    // Deleted boards: GET lists them, POST /api/trash/<key> puts one back and answers its id.
+    if (parts[0] === 'api' && parts[1] === 'trash' && parts.length <= 3) {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Cache-Control', 'no-store');
+      try {
+        if (parts.length === 2 && req.method === 'GET') return void res.end(JSON.stringify(boards.trashed()));
+        if (parts.length === 3 && req.method === 'POST') return void res.end(JSON.stringify({ id: boards.restore(parts[2]) }));
+        res.statusCode = 405;
+        return void res.end();
+      } catch (e) {
+        res.statusCode = 409;
+        return void res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+      }
+    }
     if (parts[0] !== 'api' || parts[1] !== 'boards') return next();
     const send = (status: number, body?: unknown, type = 'application/json') => {
       res.statusCode = status;

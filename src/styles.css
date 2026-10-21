@@ -2196,3 +2196,31 @@ body.row-dragging .lists td.editable:hover {
 .inspector > .howto {
   margin: -4px 0 12px;
 }
+/* Bold sits on the line of the size box beside it, not on its label. */
+.grid2 .check.text-bold {
+  align-self: end;
+  height: 27px;
+  margin: 0 0 8px;
+}
+/* Deleted boards sit apart from the projects, below a rule. */
+.boards .trash-link {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  color: var(--sub);
+}
+.board-card.trashed {
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+}
+.board-card.trashed .title small {
+  display: block;
+  margin-top: 2px;
+  font-weight: 400;
+  font-size: 11px;
+}
+.board-card.trashed button {
+  align-self: flex-end;
+}

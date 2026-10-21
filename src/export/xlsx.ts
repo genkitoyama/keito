@@ -1,7 +1,7 @@
 import type { Cell, Worksheet } from 'exceljs';
-import { TABLES, type Table, colourKey, equipmentTable } from '../model/lists';
-import { kindOf } from '../model/kinds';
+import { type Table, colourKey } from '../model/lists';
 import { PRESETS } from '../model/presets';
+import { STATUS, sheetTables } from './sheets';
 import { allSignals } from '../model/signals';
 import type { Doc } from '../model/types';
 
@@ -44,23 +44,11 @@ const DROPDOWNS: Record<string, string[]> = {
   通信一覧: ['プロトコル'],
 };
 
-/**
- * Purchase status is kept in the spreadsheet, not on the board: it changes daily while the gear
- * is ordered, and two places to keep it would drift apart. The column comes empty, with a list.
- */
-const STATUS = '購入ステータス';
 const STATUSES = ['未定', '見積中', '発注済', '納品済', '既存', 'レンタル'];
 
 /** Columns summed in a total row with a formula, so totals follow edits made in the sheet. */
 const SUMMED = ['数量', '金額(円)', '消費電力(W)', '長さ(m)', '本数', '合計長(m)'];
 const YEN = ['単価(円)', '金額(円)'];
-
-/** The list with an empty column put in after another one. */
-function withColumn(t: Table, after: string, head: string): Table {
-  const at = t.head.indexOf(after) + 1;
-  const put = <T,>(xs: T[], x: T): T[] => [...xs.slice(0, at), x, ...xs.slice(at)];
-  return { ...t, head: put(t.head, head), widths: put(t.widths, 10), rows: t.rows.map((r) => put(r, '')) };
-}
 
 function writeSheet(ws: Worksheet, t: Table, doc: Doc, lists: Map<string, string>): void {
   const cols = t.head.length;
@@ -148,10 +136,6 @@ function writeSheet(ws: Worksheet, t: Table, doc: Doc, lists: Map<string, string
   if (body > 0) ws.autoFilter = { from: { row: HEAD_ROW, column: 1 }, to: { row: HEAD_ROW + body, column: cols } };
   ws.pageSetup = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: `${HEAD_ROW}:${HEAD_ROW}`, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } };
 }
-
-/** The lists as the workbook's sheets have them, in its order (the equipment list with a status column). */
-/** The lists as the workbook's sheets have them: the board's kind's lists, the equipment list with a status column. */
-export const sheetTables = (doc: Doc): Table[] => kindOf(doc).lists.map((k) => (k === 'equipment' ? withColumn(equipmentTable(doc), '金額(円)', STATUS) : TABLES[k].make(doc)));
 
 async function build(doc: Doc) {
   const { default: ExcelJS } = await import('exceljs');

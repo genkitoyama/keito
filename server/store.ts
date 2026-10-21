@@ -36,6 +36,21 @@ export class Conflict extends Error {
   }
 }
 
+/** A deleted board, lying in .trash until it is put back. */
+export interface TrashedFile {
+  /** Its folder's name under .trash (the board's folder, with the time it was deleted). */
+  key: string;
+  id: string;
+  title: string;
+  project?: string;
+  kind?: string;
+  /** When it was deleted (ms). */
+  deleted: number;
+}
+
+/** Deleted boards' folders are moved here, and back from here when restored. */
+const TRASH = '.trash';
+
 export interface BoardFile {
   id: string;
   title: string;
@@ -145,9 +160,46 @@ export function store(root: string) {
     remove(id: string): void {
       const dir = dirOf(id);
       if (!dir) return;
-      const trash = path.join(root, '.trash');
+      const trash = path.join(root, TRASH);
       fs.mkdirSync(trash, { recursive: true });
       fs.renameSync(dir, path.join(trash, `${path.basename(dir)}-${Date.now()}`));
+    },
+
+    /** Deleted boards, the most recently deleted first; a folder that cannot be read is left out. */
+    trashed(): TrashedFile[] {
+      const trash = path.join(root, TRASH);
+      if (!fs.existsSync(trash)) return [];
+      return fs
+        .readdirSync(trash)
+        .flatMap((key): TrashedFile[] => {
+          try {
+            const doc = JSON.parse(fs.readFileSync(path.join(trash, key, 'board.json'), 'utf8'));
+            if (typeof doc?.id !== 'string') return [];
+            // The folder's name ends with the time it was deleted; failing that, when it was moved.
+            const deleted = Number(/-(\d{10,})$/.exec(key)?.[1]) || fs.statSync(path.join(trash, key)).mtimeMs;
+            return [{ key, id: doc.id, title: (doc.meta?.title as string) || '無題のボード', project: (doc.meta?.project as string) || undefined, kind: (doc.kind as string) || undefined, deleted }];
+          } catch {
+            return [];
+          }
+        })
+        .sort((a, b) => b.deleted - a.deleted);
+    },
+
+    /**
+     * Put a deleted board back where it was, and say its id. A board of the same id that is there
+     * now (one restored before, say) is never overwritten: that throws instead.
+     */
+    restore(key: string): string {
+      if (key !== path.basename(key) || key.startsWith('.')) throw new Error('bad key');
+      const from = path.join(root, TRASH, key);
+      if (!fs.existsSync(path.join(from, 'board.json'))) throw new Error('削除したボードが見つかりません');
+      const doc = JSON.parse(fs.readFileSync(path.join(from, 'board.json'), 'utf8'));
+      if (typeof doc?.id !== 'string' || !ID.test(doc.id)) throw new Error('not a board');
+      if (dirOf(doc.id)) throw new Error('同じボードがすでにあります');
+      const to = path.join(root, `${slug(String(doc.meta?.title ?? ''))}__${doc.id}`);
+      if (fs.existsSync(to)) throw new Error('同じ名前のフォルダーがすでにあります');
+      fs.renameSync(from, to);
+      return doc.id;
     },
   };
 }

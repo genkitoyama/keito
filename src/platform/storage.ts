@@ -18,6 +18,18 @@ export interface BoardInfo {
   kind?: Doc['kind'];
 }
 
+/** A deleted board that can still be put back. */
+export interface TrashedBoard {
+  /** What names it in the trash (it may lie there more than once). */
+  key: string;
+  id: string;
+  title: string;
+  project?: string;
+  kind?: Doc['kind'];
+  /** When it was deleted (ms). */
+  deleted: number;
+}
+
 export interface Backend {
   mode: 'server' | 'local';
   list(): Promise<BoardInfo[]>;
@@ -29,7 +41,12 @@ export interface Backend {
   save(doc: Doc, force?: boolean): Promise<void>;
   /** The version of a board as last read or written here (on disk only). */
   serialOf?(id: string): number | undefined;
+  /** Deleting sets the board aside: it can be put back until the trash is emptied by hand. */
   remove(id: string): Promise<void>;
+  /** Deleted boards, the most recently deleted first. */
+  trash(): Promise<TrashedBoard[]>;
+  /** Put a deleted board back; resolves to its id. Throws, in words for the user, when it cannot. */
+  restore(key: string): Promise<string>;
   /** Store a picture for a board; resolves to the `src` to keep on the node. */
   putAsset(boardId: string, dataUrl: string): Promise<string>;
   /** Keep / fetch / drop the board as it stood at a recorded revision. */
@@ -50,6 +67,10 @@ export class Conflict extends Error {
 
 const INDEX = 'keito:boards';
 const key = (id: string): string => `keito:board:${id}`;
+/** A deleted board in this browser: keito:trash:<id>:<when deleted>, holding the board as it was. */
+const TRASH = 'keito:trash:';
+/** How many deleted boards this browser keeps (its storage is small); the oldest go first. */
+const TRASH_KEEP = 20;
 const API = '/api/boards';
 
 const clean = readBoard;
@@ -69,6 +90,22 @@ function localLoad(id: string): Doc | null {
   } catch {
     return null;
   }
+}
+
+/** Deleted boards kept in this browser, the most recently deleted first. */
+function localTrash(): TrashedBoard[] {
+  return Object.keys(localStorage)
+    .flatMap((k): TrashedBoard[] => {
+      const m = k.startsWith(TRASH) ? /^(.+):(\d+)$/.exec(k.slice(TRASH.length)) : null;
+      if (!m) return [];
+      try {
+        const doc = JSON.parse(localStorage.getItem(k) ?? 'null');
+        return [{ key: k, id: m[1], title: doc?.meta?.title || '無題のボード', project: doc?.meta?.project || undefined, kind: boardKind(doc?.kind), deleted: Number(m[2]) }];
+      } catch {
+        return [];
+      }
+    })
+    .sort((a, b) => b.deleted - a.deleted);
 }
 
 /** Boards kept in this browser — the fallback store, and what gets migrated to disk. */
@@ -91,8 +128,31 @@ const local: Backend = {
     localStorage.setItem(INDEX, JSON.stringify([info, ...localList().filter((b) => b.id !== doc.id)]));
   },
   remove: async (id) => {
+    const kept = localStorage.getItem(key(id));
     localStorage.removeItem(key(id));
     localStorage.setItem(INDEX, JSON.stringify(localList().filter((b) => b.id !== id)));
+    if (!kept) return;
+    try {
+      localStorage.setItem(`${TRASH}${id}:${Date.now()}`, kept);
+    } catch {
+      // No room left even for that: the board is gone, as deleting it used to do.
+    }
+    // The oldest deleted boards make room, with their history unless the board is back in use.
+    for (const t of localTrash().slice(TRASH_KEEP)) {
+      localStorage.removeItem(t.key);
+      if (localStorage.getItem(key(t.id)) || localTrash().some((x) => x.id === t.id)) continue;
+      for (const k of Object.keys(localStorage)) if (k.startsWith(`keito:rev:${t.id}:`)) localStorage.removeItem(k);
+    }
+  },
+  trash: async () => localTrash(),
+  restore: async (k) => {
+    const doc = localStorage.getItem(k);
+    const board = k.startsWith(TRASH) && doc ? clean(JSON.parse(doc)) : null;
+    if (!board) throw new Error('削除したボードが見つかりません');
+    if (localStorage.getItem(key(board.id))) throw new Error('同じボードがすでにあります');
+    await local.save(board);
+    localStorage.removeItem(k);
+    return board.id;
   },
   putAsset: async (_boardId, dataUrl) => dataUrl,
   saveRevision: async (boardId, id, doc) => localStorage.setItem(`keito:rev:${boardId}:${id}`, JSON.stringify(doc)),
@@ -150,6 +210,13 @@ const server: Backend = {
   serialOf: (id) => serials.get(id),
   remove: async (id) => {
     await ok(await fetch(`${API}/${id}`, { method: 'DELETE' }));
+  },
+  trash: async () => ((await (await ok(await fetch('/api/trash'))).json()) as TrashedBoard[]).map((t) => ({ ...t, kind: boardKind(t.kind) })),
+  restore: async (k) => {
+    const res = await fetch(`/api/trash/${encodeURIComponent(k)}`, { method: 'POST' });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body?.error || `戻せませんでした (${res.status})`);
+    return String(body.id);
   },
   putAsset: async (boardId, dataUrl) => {
     const blob = await (await fetch(dataUrl)).blob();
