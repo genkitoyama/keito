@@ -9,8 +9,9 @@ import { type BoardKind, KINDS, kindOf } from './kinds';
 import { SEQUENCE_SAMPLE } from './sequence';
 import { BOARD_ID, readBoard } from './load';
 import { docBounds, nodeRect } from './geometry';
+import { tidy } from './tidy';
 import { allIds, freshId, makeNode, randomId } from './presets';
-import { SAMPLE_YAML } from './sample';
+import { SAMPLE_BOARDS } from './sample';
 import { registerSignals } from './signals';
 import { type Entry, type ShareNode, catalog, newKey, pull, stamp, takeFrom } from './shared';
 import { type Doc, type Edge, type Node, type Revision, type UserPreset, emptyMeta } from './types';
@@ -51,11 +52,23 @@ export function startBoard(kind: BoardKind, title: string, project: string): Doc
   return doc;
 }
 
-function sampleDoc(): Doc {
+/** A board's banner (the sample's "これはサンプルです") over the top left of everything else. */
+function bannerOnTop(doc: Doc): Doc {
+  const note = doc.nodes.find((n) => n.id === 'note');
+  const rest = note && docBounds({ ...doc, nodes: doc.nodes.filter((n) => n !== note) });
+  if (!note || !rest) return doc;
+  return { ...doc, nodes: doc.nodes.map((n) => (n === note ? { ...n, x: rest.x, y: rest.y - n.h - 40 } : n)) };
+}
+
+/** The sample project's boards, the PCs they share filled in on each (its software runs on them). */
+export function sampleBoards(): Doc[] {
   try {
-    return fromYaml(SAMPLE_YAML, emptyDoc());
-  } catch {
-    return emptyDoc();
+    const docs = SAMPLE_BOARDS.map((yaml) => fromYaml(yaml, emptyDoc()));
+    const entries = catalog(docs);
+    return docs.map((d) => bannerOnTop(d.kind === 'sequence' ? pull(d, entries) : tidy(pull(d, entries))));
+  } catch (e) {
+    console.error(e);
+    return [emptyDoc()];
   }
 }
 
@@ -859,9 +872,11 @@ export async function boot(given?: Backend): Promise<void> {
       if (doc) break;
       doc = await tryLoad(backend, info.id);
     }
+    // A first run: the sample project, opened on its system diagram.
     if (!doc) {
-      doc = sampleDoc();
-      await backend.save(doc);
+      const docs = sampleBoards();
+      for (const d of [...docs].reverse()) await backend.save(d);
+      doc = docs[0];
       boards = await backend.list();
     }
     useStore.setState({ boards, mode: backend.mode, ready: true, presets: await backend.loadPresets().catch(() => []) });
