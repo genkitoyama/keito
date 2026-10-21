@@ -9,7 +9,7 @@ keito のボードは `boards/<タイトル>__<id>/board.json` に保存され�
 
 ## 基本の流れ
 
-1. `npm run -s keito -- boards` でボードを探す（id・タイトル・更新日時）。
+1. `npm run -s keito -- boards` でボードを探す（id・案件・種類・タイトル・更新日時）。
 2. `npm run -s keito -- guide` で YAML の書式を読む（初めてのときは必ず）。
 3. `npm run -s keito -- show <ボード>` で今の内容を YAML で取る。
 4. YAML を直して `npm run -s keito -- apply <ボード> <ファイル>`（または `-` で標準入力）で反映する。
@@ -40,8 +40,8 @@ keito のボードは `boards/<タイトル>__<id>/board.json` に保存され�
 
 ## 表と書き出し
 
-- `lists <ボード> [equipment|cables|summary|power|network|check] [--csv|--json]`: 表を読む。
-- `xlsx <ボード> [-o ファイル]`: Excel に書き出す。`--update 前回.xlsx` で前回のファイルを図の内容に更新する（購入ステータスや Excel で足した列は引き継がれる）。
+- `lists <ボード> [equipment|cables|summary|power|network|comms|check] [--csv|--json]`: 表を読む。
+- `xlsx <ボード> [-o ファイル]`: Excel に書き出す。`--update 前回.xlsx` で前回のファイルを図の内容に更新する（購入ステータスや Excel で足した列・シート・手入力の行は引き継がれる）。`-o` を付けないと前回のファイルを上書きする（元のファイルは `.bak.xlsx` として残る）。
 - PDF・画像は画面のエクスポートから（CLI では出せない）。
 - `url <ボード>` で画面の URL を返す。人に確認してもらうときに添える。
 

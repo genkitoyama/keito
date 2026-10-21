@@ -481,7 +481,13 @@ export function cableSummaryTable(doc: Doc): Table {
 
 /** CSV with BOM so Excel opens Japanese text correctly. */
 export function toCsv(t: Table): string {
-  const cell = (s: string): string => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  // Text starting like a formula (+4dBu, -10dBV, =A1, @x) would be run by a spreadsheet: it is
+  // kept as text with a leading apostrophe. Plain numbers stay numbers.
+  const safe = (s: string): string => (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s) ? `'${s}` : s);
+  const cell = (raw: string): string => {
+    const s = safe(raw);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
   return '﻿' + [t.head, ...t.rows].map((r) => r.map(cell).join(',')).join('\r\n') + '\r\n';
 }
 

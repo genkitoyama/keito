@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { DocView, SCREEN } from '../canvas/render';
+import { DocView, SCREEN, deviceTagRects } from '../canvas/render';
 import { docBounds } from '../model/geometry';
 import type { Table } from '../model/lists';
-import type { Doc } from '../model/types';
+import type { Doc, Rect } from '../model/types';
 
 export interface Image {
   svg: string;
@@ -11,9 +11,21 @@ export interface Image {
   h: number;
 }
 
+/** What a picture of the board must take in: its boxes and lines, and the tags drawn over devices. */
+function pictureBounds(doc: Doc): Rect {
+  const box = docBounds(doc);
+  if (!box) return { x: 0, y: 0, w: 400, h: 300 };
+  let [x0, y0, x1, y1] = [box.x, box.y, box.x + box.w, box.y + box.h];
+  for (const n of doc.nodes) {
+    if (n.type !== 'device') continue;
+    for (const r of deviceTagRects(doc.whole ?? doc, n)) [x0, y0, x1, y1] = [Math.min(x0, r.x), Math.min(y0, r.y), Math.max(x1, r.x + r.w), Math.max(y1, r.y + r.h)];
+  }
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
 /** The board as shown on screen, cropped to its content. */
 export function boardImage(doc: Doc, background: boolean, padding = 40): Image {
-  const box = docBounds(doc) ?? { x: 0, y: 0, w: 400, h: 300 };
+  const box = pictureBounds(doc);
   const w = Math.ceil(box.w + padding * 2);
   const h = Math.ceil(box.h + padding * 2);
   const svg = renderToStaticMarkup(
@@ -25,13 +37,22 @@ export function boardImage(doc: Doc, background: boolean, padding = 40): Image {
   return { svg, w, h };
 }
 
+/** The largest side browsers draw a canvas at (16384 in Chrome and Safari), with some room to spare. */
+const MAX_CANVAS = 16000;
+/** …and the most pixels in all (Safari's limit is lower than its side limit squared). */
+const MAX_PIXELS = 16384 * 16384 * 0.25;
+
+/** The scale a PNG of the picture is actually made at: the one asked for, or less if that is beyond the browser. */
+export const pngScale = (img: Image, scale: number): number => Math.min(scale, MAX_CANVAS / img.w, MAX_CANVAS / img.h, Math.sqrt(MAX_PIXELS / (img.w * img.h)));
+
 export async function toPng(img: Image, scale: number): Promise<Blob> {
   const el = new window.Image();
   el.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(img.svg)}`;
   await el.decode();
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(img.w * scale);
-  canvas.height = Math.round(img.h * scale);
+  const k = pngScale(img, scale);
+  canvas.width = Math.round(img.w * k);
+  canvas.height = Math.round(img.h * k);
   canvas.getContext('2d')!.drawImage(el, 0, 0, canvas.width, canvas.height);
   return new Promise((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('PNG の生成に失敗しました'))), 'image/png'),

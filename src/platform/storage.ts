@@ -347,7 +347,7 @@ export function pickFile(accept: string): Promise<File | null> {
   });
 }
 
-export const safeName = (s: string): string => s.replace(/[\\/:*?"<>|\s]+/g, '_') || 'board';
+export { safeName } from '../model/names';
 
 export interface LoadedImage {
   src: string;

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { type Paper, type PdfPart, boardImage, bookletHtml, copyPng, pdfHtml, printHtml, toPng, zipFiles } from '../export/exporters';
+import { type Paper, type PdfPart, boardImage, bookletHtml, copyPng, pdfHtml, pngScale, printHtml, toPng, zipFiles } from '../export/exporters';
 import { TABLES, type Table, compact, toCsv } from '../model/lists';
 import { KINDS, type ListKey, kindOf } from '../model/kinds';
 import { toYaml } from '../model/dsl';
@@ -43,6 +43,10 @@ export function ExportPanel() {
     };
   }, [board]);
   const whole = inlined?.from === board ? inlined.doc : board;
+  // Until the pictures are in, a picture made now would leave them out.
+  const picturesReady = inlined?.from === board || !board.nodes.some((n) => n.type === 'image' && n.src.startsWith('asset:'));
+  // Pictures that could not be read from the board's folder (a file gone missing).
+  const missing = picturesReady ? whole.nodes.filter((n) => n.type === 'image' && n.src.startsWith('asset:')).length : 0;
   // The whole project at once: every board of it, in the order of its tabs.
   const tabs = useProjectTabs();
   const others = useStore((s) => s.others);
@@ -103,7 +107,8 @@ export function ExportPanel() {
     setSetting('csvList', SHEETS[i]);
   };
   const sheets = useMemo(() => (mode === 'table' ? sheetTables(doc) : []), [doc, mode]);
-  const csvTable = useMemo(() => (SHEETS.length ? TABLES[SHEETS[sheet]].make(doc) : null), [doc, sheet, kind.id]);
+  // The CSV is the sheet shown beside it, as the workbook has it.
+  const csvTable = sheets[sheet] ?? null;
   const yaml = useMemo(() => (mode === 'data' ? toYaml(whole) : ''), [mode, whole]);
   const [paper, setPaper] = useState<Paper>(() => (getSetting('pdfPaper') === 'A3' ? 'A3' : 'A4'));
   const [lists, setLists] = useState<ListKey[]>(() => {
@@ -278,7 +283,7 @@ export function ExportPanel() {
               <>
                 <h4>Excel（.xlsx）</h4>
                 <p className="hint">すべての表を 1 ファイルに、表ごとのシートで。見出し固定・フィルター・プルダウン付きで、Google スプレッドシートでも開けます。</p>
-                <button className="primary wide" onClick={run(async () => download(`${name}_機材ケーブル表.xlsx`, await (await import('../export/xlsx')).workbook(doc)), 'Excel ファイルを保存しました。')}>
+                <button className="primary wide" onClick={run(async () => download(`${name}_${kind.listsLabel}.xlsx`, await (await import('../export/xlsx')).workbook(doc)), 'Excel ファイルを保存しました。')}>
                   Excel に書き出す
                 </button>
                 <button
@@ -373,9 +378,12 @@ export function ExportPanel() {
                     <option value={4}>4x</option>
                   </select>
                 </label>
-                <button className="wide" onClick={run(async () => download(`${name}.png`, await toPng(image, scale)), 'PNG を保存しました。')}>PNG を保存</button>
-                <button className="wide" onClick={run(async () => copyPng(await toPng(image, scale)), 'クリップボードにコピーしました。スライドにそのまま貼れます。')}>PNG をコピー</button>
-                <button className="wide" onClick={run(() => download(`${name}.svg`, image.svg, 'image/svg+xml'), 'SVG を保存しました。')}>SVG を保存</button>
+                {pngScale(image, scale) < scale && <p className="hint">図が大きいため、{Math.floor(pngScale(image, scale) * 10) / 10}x で書き出します（ブラウザで作れる画像の大きさの上限）。</p>}
+                {!picturesReady && <p className="hint">画像を読み込み中…</p>}
+                {missing > 0 && <p className="error">画像 {missing} 枚がボードのフォルダから読めず、書き出しに入りません。</p>}
+                <button className="wide" disabled={!picturesReady} onClick={run(async () => download(`${name}.png`, await toPng(image, scale)), 'PNG を保存しました。')}>PNG を保存</button>
+                <button className="wide" disabled={!picturesReady} onClick={run(async () => copyPng(await toPng(image, scale)), 'クリップボードにコピーしました。スライドにそのまま貼れます。')}>PNG をコピー</button>
+                <button className="wide" disabled={!picturesReady} onClick={run(() => download(`${name}.svg`, image.svg, 'image/svg+xml'), 'SVG を保存しました。')}>SVG を保存</button>
               </>
             )}
             {msg && <p className="info">{msg}</p>}

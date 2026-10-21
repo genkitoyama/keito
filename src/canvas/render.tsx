@@ -212,6 +212,17 @@ function tagsStacked(doc: Doc, n: DeviceNode): boolean {
   return !!ip && !!load && ip + load + 4 > n.w;
 }
 
+/** Where the tags over a device are drawn (its address, its power load): an exported picture takes them in. */
+export function deviceTagRects(doc: Doc, n: DeviceNode): Rect[] {
+  const out: Rect[] = [];
+  const stacked = tagsStacked(doc, n);
+  const ip = ipBadgeWidth(n);
+  if (ip) out.push({ x: n.x, y: n.y - 20 - (stacked ? 18 : 0), w: ip, h: 16 });
+  const load = loadBadgeWidth(doc, n);
+  if (load) out.push({ x: stacked ? n.x : n.x + n.w - load, y: n.y - 20, w: load, h: 16 });
+  return out;
+}
+
 function LoadBadge({ doc, n, theme }: { doc: Doc; n: DeviceNode; theme: Theme }) {
   const load = powerLoads(doc).get(n.id);
   if (!load) return null;
