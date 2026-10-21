@@ -382,7 +382,7 @@ export function ExportPanel() {
                 {!picturesReady && <p className="hint">画像を読み込み中…</p>}
                 {missing > 0 && <p className="error">画像 {missing} 枚がボードのフォルダから読めず、書き出しに入りません。</p>}
                 <button className="wide" disabled={!picturesReady} onClick={run(async () => download(`${name}.png`, await toPng(image, scale)), 'PNG を保存しました。')}>PNG を保存</button>
-                <button className="wide" disabled={!picturesReady} onClick={run(async () => copyPng(await toPng(image, scale)), 'クリップボードにコピーしました。スライドにそのまま貼れます。')}>PNG をコピー</button>
+                <button className="wide" disabled={!picturesReady} onClick={run(() => copyPng(toPng(image, scale)), 'クリップボードにコピーしました。スライドにそのまま貼れます。')}>PNG をコピー</button>
                 <button className="wide" disabled={!picturesReady} onClick={run(() => download(`${name}.svg`, image.svg, 'image/svg+xml'), 'SVG を保存しました。')}>SVG を保存</button>
               </>
             )}

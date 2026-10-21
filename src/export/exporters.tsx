@@ -59,7 +59,11 @@ export async function toPng(img: Image, scale: number): Promise<Blob> {
   );
 }
 
-export async function copyPng(blob: Blob): Promise<void> {
+/**
+ * Put a PNG on the clipboard. It is handed over while it is still being made: Safari (and the
+ * macOS app's webview) only lets the click itself write to the clipboard, not a moment later.
+ */
+export async function copyPng(blob: Promise<Blob>): Promise<void> {
   await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
 }
 
