@@ -3,7 +3,7 @@ import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isTagged, isUnderlay
 import { LEGEND, shownRows } from '../model/legend';
 import { lineColor, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, ipIssues, labelStacked, lengthShown, powerLoads } from '../model/lists';
-import { SEQ, SEQ_TEXT, parseSequence, seqLayout, seqRows, seqScale } from '../model/sequence';
+import { SEQ, SEQ_TEXT, parseSequence, seqBands, seqLayout, seqRows, seqScale } from '../model/sequence';
 import { PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { MONO_FONT, UI_FONT, measure, wrapText } from '../model/text';
 import { safeUrl } from '../model/url';
@@ -236,7 +236,7 @@ function arrowHead(tip: Pt, from: Pt, size: number, spread = 0.42): string {
   return `${tip.x},${tip.y} ${p(spread)} ${p(-spread)}`;
 }
 
-function Sequence({ n, theme }: { n: SequenceNode; theme: Theme }) {
+function Sequence({ n, theme, doc }: { n: SequenceNode; theme: Theme; doc?: Doc }) {
   const d = parseSequence(n.text);
   // Everything scales with the text size, so a bigger text never outgrows its boxes.
   const k = seqScale(n.fontSize);
@@ -253,6 +253,15 @@ function Sequence({ n, theme }: { n: SequenceNode; theme: Theme }) {
   const out: ReactNode[] = [
     <rect key="bg" x={n.x} y={n.y} width={dw} height={dh} rx={8} fill="#fff" stroke={'#cbd5e1'} strokeWidth={1} />,
   ];
+  // Rows an open comment is pinned to are washed in the comments' yellow, under the drawing.
+  if (doc) {
+    const pinned = new Set(doc.nodes.flatMap((m) => (m.type === 'sticky' && !m.done && m.on?.seq === n.id && !m.on.lost ? [m.on.item] : [])));
+    const bands = pinned.size ? seqBands(n) : [];
+    pinned.forEach((i) => {
+      const b = bands[i];
+      if (b) out.push(<rect key={`pin${i}`} x={n.x + 4} y={b.y - b.h / 2} width={dw - 8} height={b.h} rx={4} fill="#fef3c7" fillOpacity={0.7} />);
+    });
+  }
   if (d.title) out.push(<TextBlock key="t" x={n.x + dw / 2} y={n.y + (SEQ.padTop + 8) * k} w={dw - 20} text={d.title} size={13 * k} weight={700} theme={theme} />);
   d.participants.forEach((p, i) => {
     out.push(
@@ -388,7 +397,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
     case 'device':
       return <Device n={n} theme={theme} doc={doc} />;
     case 'sequence':
-      return <Sequence n={n} theme={theme} />;
+      return <Sequence n={n} theme={theme} doc={doc} />;
     case 'frame': {
       // A coloured area takes the tint as a light wash, with the outline and title in the full colour.
       const tint = n.color && n.color !== 'gray' ? { wash: PALETTE[n.color].fill, line: n.color === 'white' ? PALETTE.white.stroke : STRONG[n.color].fill } : null;
@@ -475,8 +484,9 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
             </>
           )}
           {/* Says what a sticky is for: a comment on the drawing. */}
-          <text x={x + 9} y={y + 14} fontFamily={theme.font} fontSize={8.5} fontWeight={700} letterSpacing="0.1em" fill={mix(c.stroke, '#0f172a', 0.45)}>
+          <text x={x + 9} y={y + 13} fontFamily={theme.font} fontSize={7} fontWeight={700} letterSpacing="0.1em" fill={mix(c.stroke, '#0f172a', 0.45)}>
             COMMENT
+            {n.on?.lost && <tspan fill="#b91c1c">{'  対象の処理なし'}</tspan>}
           </text>
           <TextBlock x={cx} y={cy + STICKY_HEAD / 2} w={textWidth(n)} text={n.text} size={textSize(n)} weight={textWeight(n)} theme={theme} />
           {n.done && (

@@ -1,3 +1,4 @@
+import { pinLabel } from '../model/comments';
 import { legendRows } from '../model/legend';
 import { useRef, useState } from 'react';
 import { isTagged } from '../model/geometry';
@@ -9,7 +10,7 @@ import { type BoardKind, KINDS, KIND_ORDER, kindOf } from '../model/kinds';
 import { COLOR_KEYS, PALETTE, STICKY, allSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
 import { align, storeImage, useStore } from '../model/store';
-import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type ShapeKind } from '../model/types';
+import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type ShapeKind, type StickyNode } from '../model/types';
 import { FILLS, FillPreview, SHAPES, sizesFor } from './icons';
 import { textHeightFor, textWeight } from '../canvas/render';
 import { useShallow } from 'zustand/react/shallow';
@@ -589,6 +590,7 @@ function NodePanel({ n }: { n: Node }) {
       )}
       {n.type === 'sticky' && (
         <>
+          <PinNote n={n} />
           {n.done ? (
             <div className="row">
               <span className="settled">✓ 解決済み</span>
@@ -856,4 +858,12 @@ export function Inspector() {
       {selection.length > 0 && <button className="danger wide" onClick={remove}>削除</button>}
     </aside>
   );
+}
+
+/** Which sequence item a comment is pinned to, if any: set by where the sticky is put. */
+function PinNote({ n }: { n: StickyNode }) {
+  const doc = useStore((s) => s.doc);
+  const pin = pinLabel(doc, n);
+  if (!pin) return <p className="hint">シーケンス図の矢印やノートの上に置くと、その処理へのコメントになり、書き換えても付いていきます。</p>;
+  return <p className={`pin-note${pin.lost ? ' lost' : ''}`}>{pin.lost ? '対象の処理がシーケンス図から消えました。別の処理の上に置き直すと付け直せます。' : `対象: ${pin.text}`}</p>;
 }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { commentsOf } from '../model/comments';
+import { commentsOf, pinLabel } from '../model/comments';
 import { STICKY } from '../model/signals';
 import { centerOn, useStore } from '../model/store';
 import type { StickyNode } from '../model/types';
@@ -32,12 +32,14 @@ export function CommentsPanel() {
   const settle = (n: StickyNode, on: boolean) => st().updateNode(n.id, { done: on || undefined }, true);
   const row = (n: StickyNode) => {
     const [first, ...rest] = n.text.trim().split('\n');
+    const pin = pinLabel(doc, n);
     return (
       <li key={n.id} className={`comment${selection.includes(n.id) ? ' on' : ''}${n.done ? ' done' : ''}`} onClick={() => go(n)}>
         <span className="swatch" style={{ background: STICKY[n.color].fill, borderColor: STICKY[n.color].stroke }} />
         <div className="body">
           <b>{first || '（空の付箋）'}</b>
           {rest.length > 0 && <p>{rest.join('\n')}</p>}
+          {pin && <span className={`pin${pin.lost ? ' lost' : ''}`}>{pin.text}</span>}
           <small>{when(n.at)}</small>
         </div>
         <button

@@ -48,6 +48,19 @@ export interface ShapeNode extends Base {
   dash?: boolean;
 }
 /** A comment on the board: listed in the comments panel, left out of exports unless asked for. */
+/**
+ * Where a comment is pinned: item `item` of sequence `seq`, which said `sig` (seqSig); the sticky
+ * sits `dx`, `dy` from the item's row (the diagram's left edge, the row's centre line). `lost`:
+ * the item was removed from the source, so the comment no longer has anything to follow.
+ */
+export interface CommentPin {
+  seq: string;
+  item: number;
+  sig: string;
+  dx: number;
+  dy: number;
+  lost?: boolean;
+}
 export interface StickyNode extends Base {
   type: 'sticky';
   color: ColorKey;
@@ -55,6 +68,8 @@ export interface StickyNode extends Base {
   done?: boolean;
   /** When it was put on the board (ms). */
   at?: number;
+  /** Pinned to an item of a sequence diagram (see comments.ts): it follows that item when the source changes or the diagram moves. */
+  on?: CommentPin;
   /** Font size in px (default 13.5). */
   fontSize?: number;
   /** Bold text; unset = this kind of node's usual weight. */

@@ -399,7 +399,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (kind === 'sticky') {
       // When it was put on the board is not written out; it is kept from the sticky as it was.
       const was = prevById.get(id);
-      nodes.push({ ...base, type: 'sticky', color: color ?? 'yellow', fontSize, bold, done: v.done === true || undefined, at: was?.type === 'sticky' ? was.at : Date.now() });
+      nodes.push({ ...base, type: 'sticky', color: color ?? 'yellow', fontSize, bold, done: v.done === true || undefined, at: was?.type === 'sticky' ? was.at : Date.now(), ...(was?.type === 'sticky' && was.on ? { on: was.on } : {}) });
     }
     else if (kind === 'text') nodes.push({ ...base, type: 'text', fontSize, bold });
     else {

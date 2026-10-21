@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as RMouseEvent, ReactNode, PointerEvent as RPointerEvent } from 'react';
+import { pinTarget } from '../model/comments';
 import {
   edgeNear,
   hopOrder,
@@ -812,6 +813,7 @@ export function Canvas() {
           <HopCaps doc={doc} theme={SCREEN} />
           {others.map(nodeGroup)}
           <SharedMarks doc={doc} />
+          <CommentPins doc={doc} sel={sel} />
 
           {preview && handleNode && hoverSide && (
             <g pointerEvents="none" opacity={0.55}>
@@ -1099,6 +1101,41 @@ function SharedMarks({ doc }: { doc: Doc }) {
               <rect x={-4.6} y={-1.8} width={5} height={3.6} rx={1.8} />
               <rect x={-0.4} y={-1.8} width={5} height={3.6} rx={1.8} />
             </g>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/**
+ * A pinned comment set apart from its row gets a thin line to it, so it is clear what it is
+ * about; the selected one also outlines its row.
+ */
+function CommentPins({ doc, sel }: { doc: Doc; sel: Set<string> }) {
+  return (
+    <g pointerEvents="none">
+      {doc.nodes.map((n) => {
+        if (n.type !== 'sticky' || n.done) return null;
+        const t = pinTarget(doc, n);
+        if (!t) return null;
+        const seq = nodeRect(t.seq);
+        const row = { x: seq.x + 4, y: t.band.y - t.band.h / 2, w: seq.w - 8, h: t.band.h };
+        const r = nodeRect(n);
+        const on = sel.has(n.id);
+        const near = (v: number, lo: number, hi: number): number => Math.min(Math.max(v, lo), hi);
+        // From the sticky's edge to the nearest point of the row.
+        const to = { x: near(r.x + r.w / 2, row.x, row.x + row.w), y: near(r.y + r.h / 2, row.y, row.y + row.h) };
+        const from = { x: near(to.x, r.x, r.x + r.w), y: near(to.y, r.y, r.y + r.h) };
+        return (
+          <g key={n.id}>
+            {on && <rect x={row.x} y={row.y} width={row.w} height={row.h} rx={4} fill="none" stroke="#d97706" strokeWidth={1.5} />}
+            {!intersects(r, row) && (
+              <>
+                <line x1={from.x} y1={from.y} x2={to.x} y2={to.y} stroke="#d97706" strokeWidth={on ? 1.5 : 1} strokeDasharray="4 3" strokeOpacity={on ? 1 : 0.7} />
+                <circle cx={to.x} cy={to.y} r={3} fill="#d97706" />
+              </>
+            )}
           </g>
         );
       })}

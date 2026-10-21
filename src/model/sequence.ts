@@ -14,7 +14,8 @@ export interface SeqParticipant {
   label: string;
 }
 export type SeqItem =
-  | { kind: 'msg'; from: number; to: number; text: string; dashed: boolean; cross?: boolean }
+  /** `num`: its number under autonumber, already at the head of `text`. */
+  | { kind: 'msg'; from: number; to: number; text: string; dashed: boolean; cross?: boolean; num?: number }
   | { kind: 'note'; over: number; to?: number; text: string }
   /** A divider across the diagram: the start of a block (loop, alt …) with its label, or its end. */
   | { kind: 'section'; text: string; end?: boolean };
@@ -67,6 +68,76 @@ export function seqRows(d: SeqDiagram): { at: number[]; total: number } {
     used += w;
   }
   return { at, total: used };
+}
+
+/** What an item says, independent of where it sits: how a comment pinned to it finds it again. */
+export function seqSig(d: SeqDiagram, it: SeqItem): string {
+  const who = (i?: number): string => (i === undefined ? '' : (d.participants[i]?.id ?? ''));
+  // Without its number: one line added above renumbers everything after it.
+  if (it.kind === 'msg') return `msg|${who(it.from)}|${who(it.to)}|${it.num ? it.text.slice(`${it.num}. `.length) : it.text}`;
+  if (it.kind === 'note') return `note|${who(it.over)}|${who(it.to)}|${it.text}`;
+  return `section|${it.end ? 'end' : ''}|${it.text}`;
+}
+
+/** An item in words, for a list: "制御PC → プロジェクター: 電源ON". */
+export function seqDescribe(d: SeqDiagram, i: number): string {
+  const it = d.items[i];
+  if (!it) return '';
+  const who = (j: number): string => d.participants[j]?.label ?? '';
+  if (it.kind === 'msg') return `${who(it.from)} → ${who(it.to)}${it.text ? `: ${it.text}` : ''}`;
+  if (it.kind === 'note') return `ノート: ${it.text.replace(/\n/g, ' ')}`;
+  return it.end ? '（ブロックの終わり）' : it.text;
+}
+
+/** The band each item takes across the diagram, in board coordinates: its centre line and height. */
+export function seqBands(n: { x: number; y: number; w: number; h: number; text: string; fontSize?: number }): { y: number; h: number }[] {
+  const d = parseSequence(n.text);
+  const k = seqScale(n.fontSize);
+  const { step } = seqLayout(n.text, n.w, n.h, k);
+  const lifeTop = n.y + (SEQ.padTop + (d.title ? SEQ.titleH : 0) + SEQ.boxH) * k;
+  const rows = seqRows(d);
+  return d.items.map((it, i) => ({ y: lifeTop + rows.at[i] * step, h: weight(it) * step }));
+}
+
+/**
+ * Where item `i` of the old source is in the new one, or -1 if it is gone. Unchanged items are
+ * matched in order (longest common run); an item edited in place — the same number of items
+ * between the same unchanged neighbours, and the same kind — is followed too.
+ */
+export function seqFollow(before: string, after: string, i: number): number {
+  if (before === after) return i;
+  const a = parseSequence(before);
+  const b = parseSequence(after);
+  if (i < 0 || i >= a.items.length) return -1;
+  const sa = a.items.map((it) => seqSig(a, it));
+  const sb = b.items.map((it) => seqSig(b, it));
+  const n = sa.length;
+  const m = sb.length;
+  // LCS table from the end, so matching walks forward.
+  const t: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let x = n - 1; x >= 0; x--) for (let y = m - 1; y >= 0; y--) t[x][y] = sa[x] === sb[y] ? t[x + 1][y + 1] + 1 : Math.max(t[x + 1][y], t[x][y + 1]);
+  const pairs: [number, number][] = [];
+  for (let x = 0, y = 0; x < n && y < m; ) {
+    if (sa[x] === sb[y]) pairs.push([x++, y++]);
+    else if (t[x + 1][y] >= t[x][y + 1]) x++;
+    else y++;
+  }
+  const hit = pairs.find(([x]) => x === i);
+  if (hit) return hit[1];
+  // The gap between the matched neighbours around i, in both.
+  let lo: [number, number] = [-1, -1];
+  let hi: [number, number] = [n, m];
+  for (const p of pairs) {
+    if (p[0] < i) lo = p;
+    else if (p[0] > i) {
+      hi = p;
+      break;
+    }
+  }
+  const off = i - lo[0] - 1;
+  if (hi[0] - lo[0] !== hi[1] - lo[1]) return -1;
+  const j = lo[1] + 1 + off;
+  return b.items[j]?.kind === a.items[i].kind ? j : -1;
 }
 
 /** The message text is 11px by default; a bigger text size scales the whole diagram with it. */
@@ -148,8 +219,9 @@ export function parseSequence(src: string): SeqDiagram {
       const back = m[2].startsWith('<') && !m[2].endsWith('>');
       const from = index(back ? m[3] : m[1]);
       const to = index(back ? m[1] : m[3]);
-      const text = (numbered ? `${++count}. ` : '') + (m[4] ?? '');
-      items.push({ kind: 'msg', from, to, text, dashed: m[2].includes('--'), ...(m[2].endsWith('x') ? { cross: true } : {}) });
+      const num = numbered ? ++count : undefined;
+      const text = (num ? `${num}. ` : '') + (m[4] ?? '');
+      items.push({ kind: 'msg', from, to, text, dashed: m[2].includes('--'), ...(m[2].endsWith('x') ? { cross: true } : {}), ...(num ? { num } : {}) });
       last = { from, to };
     } else if (/^box\b/i.test(line)) {
       boxes++;
@@ -168,7 +240,8 @@ export function parseSequence(src: string): SeqDiagram {
       else items.push({ kind: 'section', text: '', end: true });
     } else if ((m = /^return(?:\s+(.*))?$/i.exec(line))) {
       // PlantUML's return answers the last message.
-      if (last) items.push({ kind: 'msg', from: last.to, to: last.from, text: (numbered ? `${++count}. ` : '') + (m[1] ?? ''), dashed: true });
+      const num = numbered ? ++count : undefined;
+      if (last) items.push({ kind: 'msg', from: last.to, to: last.from, text: (num ? `${num}. ` : '') + (m[1] ?? ''), dashed: true, ...(num ? { num } : {}) });
     }
   }
   const n = Math.max(1, participants.length);

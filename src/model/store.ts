@@ -1,3 +1,4 @@
+import { pinComments } from './comments';
 import { fitLegends } from './legend';
 import { drawingOf, entryFor, fingerprint, thin } from './history';
 import { create } from 'zustand';
@@ -165,7 +166,7 @@ export const useStore = create<State>((set, get) => ({
   checkpoint: () => set((s) => ({ past: [...s.past.slice(-HISTORY), s.doc], future: [] })),
   setDoc: (doc, record = true) => {
     if (record) get().checkpoint();
-    set({ doc: fitLegends(doc) });
+    set({ doc: fitLegends(pinComments(get().doc, doc)) });
   },
   mutate: (fn, record = true) => get().setDoc(fn(get().doc), record),
   updateNode: (id, patch, record = true) =>

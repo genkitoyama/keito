@@ -1968,6 +1968,31 @@ body.row-dragging .lists td.editable:hover {
   color: var(--sub);
   font-size: 11px;
 }
+.comments-panel .body .pin {
+  display: block;
+  margin-top: 3px;
+  padding: 1px 6px;
+  border-left: 3px solid #f59e0b;
+  background: #fef3c7;
+  color: #78350f;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.comments-panel .body .pin.lost,
+.pin-note.lost {
+  border-left-color: #dc2626;
+  background: #fee2e2;
+  color: #991b1b;
+}
+.pin-note {
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  border-left: 3px solid #f59e0b;
+  background: #fef3c7;
+  color: #78350f;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
 .comments-panel .comment.done b {
   color: var(--sub);
   text-decoration: line-through;
