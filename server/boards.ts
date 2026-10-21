@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ServerResponse } from 'node:http';
 import type { Connect, Plugin } from 'vite';
-import { Conflict, Gone, ID, boardsRoot, store } from './store';
+import { Busy, Conflict, Gone, ID, boardsRoot, store } from './store';
 
 /**
  * Board storage on disk, served by the dev / preview server:
@@ -109,8 +109,7 @@ export function keitoBoards(root = boardsRoot()): Plugin {
         if (req.method === 'PUT') {
           const list = JSON.parse((await readBody(req)).toString('utf8'));
           if (!Array.isArray(list)) throw new Error('not a list');
-          fs.mkdirSync(root, { recursive: true });
-          fs.writeFileSync(file, JSON.stringify(list, null, 2));
+          boards.writePresets(JSON.stringify(list, null, 2));
           res.statusCode = 204;
           return void res.end();
         }
@@ -220,6 +219,7 @@ export function keitoBoards(root = boardsRoot()): Plugin {
         } catch (e) {
           if (e instanceof Conflict) return send(409, { error: e.message, serial: e.serial });
           if (e instanceof Gone) return send(410, { error: e.message });
+          if (e instanceof Busy) return send(503, { error: e.message });
           throw e;
         }
       }

@@ -12,7 +12,8 @@
     "test": "vitest run",
     "tauri": "tauri",
     "app": "tauri dev",
-    "app:build": "tauri build"
+    "app:build": "tauri build",
+    "app:release": "scripts/release-mac.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

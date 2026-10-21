@@ -14,7 +14,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const TRASH: &str = ".trash";
 
@@ -119,11 +119,57 @@ fn read_json(p: &Path) -> Option<Value> {
     serde_json::from_str(&fs::read_to_string(p).ok()?).ok()
 }
 
-/// Write a file whole or not at all: to a temporary name first, then into place.
+/// Write a file whole or not at all: to a temporary name no other writer uses, then into place.
 fn write_atomic(p: &Path, text: &str) -> std::io::Result<()> {
-    let tmp = p.with_extension("json.tmp");
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("file");
+    let tmp = p.with_file_name(format!("{name}.{}-{n}.tmp", std::process::id()));
     fs::write(&tmp, text)?;
-    fs::rename(&tmp, p)
+    fs::rename(&tmp, p).inspect_err(|_| {
+        let _ = fs::remove_file(&tmp);
+    })
+}
+
+/// The folder's write lock, the same file server/store.ts takes: the dev server, the command line
+/// and this app may all work on one boards folder, and a change (check the version, then write;
+/// move a folder) must not run into another's halfway. One left behind by a writer that died is
+/// taken over once it is older than STALE.
+pub const LOCK: &str = ".keito.lock";
+const STALE: Duration = Duration::from_secs(10);
+const WAIT: Duration = Duration::from_secs(3);
+pub const BUSY: &str = "ほかのアプリがこのフォルダーに書き込み中です。少し待ってからもう一度保存してください";
+
+/// Holding the lock; let go when dropped.
+struct Locked(PathBuf);
+
+impl Drop for Locked {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
+}
+
+fn lock(root: &Path, wait: Duration) -> Result<Locked, String> {
+    fs::create_dir_all(root).map_err(|e| e.to_string())?;
+    let file = root.join(LOCK);
+    let until = Instant::now() + wait;
+    loop {
+        match fs::OpenOptions::new().write(true).create_new(true).open(&file) {
+            Ok(_) => return Ok(Locked(file)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                let stale = fs::metadata(&file).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > STALE);
+                if stale {
+                    let _ = fs::remove_file(&file);
+                    continue;
+                }
+                if Instant::now() > until {
+                    return Err(BUSY.into());
+                }
+                std::thread::sleep(Duration::from_millis(15));
+            }
+            Err(e) => return Err(e.to_string()),
+        }
+    }
 }
 
 pub struct Store {
@@ -177,7 +223,12 @@ impl Store {
     }
 
     /// Write a board, made on version `base` of it (None: whatever is there, for a forced write).
-    pub fn write(&self, mut doc: Value, base: Option<u64>) -> Result<Written, WriteError> {
+    pub fn write(&self, doc: Value, base: Option<u64>) -> Result<Written, WriteError> {
+        let _held = lock(&self.root, WAIT).map_err(WriteError::Other)?;
+        self.write_held(doc, base)
+    }
+
+    fn write_held(&self, mut doc: Value, base: Option<u64>) -> Result<Written, WriteError> {
         let id = doc.get("id").and_then(Value::as_str).filter(|id| valid_id(id)).map(String::from).ok_or_else(|| WriteError::Other("bad id".into()))?;
         let dir = self.dir_of(&id);
         let now = self.serial_at(dir.as_ref());
@@ -208,6 +259,7 @@ impl Store {
 
     /// Deleting moves the folder aside instead of destroying it.
     pub fn remove(&self, id: &str) -> Result<(), String> {
+        let _held = lock(&self.root, WAIT)?;
         let Some(dir) = self.dir_of(id) else { return Ok(()) };
         let trash = self.root.join(TRASH);
         fs::create_dir_all(&trash).map_err(|e| e.to_string())?;
@@ -239,6 +291,7 @@ impl Store {
         if key.is_empty() || key.starts_with('.') || key.contains('/') || key.contains('\\') {
             return Err("bad key".into());
         }
+        let _held = lock(&self.root, WAIT)?;
         let from = self.root.join(TRASH).join(key);
         let v = read_json(&from.join("board.json")).ok_or("削除したボードが見つかりません")?;
         let id = v.get("id").and_then(Value::as_str).filter(|id| valid_id(id)).ok_or("not a board")?.to_string();
@@ -297,7 +350,7 @@ impl Store {
         if !list.is_array() {
             return Err("not a list".into());
         }
-        fs::create_dir_all(&self.root).map_err(|e| e.to_string())?;
+        let _held = lock(&self.root, WAIT)?;
         write_atomic(&self.root.join("presets.json"), &serde_json::to_string_pretty(list).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
     }
 }
@@ -367,6 +420,55 @@ mod tests {
             assert_eq!(slug(title), want, "{title:?}");
         }
         assert_eq!(slug(&"あ".repeat(70)).chars().count(), 60);
+    }
+
+    #[test]
+    fn waits_for_the_lock_and_takes_over_one_left_behind() {
+        let s = temp();
+        let file = s.root.join(LOCK);
+        fs::write(&file, "").unwrap();
+        assert_eq!(lock(&s.root, Duration::from_millis(60)).err().as_deref(), Some(BUSY));
+        // A lock older than STALE was left by a writer that died.
+        let old = SystemTime::now() - Duration::from_secs(60);
+        fs::File::options().write(true).open(&file).unwrap().set_modified(old).unwrap();
+        drop(lock(&s.root, Duration::from_millis(60)).unwrap());
+        assert!(!file.exists());
+    }
+
+    #[test]
+    fn loses_no_change_when_several_write_one_board_at_once() {
+        let s = temp();
+        s.write(board("shared1", "共有"), None).unwrap();
+        let root = s.root.clone();
+        let writers: Vec<_> = (0..4)
+            .map(|w| {
+                let root = root.clone();
+                std::thread::spawn(move || {
+                    // A store of its own, as another process would have.
+                    let s = Store::new(root);
+                    for i in 0..15 {
+                        loop {
+                            let mut doc: Value = serde_json::from_str(&s.read("shared1").unwrap().unwrap()).unwrap();
+                            let base = serial_of(&doc);
+                            doc["nodes"].as_array_mut().unwrap().push(json!(format!("{w}-{i}")));
+                            match s.write(doc, Some(base)) {
+                                Ok(_) => break,
+                                Err(WriteError::Conflict(_)) => continue,
+                                Err(WriteError::Other(e)) if e == BUSY => continue,
+                                Err(e) => panic!("{e:?}"),
+                            }
+                        }
+                    }
+                })
+            })
+            .collect();
+        for w in writers {
+            w.join().unwrap();
+        }
+        let doc: Value = serde_json::from_str(&s.read("shared1").unwrap().unwrap()).unwrap();
+        assert_eq!(doc["nodes"].as_array().unwrap().len(), 60);
+        assert_eq!(serial_of(&doc), 61);
+        assert!(!s.root.join(LOCK).exists());
     }
 
     #[test]

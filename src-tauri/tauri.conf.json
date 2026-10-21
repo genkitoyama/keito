@@ -39,6 +39,12 @@
     ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
+    },
+    "category": "Productivity",
+    "shortDescription": "テクニカルディレクター向けの系統図ツール",
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "hardenedRuntime": true
     }
   }
 }
