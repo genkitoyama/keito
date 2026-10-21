@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { SCREEN, edgeTags, textHeightFor, textWeight } from '../canvas/render';
 import { docBounds, isTagged, labelPoint, routeEdges } from '../model/geometry';
-import { LABEL_SIZES } from '../model/labels';
+import { LABEL_SIZE, LABEL_SIZES } from '../model/labels';
 import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
 import { COLOR_KEYS, PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { copySelection, pasteClipboard, useStore } from '../model/store';
@@ -46,6 +46,10 @@ export function QuickBar() {
   // Lines alone (one, or several taken with a drag): the bar's line settings go to all of them.
   const edges = nodes.length ? [] : doc.edges.filter((e) => ids.has(e.id));
   const edge = edges[0];
+  // A line's label size: its own, else the board's. Picking the board's size leaves it following the board.
+  const boardSize = doc.labelSize ?? LABEL_SIZE;
+  const lineSize = edge?.fontSize ?? boardSize;
+  const sizeName = (px: number): string => LABEL_SIZES.find((o) => o.size === px)?.label ?? `${px}px`;
   const setEdges = (p: Partial<Edge>) => st().mutate((d) => ({ ...d, edges: d.edges.map((e) => (ids.has(e.id) ? { ...e, ...p } : e)) }));
   const box = nodes.length ? docBounds(doc, new Set(nodes.map((n) => n.id))) : null;
   // Dragged out of the way by its grip: an offset in screen pixels. The bar is keyed by the
@@ -263,29 +267,32 @@ export function QuickBar() {
       )}
       {edge && (
         <div className={`qb-drop${menu === 'size' ? ' open' : ''}`}>
-          <Btn className="drop labeled" tip="ラベルの文字サイズ" on={menu === 'size'} onClick={toggle('size')}>
+          <Btn
+            className="drop labeled"
+            tip={edge.fontSize ? 'ラベルの文字サイズ（この線だけ変えています）' : 'ラベルの文字サイズ（ボード全体のサイズのまま）'}
+            on={menu === 'size'}
+            onClick={toggle('size')}
+          >
             {ICON.size}
-            <span>{edge.fontSize ? (LABEL_SIZES.find((o) => o.size === edge.fontSize)?.label ?? `${edge.fontSize}px`) : 'ボード設定'}</span>
+            <span>{sizeName(lineSize)}</span>
             {ICON.caret}
           </Btn>
           {menu === 'size' && (
             <div className="qb-menu">
-              <button className={edge.fontSize ? '' : 'on'} onClick={() => {
-                  setEdges({ fontSize: undefined });
-                  setMenu(null);
-                }}>
-                <span>ボード設定に合わせる</span>
-              </button>
               {LABEL_SIZES.map((o) => (
-                <button key={o.size} className={edge.fontSize === o.size ? 'on' : ''} onClick={() => {
-                    setEdges({ fontSize: o.size });
+                <button
+                  key={o.size}
+                  className={lineSize === o.size ? 'on' : ''}
+                  onClick={() => {
+                    setEdges({ fontSize: o.size === boardSize ? undefined : o.size });
                     setMenu(null);
-                  }}>
-                  <span style={{ fontSize: `${o.size + 2}px` }}>
-                    {o.label}（{o.size}px）
-                  </span>
+                  }}
+                >
+                  <span style={{ fontSize: `${o.size + 2}px` }}>{o.label}</span>
+                  {o.size === boardSize && <em>ボード全体と同じ</em>}
                 </button>
               ))}
+              <p className="qb-note">ボード全体のサイズは、何も選ばずに右の「ボード設定」で変えられます。</p>
             </div>
           )}
         </div>

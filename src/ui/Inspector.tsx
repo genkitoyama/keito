@@ -1029,18 +1029,18 @@ function PinNote({ n }: { n: StickyNode }) {
 /** Size of the selected lines' labels: the board's, or one of their own. */
 export function LabelSizeField({ edges }: { edges: Edge[] }) {
   const board = useStore((s) => s.doc.labelSize ?? LABEL_SIZE);
-  const own = edges[0]?.fontSize;
+  const size = edges[0]?.fontSize ?? board;
   const ids = new Set(edges.map((x) => x.id));
+  // The board's size picked here means following the board, so a later board-wide change applies.
   const pick = (v: string) =>
-    useStore.getState().mutate((d) => ({ ...d, edges: d.edges.map((x) => (ids.has(x.id) ? { ...x, fontSize: v ? Number(v) : undefined } : x)) }));
+    useStore.getState().mutate((d) => ({ ...d, edges: d.edges.map((x) => (ids.has(x.id) ? { ...x, fontSize: Number(v) === board ? undefined : Number(v) } : x)) }));
   return (
     <label className="field">
       <span>ラベルの文字サイズ</span>
-      <select value={own ?? ''} onChange={(ev) => pick(ev.target.value)}>
-        <option value="">ボード設定に合わせる（{LABEL_SIZES.find((o) => o.size === board)?.label ?? `${board}px`}）</option>
+      <select value={size} onChange={(ev) => pick(ev.target.value)}>
         {LABEL_SIZES.map((o) => (
           <option key={o.size} value={o.size}>
-            {o.label}（{o.size}px）
+            {o.label}（{o.size}px）{o.size === board ? '　ボード全体と同じ' : ''}
           </option>
         ))}
       </select>

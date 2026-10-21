@@ -2224,3 +2224,22 @@ body.row-dragging .lists td.editable:hover {
 .board-card.trashed button {
   align-self: flex-end;
 }
+/* The size the whole board uses, marked in the line's size menu. */
+.qb-menu button em {
+  margin-left: auto;
+  padding-left: 12px;
+  font-style: normal;
+  font-size: 10.5px;
+  opacity: 0.65;
+  white-space: nowrap;
+}
+.qb-note {
+  width: 180px;
+  white-space: normal;
+  margin: 4px 0 2px;
+  padding: 6px 6px 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.7);
+}
