@@ -1,10 +1,11 @@
 import type { ReactNode } from 'react';
 import { DEV, DEVICE_NAME, crossings, deviceHead, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { edgeLabel, labelFont, labelSize, tagFont } from '../model/labels';
 import { LEGEND, shownRows } from '../model/legend';
 import { lineColor, mix, signalColor } from '../model/lineColor';
-import { cableIds, idShown, ipIssues, labelStacked, lengthShown, powerLoads } from '../model/lists';
+import { cableIds, idShown, ipIssues, lengthShown, powerLoads } from '../model/lists';
 import { SEQ, SEQ_TEXT, parseSequence, seqBands, seqLayout, seqRows, seqScale } from '../model/sequence';
-import { PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
+import { PALETTE, STICKY, STRONG } from '../model/signals';
 import { MONO_FONT, UI_FONT, measure, wrapText } from '../model/text';
 import { safeUrl } from '../model/url';
 import type { DeviceNode, Doc, Edge, Node, Pt, Rect, SequenceNode } from '../model/types';
@@ -532,28 +533,12 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
   }
 }
 
-/** A line's label; may run over several lines when the user's own text does. */
-export function edgeLabel(doc: Doc, e: Edge): string {
-  // A protocol line names what it is and its port ("OSC 7000/udp"): its colour alone would not say.
-  const sig = signalOf(e.signal);
-  if (sig.protocol) return [[sig.id === 'data' ? '' : sig.prefix, e.spec].filter(Boolean).join(' '), e.label.trim()].filter(Boolean).join(labelStacked(doc, e) ? '\n' : ' · ');
-  const id = idShown(doc, e) ? cableIds(doc).get(e.id) : undefined;
-  const length = e.length != null && lengthShown(doc, e) ? `${e.length}m` : '';
-  return [id, e.spec, e.label.trim(), length].filter(Boolean).join(labelStacked(doc, e) ? '\n' : ' · ');
-}
-
-/** Size of a (possibly multi-line) label box. */
-function labelSize(label: string, size: number, font: string): { w: number; h: number; lines: string[] } {
-  const lines = label.split('\n');
-  return { lines, w: Math.max(...lines.map((l) => measure(l, `${size}px ${font}`))) + 10, h: size * 1.6 + (lines.length - 1) * size * 1.35 };
-}
-
 /** Box the label of a line occupies on the board — what you grab to slide it along the line. */
 export function edgeLabelBox(doc: Doc, e: Edge, theme: Theme): Rect | null {
   const pts = routeEdges(doc).get(e.id);
   const label = edgeLabel(doc, e);
   if (!pts || pts.length < 2 || !label || isTagged(doc, e)) return null;
-  const size = e.signal === 'flow' ? 12 : 10.5;
+  const size = labelFont(doc, e);
   const { w, h } = labelSize(label, size, theme.font);
   const at = labelPoint(pts, e.labelAt);
   return { x: at.x - w / 2, y: at.y - h / 2, w, h };
@@ -618,12 +603,12 @@ export function edgeTags(doc: Doc, e: Edge, theme: Theme): EdgeTag[] {
   const id = idShown(doc, e) ? cableIds(doc).get(e.id) : undefined;
   const length = e.length != null && lengthShown(doc, e) ? ` ${e.length}m` : '';
   const power = e.signal === 'power';
-  const size = 10;
+  const size = tagFont(doc);
   const make = (at: Pt, toward: Pt, text: string): EdgeTag => {
     const horizontal = Math.abs(toward.x - at.x) >= Math.abs(toward.y - at.y);
     const s = horizontal ? (toward.x >= at.x ? 1 : -1) : toward.y >= at.y ? 1 : -1;
     const w = measure(text, `${size}px ${theme.font}`) + 10;
-    const h = 15;
+    const h = size * 1.5;
     const lead = 9;
     if (horizontal) return { text, from: at, to: { x: at.x + s * lead, y: at.y }, x: s > 0 ? at.x + lead : at.x - lead - w, y: at.y - h / 2, w, h };
     return { text, from: at, to: { x: at.x, y: at.y + s * lead }, x: at.x - w / 2, y: s > 0 ? at.y + lead : at.y - lead - h, w, h };
@@ -647,7 +632,7 @@ function TaggedEdge({ doc, e, theme }: { doc: Doc; e: Edge; theme: Theme }) {
         <g key={i}>
           <line x1={t.from.x} y1={t.from.y} x2={t.to.x} y2={t.to.y} stroke={ink} strokeWidth={width} />
           <rect x={t.x} y={t.y} width={t.w} height={t.h} rx={3} fill={mix(stroke, '#ffffff', 0.84)} stroke={ink} strokeWidth={1} />
-          <text x={t.x + t.w / 2} y={mid(t.y + t.h / 2, 10)} fontFamily={theme.font} fontSize={10} fill={mix(stroke, '#0f172a', 0.5)} textAnchor="middle">
+          <text x={t.x + t.w / 2} y={mid(t.y + t.h / 2, tagFont(doc))} fontFamily={theme.font} fontSize={tagFont(doc)} fill={mix(stroke, '#0f172a', 0.5)} textAnchor="middle">
             {t.text}
           </text>
         </g>
@@ -668,7 +653,7 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
   const dash = e.dash ? '7 6' : undefined;
   const label = hideLabel ? '' : edgeLabel(doc, e);
   const at = labelPoint(pts, e.labelAt);
-  const size = flow ? 12 : 10.5;
+  const size = labelFont(doc, e);
   const box = labelSize(label, size, theme.font);
   const n = pts.length;
   const width = flow ? 2.4 : 1.8;

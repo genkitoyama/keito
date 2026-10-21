@@ -265,6 +265,8 @@ export interface Doc {
   lengthLabels?: boolean;
   /** Label items one per line instead of side by side (default off); a line's own `stacked` wins. */
   stackedLabels?: boolean;
+  /** Size of the lines' labels in px (default 10.5; see labels.ts). */
+  labelSize?: number;
   /** Draw a small hop where one line crosses another on screen (default off; drawings always hop). */
   hops?: boolean;
   /**

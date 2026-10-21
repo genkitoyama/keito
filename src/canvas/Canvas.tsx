@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent as RMouseEvent, ReactNode, PointerEvent as RPointerEvent } from 'react';
 import { pinTarget } from '../model/comments';
+import { labelFont } from '../model/labels';
 import {
   edgeNear,
   hopOrder,
@@ -1320,7 +1321,7 @@ function TextEditor({ id }: { id: string }) {
   let style: CSSProperties;
   if (!node) {
     const at = labelPoint(routeEdges(doc).get(id) ?? [{ x: 0, y: 0 }], edge?.labelAt);
-    style = { left: view.x + at.x * k, top: view.y + at.y * k, transform: 'translate(-50%, -50%)', minWidth: 48 * k, fontSize: 12 * k, background: '#fff', padding: `${2 * k}px ${6 * k}px`, ...outline };
+    style = { left: view.x + at.x * k, top: view.y + at.y * k, transform: 'translate(-50%, -50%)', minWidth: 48 * k, fontSize: (edge ? labelFont(doc, edge) + 1.5 : 12) * k, background: '#fff', padding: `${2 * k}px ${6 * k}px`, ...outline };
   } else if (node.type === 'device') {
     style = { left: view.x + node.x * k, top: view.y + node.y * k, width: node.w * k, minHeight: deviceHead(node) * k, fontSize: DEVICE_NAME.size * k, fontWeight: 700, background: '#e8edf3', borderRadius: 6 * k };
   } else if (node.type === 'frame') {

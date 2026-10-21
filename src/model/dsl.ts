@@ -16,6 +16,7 @@ export const DSL_GUIDE = `# keito YAML 書式
 title: 図のタイトル
 kind: system               # 任意。ボードの種類 system（システム図）/ software（ソフトウェア構成図）/ sequence / free
 project: 案件名            # 任意
+labelSize: 9               # 任意。線のラベルの文字サイズ（px、標準 10.5）
 signals:                   # 任意。このボードだけの信号種別
   - { id: hdbt, label: HDBaseT, prefix: HDB, color: "#0d9488" }
 listOrder:                 # 任意。表の並びを手で決めたとき（equipment / cables / summary / network ごとに id の順）
@@ -137,6 +138,7 @@ export function toYaml(doc: Doc): string {
   if (doc.lengthLabels === false) out.lengthLabels = false;
   if (doc.stackedLabels) out.stackedLabels = true;
   if (doc.hops) out.hops = true;
+  if (doc.labelSize) out.labelSize = doc.labelSize;
   if (doc.listOrder && Object.keys(doc.listOrder).length) out.listOrder = doc.listOrder;
   if (doc.signals?.length) out.signals = doc.signals.map((s) => ({ ...s }));
   if (doc.signalColors) out.colors = doc.signalColors;
@@ -588,5 +590,5 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   // Revision history is not part of the text form; it stays with the board.
   // A kind known now, or an old one that is a free board now (see boardKind); anything else keeps the board's.
   const kind = typeof root.kind === 'string' && (Object.hasOwn(KINDS, root.kind) || ['layout', 'screen', 'flow'].includes(root.kind)) ? boardKind(root.kind) : prev.kind;
-  return { version: 1, id: prev.id, kind, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
+  return { version: 1, id: prev.id, kind, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, labelSize: typeof root.labelSize === 'number' && root.labelSize > 0 ? root.labelSize : prev.labelSize, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
 }

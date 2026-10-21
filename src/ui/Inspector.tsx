@@ -1,4 +1,5 @@
 import { pinLabel } from '../model/comments';
+import { LABEL_SIZE, LABEL_SIZES } from '../model/labels';
 import { legendRows } from '../model/legend';
 import { useRef, useState } from 'react';
 import { isTagged } from '../model/geometry';
@@ -211,6 +212,7 @@ function MetaPanel() {
   const lenLabels = useStore((s) => s.doc.lengthLabels !== false);
   const stackLabels = useStore((s) => s.doc.stackedLabels === true);
   const hops = useStore((s) => s.doc.hops === true);
+  const labelSize = useStore((s) => s.doc.labelSize ?? LABEL_SIZE);
   // A board-wide choice applies to every line: per-line exceptions for it are cleared.
   const boardLabel = (change: Partial<Doc>, clear: 'showLength' | 'stacked') =>
     useStore.getState().mutate((d) => ({ ...d, ...change, edges: d.edges.map((x) => (x[clear] === undefined ? x : { ...x, [clear]: undefined })) }));
@@ -253,6 +255,16 @@ function MetaPanel() {
           </label>
         </>
       )}
+      <label className="field">
+        <span>線のラベルの文字サイズ</span>
+        <select value={labelSize} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, labelSize: Number(e.target.value) === LABEL_SIZE ? undefined : Number(e.target.value) }))}>
+          {LABEL_SIZES.map((o) => (
+            <option key={o.size} value={o.size}>
+              {o.label}（{o.size}px）
+            </option>
+          ))}
+        </select>
+      </label>
       <label className="check">
         <input type="checkbox" checked={hops} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, hops: e.target.checked || undefined }))} />
         線が交差するところを跨ぎ線（小さな山）にする

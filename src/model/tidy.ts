@@ -1,4 +1,5 @@
 import { anchorOf, center, frameOf, isTagged, nodeRect } from './geometry';
+import { placeLabels } from './labels';
 import { CLEAR } from './router';
 import type { Doc, Edge, Node, Rect } from './types';
 
@@ -414,7 +415,8 @@ function pass(doc: Doc): Doc {
 
 /**
  * Tidy the whole board without rearranging it: balance the area frames, level nodes so lines run
- * straight, and lay parallel bends side by side so they neither overlap nor cross.
+ * straight, lay parallel bends side by side so they neither overlap nor cross, and move the
+ * lines' labels clear of each other.
  */
 export function tidy(doc: Doc): Doc {
   let next = doc;
@@ -424,5 +426,7 @@ export function tidy(doc: Doc): Doc {
     if (JSON.stringify(after) === JSON.stringify(next)) break;
     next = after;
   }
+  // Last, with everything where it ends up: each label slid along its line to where it is clear.
+  next = placeLabels(next);
   return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;
 }
