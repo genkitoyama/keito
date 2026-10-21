@@ -265,39 +265,47 @@ shapes:${NOTE('来場者の位置を床の LiDAR で読み取り、床に映す�
 const SOFTWARE = `title: 【サンプル】ソフトウェア構成
 kind: software
 project: ${PROJECT}
+areas:
+  # One area per machine: the apps that share an address sit together.
+  - { name: センサーPC（192.168.10.12）, color: orange, rect: [20, 0, 600, 400] }
+  - { name: 映像再生PC（192.168.10.11）, color: blue, rect: [680, 0, 610, 400] }
 devices:
   - id: sensor
     name: センサー処理
     model: Python 3.12
     category: アプリ
+    area: センサーPC（192.168.10.12）
     runsOn: sh_sample_sensor
     note: LiDAR 2 台の点群から人の位置を出す
     in: [HTTP:http, LiDAR:udp]
     out: [OSC:osc]
-    pos: [420, 240]
+    pos: [400, 280]
   - id: td
     name: 床映像（TouchDesigner）
     model: TouchDesigner 2025
     category: アプリ
+    area: 映像再生PC（192.168.10.11）
     runsOn: sh_sample_td
     in: [WebSocket:websocket, HTTP:http, OSC:osc]
     width: 220
-    pos: [800, 80]
+    pos: [1040, 100]
   - id: ui
     name: 操作UI（Web）
     model: iPad の Safari で開く
     category: アプリ
+    area: 映像再生PC（192.168.10.11）
     runsOn: sh_sample_td
     out: [WebSocket:websocket]
-    pos: [420, 40]
+    pos: [710, 50]
   - id: boot
     name: 起動・監視スクリプト
     model: Node.js 22
     category: アプリ
+    area: センサーPC（192.168.10.12）
     runsOn: sh_sample_sensor
     note: 開館時に機材とアプリを順に立ち上げ、止まったら再起動する
     out: [HTTP 1:http, HTTP 2:http, PJLink:tcp]
-    pos: [40, 102]
+    pos: [50, 122]
 cables:
   - { from: sensor.OSC, to: td.OSC, type: osc, spec: 7000/udp, label: 人の位置 }
   - { from: ui.WebSocket, to: td.WebSocket, type: websocket, spec: 9980/tcp, label: 演出の切替 }
