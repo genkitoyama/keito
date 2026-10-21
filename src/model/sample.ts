@@ -2,7 +2,7 @@ import { fromYaml } from './dsl';
 import { docBounds } from './geometry';
 import { randomId } from './presets';
 import { catalog, pull } from './shared';
-import { tidy } from './tidy';
+import { placeLabels } from './labels';
 import type { Doc } from './types';
 
 /**
@@ -28,9 +28,11 @@ project: ${PROJECT}
 signals:
   - { id: hdbt, label: HDBaseT, prefix: HDB, color: "#0d9488" }
 areas:
-  - { name: 制御ブース, color: blue }
-  - { name: 展示室, color: green }
+  - { name: 制御ブース, color: blue, rect: [10, 10, 810, 940] }
+  - { name: 展示室, color: green, rect: [860, 10, 900, 940] }
 devices:
+  # The booth on the left, the room on the right: picture and sound run left to right in the
+  # upper rows, the network along the lower ones, and every long run crosses once between them.
   - id: pc1
     name: 映像再生PC
     maker: Dell
@@ -42,8 +44,10 @@ devices:
     watts: 450
     shared: sh_sample_td
     note: TouchDesigner
-    in: [LAN:lan, USB:usb, AC:power]
-    out: [DP 1:video, DP 2:video]
+    in: [AC:power]
+    out: [DP 1:video, DP 2:video, USB:usb, LAN:lan]
+    width: 240
+    pos: [40, 80]
   - id: pc2
     name: センサーPC
     maker: ASUS
@@ -54,34 +58,9 @@ devices:
     host: sensor-pc
     watts: 65
     shared: sh_sample_sensor
-    in: [LAN:lan, DC:power]
-  - id: sw1
-    name: PoEスイッチ
-    maker: NETGEAR
-    model: GS308PP
-    category: ネットワーク
-    area: 制御ブース
-    ip: 192.168.10.2
-    watts: 95
-    in: [AC:power]
-    out: [PoE 1:lan, PoE 2:lan, PoE 3:lan, PoE 4:lan, PoE 5:lan, PoE 6:lan, PoE 7:lan, PoE 8:lan]
-  - id: au1
-    name: オーディオIF
-    maker: RME
-    model: Babyface Pro FS
-    category: 音響
-    area: 制御ブース
-    in: [USB:usb]
-    out: [OUT 1:audio, OUT 2:audio]
-  - id: ups1
-    name: UPS
-    maker: APC
-    model: SMT1500J
-    category: 電源
-    area: 制御ブース
-    capacity: 1000
-    in: [AC IN:power]
-    out: [AC 1:power, AC 2:power, AC 3:power, AC 4:power, AC 5:power, AC 6:power]
+    in: [DC:power]
+    out: [LAN:lan]
+    pos: [40, 504]
   - id: tx1
     name: HDBaseT 送信機 1
     maker: ATEN
@@ -91,6 +70,7 @@ devices:
     watts: 5
     in: [HDMI IN:video, DC:power]
     out: [HDBaseT:hdbt]
+    pos: [600, 80]
   - id: tx2
     name: HDBaseT 送信機 2
     maker: ATEN
@@ -100,6 +80,46 @@ devices:
     watts: 5
     in: [HDMI IN:video, DC:power]
     out: [HDBaseT:hdbt]
+    pos: [600, 200]
+  - id: au1
+    name: オーディオIF
+    maker: RME
+    model: Babyface Pro FS
+    category: 音響
+    area: 制御ブース
+    in: [USB:usb]
+    out: [OUT 1:audio, OUT 2:audio]
+    pos: [600, 320]
+  - id: sw1
+    name: PoEスイッチ
+    maker: NETGEAR
+    model: GS308PP
+    category: ネットワーク
+    area: 制御ブース
+    ip: 192.168.10.2
+    watts: 95
+    in: [AC:power, PoE 1:lan, PoE 2:lan]
+    out: [PoE 3:lan, PoE 4:lan, PoE 5:lan, PoE 6:lan, PoE 7:lan, PoE 8:lan]
+    pos: [600, 460]
+  - id: ipad1
+    name: 操作用 iPad
+    maker: Apple
+    model: iPad (第10世代)
+    category: 操作端末
+    area: 制御ブース
+    ip: 192.168.10.51
+    out: [Wi-Fi:wireless]
+    pos: [600, 832]
+  - id: ups1
+    name: UPS
+    maker: APC
+    model: SMT1500J
+    category: 電源
+    area: 制御ブース
+    capacity: 1000
+    in: [AC IN:power]
+    out: [AC 1:power, AC 2:power, AC 3:power, AC 4:power, AC 5:power, AC 6:power]
+    pos: [40, 680]
   - id: rx1
     name: HDBaseT 受信機 1
     maker: ATEN
@@ -109,6 +129,7 @@ devices:
     watts: 5
     in: [HDBaseT:hdbt, DC:power]
     out: [HDMI OUT:video]
+    pos: [980, 80]
   - id: rx2
     name: HDBaseT 受信機 2
     maker: ATEN
@@ -118,53 +139,7 @@ devices:
     watts: 5
     in: [HDBaseT:hdbt, DC:power]
     out: [HDMI OUT:video]
-  - id: pj1
-    name: プロジェクター 1（床・左）
-    maker: Panasonic
-    model: PT-REZ12
-    category: 映像表示
-    area: 展示室
-    ip: 192.168.10.31
-    watts: 560
-    in: [HDMI:video, LAN:lan, AC:power]
-  - id: pj2
-    name: プロジェクター 2（床・右）
-    maker: Panasonic
-    model: PT-REZ12
-    category: 映像表示
-    area: 展示室
-    ip: 192.168.10.32
-    watts: 560
-    in: [HDMI:video, LAN:lan, AC:power]
-  - id: ld1
-    name: LiDAR 1
-    maker: 北陽電機
-    model: UST-10LX
-    category: センサー
-    area: 展示室
-    ip: 192.168.10.21
-    watts: 4
-    in: [DC 24V:power]
-    out: [LAN:lan]
-  - id: ld2
-    name: LiDAR 2
-    maker: 北陽電機
-    model: UST-10LX
-    category: センサー
-    area: 展示室
-    ip: 192.168.10.22
-    watts: 4
-    in: [DC 24V:power]
-    out: [LAN:lan]
-  - id: psu1
-    name: 24V 電源
-    maker: MEAN WELL
-    model: LRS-50-24
-    category: 電源
-    area: 展示室
-    capacity: 50
-    in: [AC:power]
-    out: [DC 1:power, DC 2:power]
+    pos: [980, 200]
   - id: sp1
     name: パワードスピーカー x2
     maker: GENELEC
@@ -173,6 +148,60 @@ devices:
     area: 展示室
     watts: 50
     in: [IN L:audio, IN R:audio, AC:power]
+    pos: [980, 320]
+  - id: pj1
+    name: プロジェクター 1（床・左）
+    maker: Panasonic
+    model: PT-REZ12
+    category: 映像表示
+    area: 展示室
+    ip: 192.168.10.31
+    watts: 560
+    in: [HDMI:video, AC:power]
+    out: [LAN:lan]
+    width: 220
+    pos: [1300, 80]
+  - id: pj2
+    name: プロジェクター 2（床・右）
+    maker: Panasonic
+    model: PT-REZ12
+    category: 映像表示
+    area: 展示室
+    ip: 192.168.10.32
+    watts: 560
+    in: [HDMI:video, AC:power]
+    out: [LAN:lan]
+    width: 220
+    pos: [1300, 200]
+  - id: ld1
+    name: LiDAR 1
+    maker: 北陽電機
+    model: UST-10LX
+    category: センサー
+    area: 展示室
+    ip: 192.168.10.21
+    watts: 4
+    in: [LAN:lan, DC 24V:power]
+    pos: [980, 570]
+  - id: ld2
+    name: LiDAR 2
+    maker: 北陽電機
+    model: UST-10LX
+    category: センサー
+    area: 展示室
+    ip: 192.168.10.22
+    watts: 4
+    in: [LAN:lan, DC 24V:power]
+    pos: [980, 690]
+  - id: ap1
+    name: Wi-Fi AP
+    maker: TP-Link
+    model: EAP225
+    category: ネットワーク
+    area: 展示室
+    ip: 192.168.10.5
+    in: [LAN/PoE:lan, Wi-Fi:wireless]
+    pos: [980, 810]
   - id: tap1
     name: 電源タップ
     maker: 明工社
@@ -182,41 +211,35 @@ devices:
     capacity: 1500
     in: [AC IN:power]
     out: [AC 1:power, AC 2:power, AC 3:power, AC 4:power, AC 5:power, AC 6:power]
-  - id: ap1
-    name: Wi-Fi AP
-    maker: TP-Link
-    model: EAP225
-    category: ネットワーク
+    pos: [1300, 570]
+  - id: psu1
+    name: 24V 電源
+    maker: MEAN WELL
+    model: LRS-50-24
+    category: 電源
     area: 展示室
-    ip: 192.168.10.5
-    in: [LAN/PoE:lan]
-    out: [Wi-Fi:wireless]
-  - id: ipad1
-    name: 操作用 iPad
-    maker: Apple
-    model: iPad (第10世代)
-    category: 操作端末
-    area: 制御ブース
-    ip: 192.168.10.51
-    in: [Wi-Fi:wireless]
+    capacity: 50
+    in: [AC:power]
+    out: [DC 1:power, DC 2:power]
+    pos: [1300, 810]
 cables:
-  - { from: pc1.DP 1, to: tx1.HDMI IN, type: video, spec: DP→HDMI アクティブ変換, length: 2, label: 床映像 左 }
-  - { from: pc1.DP 2, to: tx2.HDMI IN, type: video, spec: DP→HDMI アクティブ変換, length: 2, label: 床映像 右 }
+  - { from: pc1.DP 1, to: tx1.HDMI IN, type: video, spec: DP→HDMI 変換, length: 2 }
+  - { from: pc1.DP 2, to: tx2.HDMI IN, type: video, spec: DP→HDMI 変換, length: 2 }
   - { from: tx1.HDBaseT, to: rx1.HDBaseT, type: hdbt, spec: Cat6A STP, length: 30 }
   - { from: tx2.HDBaseT, to: rx2.HDBaseT, type: hdbt, spec: Cat6A STP, length: 30 }
   - { from: rx1.HDMI OUT, to: pj1.HDMI, type: video, spec: HDMI, length: 1 }
   - { from: rx2.HDMI OUT, to: pj2.HDMI, type: video, spec: HDMI, length: 1 }
-  - { from: sw1.PoE 1, to: pc1.LAN, type: lan, spec: Cat6, length: 1 }
-  - { from: sw1.PoE 2, to: pc2.LAN, type: lan, spec: Cat6, length: 1 }
-  - { from: ld1.LAN, to: sw1.PoE 3, type: lan, spec: Cat6, length: 30 }
-  - { from: ld2.LAN, to: sw1.PoE 4, type: lan, spec: Cat6, length: 30 }
-  - { from: sw1.PoE 5, to: pj1.LAN, type: lan, spec: Cat6, length: 30, label: PJLink }
-  - { from: sw1.PoE 6, to: pj2.LAN, type: lan, spec: Cat6, length: 30, label: PJLink }
-  - { from: sw1.PoE 7, to: ap1.LAN/PoE, type: lan, spec: Cat6, length: 25 }
-  - { from: ap1.Wi-Fi, to: ipad1.Wi-Fi, type: wireless, label: 操作 }
   - { from: pc1.USB, to: au1.USB, type: usb, length: 1 }
   - { from: au1.OUT 1, to: sp1.IN L, type: audio, spec: TRS-XLR, length: 20 }
   - { from: au1.OUT 2, to: sp1.IN R, type: audio, spec: TRS-XLR, length: 20 }
+  - { from: pc1.LAN, to: sw1.PoE 1, type: lan, spec: Cat6, length: 1 }
+  - { from: pc2.LAN, to: sw1.PoE 2, type: lan, spec: Cat6, length: 1 }
+  - { from: sw1.PoE 3, to: pj2.LAN, type: lan, spec: Cat6, length: 30, label: PJLink }
+  - { from: sw1.PoE 4, to: pj1.LAN, type: lan, spec: Cat6, length: 30, label: PJLink }
+  - { from: sw1.PoE 5, to: ld1.LAN, type: lan, spec: Cat6, length: 30 }
+  - { from: sw1.PoE 6, to: ld2.LAN, type: lan, spec: Cat6, length: 30 }
+  - { from: sw1.PoE 7, to: ap1.LAN/PoE, type: lan, spec: Cat6, length: 25 }
+  - { from: ap1.Wi-Fi, to: ipad1.Wi-Fi, type: wireless, label: 操作 }
   - { from: ups1.AC 1, to: pc1.AC, type: power, length: 2 }
   - { from: ups1.AC 2, to: pc2.DC, type: power, length: 2 }
   - { from: ups1.AC 3, to: sw1.AC, type: power, length: 1.5 }
@@ -243,27 +266,32 @@ devices:
     category: アプリ
     runsOn: sh_sample_sensor
     note: LiDAR 2 台の点群から人の位置を出す
-    in: [LiDAR:udp, HTTP:http]
+    in: [HTTP:http, LiDAR:udp]
     out: [OSC:osc]
+    pos: [420, 240]
   - id: td
     name: 床映像（TouchDesigner）
     model: TouchDesigner 2025
     category: アプリ
     runsOn: sh_sample_td
-    in: [OSC:osc, WebSocket:websocket, HTTP:http]
+    in: [WebSocket:websocket, HTTP:http, OSC:osc]
+    width: 220
+    pos: [800, 80]
   - id: ui
     name: 操作UI（Web）
     model: iPad の Safari で開く
     category: アプリ
     runsOn: sh_sample_td
     out: [WebSocket:websocket]
+    pos: [420, 40]
   - id: boot
     name: 起動・監視スクリプト
     model: Node.js 22
     category: アプリ
     runsOn: sh_sample_sensor
     note: 開館時に機材とアプリを順に立ち上げ、止まったら再起動する
-    out: [PJLink:tcp, HTTP 1:http, HTTP 2:http]
+    out: [HTTP 1:http, HTTP 2:http, PJLink:tcp]
+    pos: [40, 102]
 cables:
   - { from: sensor.OSC, to: td.OSC, type: osc, spec: 7000/udp, label: 人の位置 }
   - { from: ui.WebSocket, to: td.WebSocket, type: websocket, spec: 9980/tcp, label: 演出の切替 }
@@ -318,7 +346,8 @@ export function sampleBoards(): Doc[] {
   try {
     const docs = SAMPLE_BOARDS.map((yaml) => fromYaml(yaml, { version: 1, id: randomId(), meta: { title: '', project: '' }, nodes: [], edges: [] }));
     const entries = catalog(docs);
-    return docs.map((d) => bannerOnTop(d.kind === 'sequence' ? pull(d, entries) : tidy(pull(d, entries))));
+    // The drawings are laid out by hand in the YAML: only the line labels are slid to where they are clear.
+    return docs.map((d) => bannerOnTop(d.kind === 'sequence' ? pull(d, entries) : placeLabels(pull(d, entries))));
   } catch (e) {
     console.error(e);
     return [{ version: 1, id: randomId(), meta: { title: '', project: '' }, nodes: [], edges: [] }];
