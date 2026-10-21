@@ -31,7 +31,7 @@ import { type CreateKind, allIds, claimPort, junctionSignal, makeEdge, makeImage
 import { traceRoute } from '../model/trace';
 import { SEQUENCE_SAMPLE, seqLayout, seqScale } from '../model/sequence';
 import { STRONG } from '../model/signals';
-import { type Placing, copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
+import { type Placing, duplicateInPlace, storeImage, useStore } from '../model/store';
 import { type Doc, type Edge, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
 import { EdgeView, HopCaps, INK, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
@@ -40,7 +40,8 @@ import { QuickBar } from '../ui/QuickBar';
 type Corner = 'nw' | 'ne' | 'sw' | 'se' | 'e';
 type Drag =
   | { kind: 'pan'; sx: number; sy: number; vx: number; vy: number }
-  | { kind: 'move'; start: Pt; orig: Map<string, Pt>; routes: Map<string, Pt[]>; lead: string; moved: boolean }
+  /** `dup`: an Alt-drag, which moves copies away and leaves the originals (made once it really moves). */
+  | { kind: 'move'; start: Pt; orig: Map<string, Pt>; routes: Map<string, Pt[]>; lead: string; moved: boolean; dup?: boolean }
   | { kind: 'segment'; id: string; seg: number; horizontal: boolean; start: Pt; route: Pt[]; moved: boolean }
   | { kind: 'reconnect'; id: string; end: 'from' | 'to'; other: Pt }
   | { kind: 'label'; id: string; start: Pt; moved: boolean }
@@ -375,15 +376,10 @@ export function Canvas() {
     if (e.shiftKey) sel = sel.includes(n.id) ? sel.filter((id) => id !== n.id) : [...sel, n.id];
     else if (!sel.includes(n.id)) sel = [n.id];
     s.select(sel);
-    let lead = n.id;
-    if (e.altKey && sel.includes(n.id)) {
-      // Alt-drag leaves the originals behind and drags fresh copies.
-      const index = sel.filter((id) => s.doc.nodes.some((m) => m.id === id)).indexOf(n.id);
-      copySelection();
-      pasteClipboard(0);
-      sel = st().selection;
-      lead = sel[index] ?? sel[0];
-    }
+    const lead = n.id;
+    // Alt-drag leaves the originals behind and drags fresh copies, made once the pointer moves: a
+    // mere Alt-click copies nothing.
+    const dup = e.altKey && sel.includes(n.id);
     const now = st().doc;
     const ids = new Set(sel);
     const orig = new Map<string, Pt>();
@@ -401,7 +397,7 @@ export function Canvas() {
     // Hand-placed bends travel with a cable when both of its ends are being moved.
     const routes = new Map<string, Pt[]>();
     for (const edge of now.edges) if (edge.route && orig.has(edge.from.node) && orig.has(edge.to.node)) routes.set(edge.id, edge.route);
-    if (orig.has(lead)) begin(e, { kind: 'move', start: world(e), orig, routes, lead, moved: false });
+    if (orig.has(lead)) begin(e, { kind: 'move', start: world(e), orig, routes, lead, moved: false, dup });
   };
 
   const onEdgeDown = (e: RPointerEvent, id: string) => {
@@ -604,6 +600,13 @@ export function Canvas() {
       if (Math.hypot(dx, dy) * s.view.k < 3) return;
       d.moved = true;
       s.checkpoint();
+      if (d.kind === 'move' && d.dup) {
+        // The copies take the originals' places in the drag (in the same undo step).
+        const map = duplicateInPlace(s.selection.filter((id) => s.doc.nodes.some((n) => n.id === id)));
+        d.orig = new Map([...d.orig].map(([id, q]) => [map.get(id) ?? id, q]));
+        d.routes = new Map([...d.routes].map(([id, r]) => [map.get(id) ?? id, r]));
+        d.lead = map.get(d.lead) ?? d.lead;
+      }
     }
     const grid = (v: number): number => (e.altKey ? Math.round(v) : snap(v));
     if (d.kind === 'move') {

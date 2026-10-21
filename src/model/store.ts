@@ -958,6 +958,36 @@ export function copySelection(): void {
   clipboard = { nodes, edges: doc.edges.filter((e) => ids.has(e.from.node) && ids.has(e.to.node)), board: doc.id, project: doc.meta.project?.trim() ?? '' };
 }
 
+/**
+ * Copies of the given nodes, and the lines between them, right on top of them and selected: what
+ * an Alt-drag moves away, leaving the originals. The clipboard is left alone, and the caller keeps
+ * the undo step (the drag's). Says which copy is which: node and line ids, old → new.
+ */
+export function duplicateInPlace(ids: string[]): Map<string, string> {
+  const s = useStore.getState();
+  const keep = new Set(ids);
+  const taken = allIds(s.doc);
+  const map = new Map<string, string>();
+  // A copy on its own board is another thing: the second PC is not the first.
+  const nodes = s.doc.nodes
+    .filter((n) => keep.has(n.id))
+    .map((n) => {
+      const id = freshId(taken, n.id.replace(/\d+$/, '') || 'n');
+      map.set(n.id, id);
+      return { ...n, id, ...('shared' in n ? { shared: undefined, sharedAt: undefined } : {}) } as Node;
+    });
+  const edges = s.doc.edges
+    .filter((e) => keep.has(e.from.node) && keep.has(e.to.node))
+    .map((e) => {
+      const id = freshId(taken, 'e');
+      map.set(e.id, id);
+      return { ...e, id, from: { ...e.from, node: map.get(e.from.node)! }, to: { ...e.to, node: map.get(e.to.node)! } };
+    });
+  s.mutate((d) => ({ ...d, nodes: [...d.nodes, ...nodes], edges: [...d.edges, ...edges] }), false);
+  s.select(nodes.map((n) => n.id));
+  return map;
+}
+
 /** Paste (or duplicate) with fresh ids, keeping the cables between the copied nodes. */
 export function pasteClipboard(offset = 30): void {
   if (!clipboard) return;
