@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ServerResponse } from 'node:http';
+import type { Server, ServerResponse } from 'node:http';
 import type { Connect, Plugin } from 'vite';
-import { Busy, Conflict, Gone, ID, boardsRoot, store } from './store';
+import { Busy, Conflict, Gone, ID, SERVER_FILE, boardsRoot, store } from './store';
 
 /**
  * Board storage on disk, served by the dev / preview server:
@@ -242,14 +242,40 @@ export function keitoBoards(root = boardsRoot()): Plugin {
     });
   };
 
+  // Say where this server listens, in the folder it serves, for `keito url`; unsaid when it stops.
+  const sayWhere = (http: Server | null) => {
+    const file = path.join(root, SERVER_FILE);
+    http?.once('listening', () => {
+      const at = http.address();
+      if (!at || typeof at === 'string') return;
+      const host = at.address === '::1' ? '[::1]' : 'localhost';
+      try {
+        fs.writeFileSync(file, JSON.stringify({ url: `http://${host}:${at.port}/`, pid: process.pid }));
+      } catch (e) {
+        console.warn(`[keito] could not write ${file}: ${e instanceof Error ? e.message : e}`);
+      }
+    });
+    const unsay = () => {
+      try {
+        if (JSON.parse(fs.readFileSync(file, 'utf8')).pid === process.pid) fs.rmSync(file);
+      } catch {
+        // Not ours, or gone already.
+      }
+    };
+    http?.once('close', unsay);
+    process.once('exit', unsay);
+  };
+
   return {
     name: 'keito-boards',
     configureServer(server) {
       watch();
+      sayWhere(server.httpServer);
       server.middlewares.use(handler);
     },
     configurePreviewServer(server) {
       watch();
+      sayWhere(server.httpServer as Server | null);
       server.middlewares.use(handler);
     },
   };
