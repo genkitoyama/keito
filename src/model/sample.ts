@@ -108,6 +108,7 @@ devices:
     category: 操作端末
     area: 制御ブース
     ip: 192.168.10.51
+    shared: sh_sample_ipad
     out: [Wi-Fi:wireless]
     pos: [640, 982]
   - id: ups1
@@ -267,8 +268,9 @@ kind: software
 project: ${PROJECT}
 areas:
   # One area per machine: the apps that share an address sit together.
-  - { name: センサーPC（192.168.10.12）, color: orange, rect: [20, 0, 600, 400] }
-  - { name: 映像再生PC（192.168.10.11）, color: blue, rect: [680, 0, 610, 400] }
+  - { name: 操作用 iPad（192.168.10.51）, color: purple, rect: [680, 0, 280, 140] }
+  - { name: センサーPC（192.168.10.12）, color: orange, rect: [20, 160, 600, 340] }
+  - { name: 映像再生PC（192.168.10.11）, color: blue, rect: [680, 160, 610, 340] }
 devices:
   - id: sensor
     name: センサー処理
@@ -279,7 +281,7 @@ devices:
     note: LiDAR 2 台の点群から人の位置を出す
     in: [HTTP:http, LiDAR:udp]
     out: [OSC:osc]
-    pos: [400, 280]
+    pos: [400, 380]
   - id: td
     name: 床映像（TouchDesigner）
     model: TouchDesigner 2025
@@ -288,13 +290,14 @@ devices:
     runsOn: sh_sample_td
     in: [WebSocket:websocket, HTTP:http, OSC:osc]
     width: 220
-    pos: [1040, 100]
+    pos: [1040, 200]
   - id: ui
     name: 操作UI（Web）
-    model: iPad の Safari で開く
+    model: Safari
     category: アプリ
-    area: 映像再生PC（192.168.10.11）
-    runsOn: sh_sample_td
+    area: 操作用 iPad（192.168.10.51）
+    runsOn: sh_sample_ipad
+    note: 映像再生PC の TouchDesigner が配信するページを開く
     out: [WebSocket:websocket]
     pos: [710, 50]
   - id: boot
@@ -305,13 +308,13 @@ devices:
     runsOn: sh_sample_sensor
     note: 開館時に機材とアプリを順に立ち上げ、止まったら再起動する
     out: [HTTP 1:http, HTTP 2:http, PJLink:tcp]
-    pos: [50, 122]
+    pos: [50, 222]
 cables:
   - { from: sensor.OSC, to: td.OSC, type: osc, spec: 7000/udp, label: 人の位置 }
   - { from: ui.WebSocket, to: td.WebSocket, type: websocket, spec: 9980/tcp, label: 演出の切替 }
   - { from: boot.HTTP 1, to: td.HTTP, type: http, spec: 9981/tcp, label: 死活監視 }
   - { from: boot.HTTP 2, to: sensor.HTTP, type: http, spec: 8080/tcp, label: 死活監視 }
-shapes:${NOTE('系統図の 2 台の PC で動くアプリと、その間の通信（ポート番号つき）です。')}
+shapes:${NOTE('系統図の PC と iPad で動くアプリと、その間の通信（ポート番号つき）です。')}
 `;
 
 const SEQUENCE = `title: 【サンプル】起動手順
