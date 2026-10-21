@@ -3,6 +3,7 @@ import type { CSSProperties, MouseEvent as RMouseEvent, ReactNode, PointerEvent 
 import { pinTarget } from '../model/comments';
 import { labelFont } from '../model/labels';
 import {
+  anchorOf,
   edgeNear,
   hopOrder,
   DEVICE_NAME,
@@ -27,6 +28,7 @@ import {
   snap,
 } from '../model/geometry';
 import { type CreateKind, allIds, claimPort, junctionSignal, makeEdge, makeImage, makeNode } from '../model/presets';
+import { traceRoute } from '../model/trace';
 import { SEQUENCE_SAMPLE, seqLayout, seqScale } from '../model/sequence';
 import { STRONG } from '../model/signals';
 import { type Placing, copySelection, pasteClipboard, storeImage, useStore } from '../model/store';
@@ -44,7 +46,7 @@ type Drag =
   | { kind: 'label'; id: string; start: Pt; moved: boolean }
   | { kind: 'marquee'; start: Pt; base: string[] }
   | { kind: 'resize'; id: string; corner: Corner; start: Pt; orig: Rect; moved: boolean; lock?: number }
-  | { kind: 'connect'; from: EdgeEnd; at: Pt; side?: Dir; sx: number; sy: number }
+  | { kind: 'connect'; from: EdgeEnd; at: Pt; side?: Dir; sx: number; sy: number; trail: Pt[] }
   | { kind: 'place'; start: Pt };
 type ConnectDrag = Extract<Drag, { kind: 'connect' }>;
 type ReconnectDrag = Extract<Drag, { kind: 'reconnect' }>;
@@ -458,7 +460,7 @@ export function Canvas() {
   const onHandleDown = (e: RPointerEvent, from: EdgeEnd, at: Pt, side?: Dir) => {
     if (e.button !== 0 || space) return;
     e.stopPropagation();
-    begin(e, { kind: 'connect', from, at, side, sx: e.clientX, sy: e.clientY });
+    begin(e, { kind: 'connect', from, at, side, sx: e.clientX, sy: e.clientY, trail: [at] });
   };
 
   const onResizeDown = (e: RPointerEvent, n: Node, corner: Corner) => {
@@ -547,6 +549,9 @@ export function Canvas() {
     }
     if (d.kind === 'connect') {
       if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) <= 4) return;
+      // The way the pointer goes is kept: a line traced around things is drawn that way.
+      const last = d.trail[d.trail.length - 1];
+      if (Math.hypot(p.x - last.x, p.y - last.y) * s.view.k >= 3) d.trail.push(p);
       // Nothing to land on: a box of the same kind will be made there (from a shape).
       setGhost({ kind: 'connect', a: d.at, b: p, plan: keepPlan(planConnect(s.doc, d, p, s.view.k) ?? planSpawn(s.doc, d, p)) });
       return;
@@ -994,6 +999,20 @@ function dropAt(doc: Doc, p: Pt, k: number, which: 'from' | 'to', skip?: string)
 
 const planKey = (t: { end: EdgeEnd; box?: string; line?: string }): string => `${t.end.node}|${t.end.port ?? ''}|${t.end.side ?? ''}|${t.end.at ?? ''}|${t.line ?? ''}`;
 
+/** The corners of a line traced along `trail` (with the ends it has on `doc`), or nothing for a plain pull. */
+function tracedRoute(doc: Doc, edge: Edge, trail: Pt[], k: number): Pt[] | undefined {
+  const a = doc.nodes.find((n) => n.id === edge.from.node);
+  const b = doc.nodes.find((n) => n.id === edge.to.node);
+  if (!a || !b || trail.length < 3) return undefined;
+  // Each end faces the way the trail leaves it (a port's side is its own).
+  const from = anchorOf(a, edge.from, trail[1]);
+  const to = anchorOf(b, edge.to, trail[trail.length - 2]);
+  return traceRoute(trail, from, to, TRACE / k);
+}
+
+/** How far (screen px) the hand may wander from a straight stroke before it counts as a corner. */
+const TRACE = 16;
+
 /** A new line pulled from a dot or a port and let go at `p`. */
 function planConnect(doc: Doc, d: ConnectDrag, p: Pt, k: number): Plan | null {
   // A line pulled from an input comes from where the line it is dropped on comes from.
@@ -1016,8 +1035,11 @@ function planConnect(doc: Doc, d: ConnectDrag, p: Pt, k: number): Plan | null {
   if (!from.port) ({ end: from, doc: next } = claimPort(next, from.node, signal, 'right', from.side, from.at));
   if (!to.port) ({ end: to, doc: next } = claimPort(next, to.node, signal, 'left', to.side, to.at));
   // A line merging into another looks like it, so the two read as one from where they meet.
-  const edge = { ...makeEdge(allIds(base), from, to, signal), ...(merged ? { arrow: merged.arrow, color: merged.color, dash: merged.dash } : {}) };
-  return { doc: { ...next, edges: [...next.edges, edge] }, edge: edge.id, box: t.box, side: t.end.side, at: t.end.at, line: t.line, key: planKey(t) };
+  const edge: Edge = { ...makeEdge(allIds(base), from, to, signal), ...(merged ? { arrow: merged.arrow, color: merged.color, dash: merged.dash } : {}) };
+  // Traced around things on the way: the line keeps the corners the pointer took.
+  const traced = merged ? undefined : tracedRoute(next, edge, [...d.trail, p], k);
+  if (traced) edge.route = traced;
+  return { doc: { ...next, edges: [...next.edges, edge] }, edge: edge.id, box: t.box, side: t.end.side, at: t.end.at, line: t.line, key: `${planKey(t)}|${JSON.stringify(traced ?? '')}` };
 }
 
 /** One end of a line dragged elsewhere and let go at `p`. */
