@@ -7,6 +7,7 @@ import { useStore } from '../model/store';
 import { openExport } from './ExportPanel';
 import { ICON } from './icons';
 import { composing } from './keys';
+import { copyText, linkClick } from '../platform/io';
 
 
 export function ListsPanel() {
@@ -175,7 +176,7 @@ export function ListsPanel() {
           <button
             title="この表を、表計算ソフトにそのまま貼れる形でコピーします"
             onClick={() => {
-              void navigator.clipboard.writeText([t.head, ...t.rows].map((r) => r.join('\t')).join('\n'));
+              void copyText([t.head, ...t.rows].map((r) => r.join('\t')).join('\n'));
               setCopied(true);
               window.setTimeout(() => setCopied(false), 1500);
             }}
@@ -252,7 +253,7 @@ export function ListsPanel() {
                   return (
                     <td key={j} className={cls} onClick={edit ? () => setEditing({ row: i, col: j }) : undefined} onPointerDown={handle ? (ev) => grab(ev, i) : undefined}>
                       {/^https?:\/\//.test(c) ? (
-                        <a href={c} target="_blank" rel="noopener noreferrer" title={c} onClick={(e) => e.stopPropagation()}>
+                        <a href={c} target="_blank" rel="noopener noreferrer" title={c} onClick={linkClick(c)}>
                           {c.replace(/^https?:\/\/(www\.)?/, '')}
                         </a>
                       ) : (

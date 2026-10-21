@@ -3,6 +3,7 @@ import { type Diff, describe, diff, labelOf } from '../model/history';
 import { currentBoard, loadState, useStore } from '../model/store';
 import type { Doc, Revision } from '../model/types';
 import { composing } from './keys';
+import { ask, copyText } from '../platform/io';
 
 /** When a state was taken, as the list shows it under its day: "14:32". */
 const time = (r: Revision): string => (r.at ? new Date(r.at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) : '');
@@ -101,7 +102,7 @@ export function Revisions() {
               <button
                 className="danger"
                 onClick={() => {
-                  if (confirm('この時点を履歴から消しますか？ 今の図は変わりません。')) st().deleteRevision(naming.id!);
+                  void ask('この時点を履歴から消しますか？ 今の図は変わりません。').then((yes) => yes && st().deleteRevision(naming.id!));
                   setNaming(null);
                 }}
               >
@@ -192,7 +193,7 @@ function Compare({ entry, onClose }: { entry: Revision; onClose: () => void }) {
                 <span className="grow" />
                 <button
                   onClick={() => {
-                    void navigator.clipboard.writeText(`「${labelOf(entry)}」からの変更点\n${describe(d)}`);
+                    void copyText(`「${labelOf(entry)}」からの変更点\n${describe(d)}`);
                     setCopied(true);
                   }}
                 >
@@ -226,7 +227,7 @@ export function RevisionBanner() {
       <button onClick={() => setComparing(true)}>今との違い</button>
       <button
         onClick={() => {
-          if (confirm('今の図をこの時点の内容に戻しますか？ 今の状態は履歴に残るので、あとから戻せます。')) st().restoreRevision();
+          void ask('今の図をこの時点の内容に戻しますか？ 今の状態は履歴に残るので、あとから戻せます。').then((yes) => yes && st().restoreRevision());
         }}
       >
         この時点に戻す

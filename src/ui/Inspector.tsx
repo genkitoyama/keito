@@ -10,6 +10,7 @@ import { PRESETS, SOFTWARE, freshId } from '../model/presets';
 import { type BoardKind, KINDS, KIND_ORDER, kindOf } from '../model/kinds';
 import { COLOR_KEYS, PALETTE, STICKY, allSignals, groupSignals, signalOf } from '../model/signals';
 import { readImageFile } from '../platform/storage';
+import { linkClick, tell } from '../platform/io';
 import { align, storeImage, useStore } from '../model/store';
 import { type Arrow, type DeviceNode, type Doc, type DocMeta, type Edge, type Node, type Port, type ShapeKind, type StickyNode } from '../model/types';
 import { FILLS, FillPreview, SHAPES, sizesFor } from './icons';
@@ -451,7 +452,7 @@ function DevicePanel({ n }: { n: DeviceNode }) {
         <Field label={soft ? 'リンク（リポジトリ・資料など）' : '型番のリンク（製品ページなど）'} placeholder="https://…" value={n.url ?? ''} onChange={(v) => patch({ url: v || undefined })} />
         {n.url &&
           (link ? (
-            <a className="open-link" href={link} target="_blank" rel="noopener noreferrer">
+            <a className="open-link" href={link} target="_blank" rel="noopener noreferrer" onClick={linkClick(link)}>
               {link.replace(/^https?:\/\/(www\.)?/, '')} を開く ↗
             </a>
           ) : (
@@ -689,7 +690,7 @@ function NodePanel({ n }: { n: Node }) {
           // Keep the width the picture already has on the board; follow the new proportions.
           patch({ src: await storeImage(img.src), text: img.name, h: Math.round((n.w * img.h) / img.w) }, true);
         } catch (e) {
-          alert(e instanceof Error ? e.message : String(e));
+          void tell(e instanceof Error ? e.message : String(e));
         }
       };
       input.click();
@@ -907,7 +908,7 @@ function EdgePanel({ e }: { e: Edge }) {
             <Field label="リンク（製品ページなど）" placeholder="https://…" value={e.url ?? ''} onChange={(v) => patch({ url: v || undefined })} />
             {e.url &&
               (safeUrl(e.url) ? (
-                <a className="open-link" href={safeUrl(e.url)} target="_blank" rel="noopener noreferrer">
+                <a className="open-link" href={safeUrl(e.url)} target="_blank" rel="noopener noreferrer" onClick={linkClick(safeUrl(e.url))}>
                   {safeUrl(e.url)!.replace(/^https?:\/\/(www\.)?/, '')} を開く ↗
                 </a>
               ) : (

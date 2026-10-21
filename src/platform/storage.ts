@@ -30,8 +30,26 @@ export interface TrashedBoard {
   deleted: number;
 }
 
+/** A board written elsewhere: which, at which version, and by which page (when it was one). */
+export interface BoardNews {
+  id?: string;
+  serial?: number;
+  writer?: string;
+}
+
 export interface Backend {
+  /** Where boards are kept: in files on this machine, or in this browser. */
   mode: 'server' | 'local';
+  /** Whether pictures are kept apart from the board, in its folder (else inside the board). */
+  assets: boolean;
+  /** Hear of boards written elsewhere (the command line, another window); returns how to stop. */
+  watch?(news: (n: BoardNews) => void): () => void;
+  /** Where a picture of a board is shown from (an `asset:` source made into a URL the page can load). */
+  assetUrl(boardId: string, src: string): string;
+  /** Whether a board can still be written as the page closes, without asking the user to wait. */
+  fitsExitSave(doc: Doc): boolean;
+  /** Write a board as the page closes: no answer is waited for. */
+  exitSave(doc: Doc): void;
   list(): Promise<BoardInfo[]>;
   load(id: string): Promise<Doc | null>;
   /**
@@ -120,6 +138,11 @@ export const localBoards = (): Doc[] => localList().map((b) => localLoad(b.id)).
 
 const local: Backend = {
   mode: 'local',
+  assets: false,
+  assetUrl: (_boardId, src) => src,
+  // Browser storage is written on the spot.
+  fitsExitSave: () => true,
+  exitSave: (doc) => void local.save(doc),
   // Boards listed before projects and kinds were noted in the index get them from the board itself.
   list: async () =>
     localList().map((b) => {
@@ -197,6 +220,30 @@ export const WRITER = Math.random().toString(36).slice(2, 12);
 
 const server: Backend = {
   mode: 'server',
+  assets: true,
+  watch(news) {
+    if (typeof EventSource === 'undefined') return () => {};
+    const events = new EventSource('/api/events');
+    events.onmessage = (m) => {
+      try {
+        news(JSON.parse(m.data));
+      } catch {
+        // Not news.
+      }
+    };
+    return () => events.close();
+  },
+  assetUrl: (boardId, src) => (src.startsWith('asset:') ? `${API}/${boardId}/assets/${src.slice(6)}` : src),
+  fitsExitSave: (doc) => bytes(JSON.stringify(doc)) <= KEEPALIVE_LIMIT,
+  exitSave(doc) {
+    // keepalive lets the request outlive the page; made on the version this page read, so never
+    // over a change made elsewhere meanwhile.
+    const body = JSON.stringify(doc);
+    if (bytes(body) > KEEPALIVE_LIMIT) return;
+    const serial = serials.get(doc.id);
+    const headers = { 'Content-Type': 'application/json', 'X-Keito-Writer': WRITER, 'If-Match': serial === undefined ? '*' : String(serial) };
+    void fetch(`${API}/${doc.id}`, { method: 'PUT', keepalive: true, headers, body }).catch(() => {});
+  },
   list: async () => ((await (await ok(await fetch(API))).json()) as BoardInfo[]).map((b) => ({ ...b, kind: boardKind(b.kind) })),
   load: async (id) => {
     const res = await fetch(`${API}/${id}`);
@@ -258,8 +305,24 @@ const server: Backend = {
   },
 };
 
-/** Use the on-disk store when the keito server answers; otherwise stay in the browser. */
-export async function connect(): Promise<Backend> {
+/** The store in use, once connected: pictures are shown through it. */
+let current: Backend | null = null;
+
+/** The size of a request body as sent (UTF-8: a Japanese character takes three bytes). */
+const bytes = (s: string): number => new TextEncoder().encode(s).length;
+/** Browsers drop a keepalive request whose body is over 64KB. */
+const KEEPALIVE_LIMIT = 60_000;
+
+/**
+ * Use the store handed in (the desktop app's), else the on-disk store when the keito server
+ * answers, else the browser's own.
+ */
+export async function connect(given?: Backend): Promise<Backend> {
+  current = given ?? (await reach());
+  return current;
+}
+
+async function reach(): Promise<Backend> {
   if (new URLSearchParams(location.search).has('local')) return local;
   try {
     const res = await fetch(API);
@@ -272,11 +335,11 @@ export async function connect(): Promise<Backend> {
 
 /** URL a picture is displayed from. `asset:` sources live in the board's folder. */
 export const assetUrl = (boardId: string | undefined, src: string): string =>
-  src.startsWith('asset:') && boardId ? `${API}/${boardId}/assets/${src.slice(6)}` : src;
+  src.startsWith('asset:') && boardId && current ? current.assetUrl(boardId, src) : src;
 
 /** Move embedded pictures (data URLs) out of the board into its asset folder. */
 export async function externalize(doc: Doc, backend: Backend): Promise<Doc> {
-  if (backend.mode === 'local' || !doc.nodes.some((n) => n.type === 'image' && n.src.startsWith('data:'))) return doc;
+  if (!backend.assets || !doc.nodes.some((n) => n.type === 'image' && n.src.startsWith('data:'))) return doc;
   // Assets hang off the board's folder, which exists once the board has been saved.
   await backend.save(doc);
   const nodes = await Promise.all(doc.nodes.map(async (n) => (n.type === 'image' && n.src.startsWith('data:') ? { ...n, src: await backend.putAsset(doc.id, n.src) } : n)));
@@ -305,49 +368,6 @@ export async function inlineImages(doc: Doc): Promise<Doc> {
     }),
   );
   return { ...doc, nodes };
-}
-
-export function getSetting(name: string): string {
-  return localStorage.getItem(`keito:setting:${name}`) ?? '';
-}
-export function setSetting(name: string, value: string): void {
-  localStorage.setItem(`keito:setting:${name}`, value);
-}
-
-export function download(name: string, data: Blob | string, type = 'application/octet-stream'): void {
-  const blob = typeof data === 'string' ? new Blob([data], { type }) : data;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-export function pickTextFile(accept: string): Promise<{ name: string; text: string } | null> {
-  return new Promise((resolve) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = accept;
-    input.onchange = async () => {
-      const f = input.files?.[0];
-      resolve(f ? { name: f.name, text: await f.text() } : null);
-    };
-    input.oncancel = () => resolve(null);
-    input.click();
-  });
-}
-
-/** Ask for one file of the given kinds; null when the dialog is dismissed. */
-export function pickFile(accept: string): Promise<File | null> {
-  return new Promise((resolve) => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = accept;
-    input.onchange = () => resolve(input.files?.[0] ?? null);
-    input.oncancel = () => resolve(null);
-    input.click();
-  });
 }
 
 export { safeName } from '../model/names';

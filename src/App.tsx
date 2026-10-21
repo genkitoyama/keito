@@ -4,7 +4,7 @@ import { flushSync } from 'react-dom';
 import { Canvas, inGesture, insertImages, spawnFrom, zoomBy } from './canvas/Canvas';
 import { onControl } from './ui/keys';
 import { hasText } from './model/types';
-import { getSetting, setSetting } from './platform/storage';
+import { copyText, getSetting, setSetting } from './platform/io';
 import { copySelection, pasteClipboard, useStore } from './model/store';
 import { ExportPanel } from './ui/ExportPanel';
 import { BoardsPanel } from './ui/Boards';
@@ -14,14 +14,14 @@ import { Inspector } from './ui/Inspector';
 import { ListsPanel } from './ui/ListsPanel';
 import { RevisionBanner } from './ui/Revisions';
 import { TOOL_KEYS, Toolbar } from './ui/Toolbar';
-import { TopBar, saveFile } from './ui/TopBar';
+import { TopBar, saveBoardFile } from './ui/TopBar';
 import { kindOf } from './model/kinds';
 import { isUnderlay } from './model/geometry';
 
 /** Copy on the board, and clear any picture left on the system clipboard so the next paste is this copy. */
 function copyOut() {
   copySelection();
-  if (useStore.getState().selection.length) navigator.clipboard?.writeText('').catch(() => {});
+  if (useStore.getState().selection.length) copyText('').catch(() => {});
 }
 
 function useHotkeys() {
@@ -67,7 +67,7 @@ function useHotkeys() {
         copySelection();
         pasteClipboard();
       } else if (mod && key === 'a') s.select(s.doc.nodes.filter((n) => !isUnderlay(n)).map((n) => n.id));
-      else if (mod && key === 's') void saveFile();
+      else if (mod && key === 's') void saveBoardFile();
       else if (mod && (key === '=' || key === '+')) zoomBy(1.25);
       else if (mod && key === '-') zoomBy(0.8);
       else if (mod && key.startsWith('arrow') && nodeIds.length === 1) spawnFrom(nodeIds[0], key === 'arrowleft' ? 'left' : key === 'arrowright' ? 'right' : key === 'arrowup' ? 'top' : 'bottom');

@@ -10,6 +10,7 @@ import { type ColorKey, type Edge, type Node, hasText } from '../model/types';
 import { safeUrl } from '../model/url';
 import { COLOR_NAME, FILLS, FillPreview, ICON, SHAPES, shapeIcon, sizesFor } from './icons';
 import { useBurst } from './burst';
+import { openLink } from '../platform/io';
 
 const st = useStore.getState;
 const CHECKER = 'repeating-conic-gradient(#c3ccd8 0% 25%, #fff 0% 50%) 50% / 8px 8px';
@@ -316,7 +317,7 @@ export function QuickBar() {
       {edge && <i />}
 
       {deviceLink && (
-        <Btn className="labeled" tip={deviceLink} onClick={() => window.open(deviceLink, '_blank', 'noopener')}>
+        <Btn className="labeled" tip={deviceLink} onClick={() => openLink(deviceLink)}>
           {ICON.link}
           <span>型番のページ</span>
         </Btn>

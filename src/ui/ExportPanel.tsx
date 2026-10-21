@@ -1,9 +1,9 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { type Paper, type PdfPart, boardImage, bookletHtml, copyPng, pdfHtml, pngScale, printHtml, toPng, zipFiles } from '../export/exporters';
+import { type Paper, type PdfPart, boardImage, bookletHtml, pdfHtml, pngScale, printHtml, toPng, zipFiles } from '../export/exporters';
 import { TABLES, type Table, compact, toCsv } from '../model/lists';
 import { KINDS, type ListKey, kindOf } from '../model/kinds';
 import { toYaml } from '../model/dsl';
-import { saveFile } from './TopBar';
+import { saveBoardFile } from './TopBar';
 import { sheetTables } from '../export/sheets';
 import { subset } from '../model/geometry';
 import { loadBoards, useStore } from '../model/store';
@@ -11,7 +11,11 @@ import { withoutComments } from '../model/comments';
 import type { Doc } from '../model/types';
 import { labelOf } from '../model/history';
 import { useProjectTabs } from './BoardTabs';
-import { download, getSetting, inlineImages, pickFile, safeName, setSetting } from '../platform/storage';
+import { inlineImages, safeName } from '../platform/storage';
+import { copyPng, getSetting, pickFile, saveFile, setSetting } from '../platform/io';
+
+/** Save a file; what to say when the user called the save off (nothing when it was saved). */
+const download = async (name: string, data: Blob | string, type?: string): Promise<string | undefined> => ((await saveFile(name, data, type)) ? undefined : '保存をやめました。');
 
 type Mode = 'pdf' | 'image' | 'table' | 'data';
 const MODES: { key: Mode; label: string }[] = [
@@ -237,7 +241,7 @@ export function ExportPanel() {
                   onClick={run(async () => {
                     const { workbook } = await import('../export/xlsx');
                     const files = await Promise.all(withLists.map(async (d) => ({ name: `${safeName(d.meta.title)}_${kindOf(d).listsLabel}.xlsx`, data: await workbook(d) })));
-                    download(`${pack}_表.zip`, await zipFiles(files));
+                    return download(`${pack}_表.zip`, await zipFiles(files));
                   }, 'ZIP を保存しました。')}
                 >
                   Excel をまとめて保存（ZIP）
@@ -294,7 +298,8 @@ export function ExportPanel() {
                     if (!file) return;
                     const { updateWorkbook } = await import('../export/xlsx');
                     const { blob, report } = await updateWorkbook(doc, await file.arrayBuffer());
-                    download(file.name, blob);
+                    const off = await download(file.name, blob);
+                    if (off) return off;
                     const parts = [`追加 ${report.added} 行`, `変更 ${report.changed} 行`, `削除 ${report.removed} 行`];
                     const kept = [report.extra.length && `Excel で足した列（${report.extra.join('・')}）`, report.manual && `手入力の行 ${report.manual} 行`, report.sheets.length && `足したシート（${report.sheets.join('・')}）`].filter(Boolean);
                     return `「${file.name}」を更新して保存しました（${parts.join('・')}）。${kept.length ? `${kept.join('、')}と` : ''}購入ステータスはそのまま引き継いでいます。`;
@@ -308,7 +313,7 @@ export function ExportPanel() {
                 </p>
                 <h4>CSV（1 つの表）</h4>
                 <p className="hint">右のプレビューで開いているシートを保存します（下のタブで切り替え）。</p>
-                <button className="wide" disabled={!csvTable} onClick={run(() => void (csvTable && download(`${name}_${csvTable.title}.csv`, toCsv(csvTable), 'text/csv')), 'CSV を保存しました。')}>
+                <button className="wide" disabled={!csvTable} onClick={run(async () => (csvTable ? download(`${name}_${csvTable.title}.csv`, toCsv(csvTable), 'text/csv') : undefined), 'CSV を保存しました。')}>
                   「{csvTable?.title}」を CSV で保存
                 </button>
               </>
@@ -316,7 +321,7 @@ export function ExportPanel() {
               <>
                 <h4>keito ファイル（.keito.json）</h4>
                 <p className="hint">画像も含めたボードまるごと。ほかの PC の keito で「開く」と元どおりに編集できます。バックアップや受け渡しに。⌘S でも保存できます。</p>
-                <button className="primary wide" onClick={run(() => saveFile(), 'keito ファイルを保存しました。')}>
+                <button className="primary wide" onClick={run(() => saveBoardFile(), 'keito ファイルを保存しました。')}>
                   keito ファイルを保存
                 </button>
                 <h4>YAML（.yaml）</h4>

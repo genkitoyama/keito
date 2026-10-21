@@ -34,6 +34,7 @@ import { STRONG } from '../model/signals';
 import { type Placing, duplicateInPlace, storeImage, useStore } from '../model/store';
 import { type Doc, type Edge, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
+import { tell } from '../platform/io';
 import { EdgeView, HopCaps, INK, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 import { composing, onControl } from '../ui/keys';
@@ -190,7 +191,7 @@ export async function insertImages(files: File[], at?: Pt): Promise<void> {
       s.mutate((d) => ({ ...d, nodes: [...d.nodes, n] }));
       ids.push(n.id);
     } catch (e) {
-      alert(`${file.name}: ${e instanceof Error ? e.message : e}`);
+      void tell(`${file.name}: ${e instanceof Error ? e.message : e}`);
     }
   }
   if (ids.length) {

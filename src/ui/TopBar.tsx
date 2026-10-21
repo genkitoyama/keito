@@ -7,12 +7,13 @@ import { openComments } from '../model/comments';
 import { openBoards } from './Boards';
 import { ICON } from './icons';
 import type { Doc } from '../model/types';
-import { download, inlineImages, pickTextFile, safeName } from '../platform/storage';
+import { inlineImages, safeName } from '../platform/storage';
+import { ask, pickTextFile, saveFile, tell } from '../platform/io';
 
 /** Export the board as one self-contained file, pictures included. */
-export async function saveFile(): Promise<void> {
+export async function saveBoardFile(): Promise<void> {
   const doc = await inlineImages(useStore.getState().doc);
-  download(`${safeName(doc.meta.title)}.keito.json`, JSON.stringify(doc, null, 2), 'application/json');
+  await saveFile(`${safeName(doc.meta.title)}.keito.json`, JSON.stringify(doc, null, 2), 'application/json');
 }
 
 async function openFile(): Promise<void> {
@@ -30,7 +31,7 @@ async function openFile(): Promise<void> {
     if (useStore.getState().boards.some((b) => b.id === doc.id)) doc = { ...doc, id: randomId() };
     useStore.getState().newBoard(doc);
   } catch (e) {
-    alert(`開けませんでした: ${e instanceof Error ? e.message : e}`);
+    void tell(`開けませんでした: ${e instanceof Error ? e.message : e}`);
   }
 }
 
@@ -73,7 +74,7 @@ export function TopBar() {
         className="ghost danger-hover"
         data-tip="このボードを削除（ボード一覧から戻せます）"
         onClick={() => {
-          if (confirm(`「${doc.meta.title}」を削除しますか？\n（ボード一覧の「最近削除したボード」から戻せます）`)) st().deleteBoard(doc.id);
+          void ask(`「${doc.meta.title}」を削除しますか？\n（ボード一覧の「最近削除したボード」から戻せます）`).then((yes) => yes && st().deleteBoard(doc.id));
         }}
       >
         {ICON.trash}

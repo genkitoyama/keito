@@ -10,6 +10,7 @@ import { MONO_FONT, UI_FONT, measure, wrapText } from '../model/text';
 import { safeUrl } from '../model/url';
 import type { DeviceNode, Doc, Edge, Node, Pt, Rect, SequenceNode } from '../model/types';
 import { assetUrl } from '../platform/storage';
+import { linkClick } from '../platform/io';
 
 /** How the board is drawn; the screen and every export share one look. */
 export interface Theme {
@@ -117,7 +118,7 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
       {sub &&
         (link ? (
           // A real link in exported SVG / PDF. On the board, text never takes clicks, so the device still selects.
-          <a href={link} target="_blank" rel="noopener noreferrer">
+          <a href={link} target="_blank" rel="noopener noreferrer" onClick={linkClick(link)}>
             <TextBlock x={x + w / 2} y={y + 33 + extra} w={w - 12} text={sub} size={9.5} fill="#2563eb" underline theme={theme} />
           </a>
         ) : (

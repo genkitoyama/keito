@@ -7,7 +7,7 @@ import { COMMON, type CreateKind, PRESETS, type Preset, SOFTWARE, allIds, freshI
 import { kindOf } from '../model/kinds';
 import type { DeviceNode, Node, Pt, UserPreset } from '../model/types';
 import { type Tool, useStore } from '../model/store';
-import { getSetting, setSetting } from '../platform/storage';
+import { ask, getSetting, setSetting } from '../platform/io';
 import { ICON, ico, shapeIcon } from './icons';
 
 
@@ -168,7 +168,7 @@ function Library() {
                   className="mini remove"
                   data-tip="このプリセットを消す"
                   onClick={() => {
-                    if (confirm(`プリセット「${p.name}」を消しますか？ ボード上の機材は変わりません。`)) useStore.getState().deletePreset(p.id);
+                    void ask(`プリセット「${p.name}」を消しますか？ ボード上の機材は変わりません。`).then((yes) => yes && useStore.getState().deletePreset(p.id));
                   }}
                 >
                   ×
