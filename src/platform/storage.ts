@@ -205,6 +205,18 @@ const local: Backend = {
   savePresets: async (list) => localStorage.setItem('keito:presets', JSON.stringify(list)),
 };
 
+/**
+ * A picture as a board's folder keeps it: its bytes, and a name made from their hash, so the same
+ * picture is stored once and its URL never changes. Null for what is not a picture kept that way.
+ */
+export async function assetOf(dataUrl: string): Promise<{ blob: Blob; name: string } | null> {
+  const blob = await (await fetch(dataUrl)).blob();
+  const ext = EXT[blob.type.split(';')[0]];
+  if (!ext) return null;
+  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+  return { blob, name: `${[...new Uint8Array(digest)].slice(0, 12).map((b) => b.toString(16).padStart(2, '0')).join('')}.${ext}` };
+}
+
 const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp', 'image/svg+xml': 'svg' };
 
 async function ok(res: Response): Promise<Response> {
@@ -277,14 +289,10 @@ const server: Backend = {
     return String(body.id);
   },
   putAsset: async (boardId, dataUrl) => {
-    const blob = await (await fetch(dataUrl)).blob();
-    const ext = EXT[blob.type.split(';')[0]];
-    if (!ext) return dataUrl;
-    // Named by content hash: the same picture is stored once, and its URL never changes.
-    const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
-    const name = `${[...new Uint8Array(digest)].slice(0, 12).map((b) => b.toString(16).padStart(2, '0')).join('')}.${ext}`;
-    await ok(await fetch(`${API}/${boardId}/assets/${name}`, { method: 'PUT', body: blob }));
-    return `asset:${name}`;
+    const picture = await assetOf(dataUrl);
+    if (!picture) return dataUrl;
+    await ok(await fetch(`${API}/${boardId}/assets/${picture.name}`, { method: 'PUT', body: picture.blob }));
+    return `asset:${picture.name}`;
   },
   saveRevision: async (boardId, id, doc) => {
     await ok(await fetch(`${API}/${boardId}/revisions/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(doc) }));

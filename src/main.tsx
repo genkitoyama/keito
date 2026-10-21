@@ -5,7 +5,9 @@ import { boot } from './model/store';
 import './styles.css';
 import './ui/tips';
 
-void boot();
+// In the desktop app, boards are kept through its own store; in a browser, the one found (see connect).
+if ('__TAURI_INTERNALS__' in window) void import('./platform/tauri').then((m) => m.startDesktop());
+else void boot();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
