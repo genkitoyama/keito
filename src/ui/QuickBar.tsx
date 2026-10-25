@@ -3,7 +3,7 @@ import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from
 import { SCREEN, edgeTags, textHeightFor, textWeight } from '../canvas/render';
 import { docBounds, isTagged, labelPoint, routeEdges } from '../model/geometry';
 import { LABEL_SIZE, LABEL_SIZES } from '../model/labels';
-import { LINE_COLORS, lineColor, paintLine } from '../model/lineColor';
+import { LINE_COLORS, lineColor, lineDashed, paintLine } from '../model/lineColor';
 import { COLOR_KEYS, PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
 import { copySelection, pasteClipboard, useStore } from '../model/store';
 import { type ColorKey, type Edge, type Node, hasText } from '../model/types';
@@ -262,10 +262,10 @@ export function QuickBar() {
       )}
       {edge && !tagged && (
         <>
-          <Btn tip="実線" on={!edge.dash} onClick={() => setEdges({ dash: false })}>
+          <Btn tip="実線" on={!lineDashed(edge)} onClick={() => setEdges({ dash: false })}>
             {ICON.lineSolid}
           </Btn>
-          <Btn tip="点線" on={!!edge.dash} onClick={() => setEdges({ dash: true })}>
+          <Btn tip="点線" on={lineDashed(edge)} onClick={() => setEdges({ dash: true })}>
             {ICON.lineDashed}
           </Btn>
         </>

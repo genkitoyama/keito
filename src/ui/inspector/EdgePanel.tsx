@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { isTagged } from '../../model/geometry';
 import { safeUrl } from '../../model/url';
-import { LINE_COLORS, lineColor, paintLine } from '../../model/lineColor';
+import { LINE_COLORS, lineColor, lineDashed, paintLine } from '../../model/lineColor';
 import { cableIds, idShown, labelStacked, lengthShown } from '../../model/lists';
 import { kindOf } from '../../model/kinds';
 import { signalOf } from '../../model/signals';
@@ -126,7 +126,7 @@ export function EdgePanel({ e }: { e: Edge }) {
           </label>
         )}
         <label className="check">
-          <input type="checkbox" checked={!!e.dash} onChange={(ev) => patch({ dash: ev.target.checked }, true)} />
+          <input type="checkbox" checked={lineDashed(e)} onChange={(ev) => patch({ dash: ev.target.checked }, true)} />
           点線にする
         </label>
         {cable && (

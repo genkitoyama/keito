@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { CAPTION_SIZE, DEV, DEVICE_NAME, captionBox, crossings, deviceHead, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { edgeLabel, labelFont, labelSize, tagFont } from '../model/labels';
 import { LEGEND, shownRows } from '../model/legend';
-import { lineColor, mix, signalColor } from '../model/lineColor';
+import { lineColor, lineDashed, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, ipIssues, lengthShown, powerLoads } from '../model/lists';
 import { BLOCK_WORD, SEQ, SEQ_TEXT, parseSequence, seqBands, seqBlocks, seqLayout, seqPlace, seqScale } from '../model/sequence';
 import { IP_SIZE, LOAD_SIZE, ipBadgeWidth, loadBadgeText, tagsStacked } from '../model/badges';
@@ -665,7 +665,7 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
   const intoJunction = doc.nodes.find((n) => n.id === e.to.node)?.type === 'junction';
   const signal = signalStroke(e.signal, theme, lineColor(doc, e));
   const stroke = signal.stroke;
-  const dash = e.dash ? '7 6' : undefined;
+  const dash = lineDashed(e) ? '7 6' : undefined;
   const label = hideLabel ? '' : edgeLabel(doc, e);
   const at = labelPoint(pts, e.labelAt);
   const size = labelFont(doc, e);

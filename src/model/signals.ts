@@ -12,6 +12,8 @@ export interface Signal {
   cable: boolean;
   /** A protocol between pieces of software (software boards), rather than a cable. */
   protocol?: boolean;
+  /** Drawn dashed unless a line says otherwise: what travels without a cable. */
+  dashed?: boolean;
   /** Where it is listed when a type is picked (see SIGNAL_GROUPS). */
   group: SignalGroup;
   /** Added after boards could define types of their own: a board's own type of the same id keeps winning. */
@@ -48,7 +50,7 @@ export const SIGNALS: Signal[] = [
   { id: 'sync', label: '同期（Genlock・LTC）', prefix: 'SYNC', color: '#0d9488', dash: '12 2 2 2 2 2', cable: true, group: 'cable', late: true },
   // Antenna leads (wireless mic receivers, GPS, TV): coax carrying radio.
   { id: 'rf', label: 'RF（アンテナ）', prefix: 'RF', color: '#a16207', dash: '8 4', cable: true, group: 'cable', late: true },
-  { id: 'wireless', label: '無線', prefix: 'WL', color: '#64748b', dash: '1 4', cable: false, group: 'medium' },
+  { id: 'wireless', label: '無線', prefix: 'WL', color: '#64748b', dash: '1 4', cable: false, dashed: true, group: 'medium' },
   { id: 'other', label: 'その他ケーブル', prefix: 'CBL', color: '#1f2937', dash: '', cable: true, group: 'other' },
   // Software boards: how pieces of software talk. Not cables; their port goes in the line's spec.
   { id: 'http', label: 'HTTP(S)', prefix: 'HTTP', color: '#2563eb', dash: '', cable: false, protocol: true, group: 'protocol' },
