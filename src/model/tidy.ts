@@ -1,6 +1,7 @@
-import { anchorOf, center, frameOf, isTagged, nodeRect } from './geometry';
+import { deviceTagRects } from './badges';
+import { anchorOf, captionBox, center, frameOf, isTagged, isUnderlay, nodeRect, routeEdges, simplify, tagChips } from './geometry';
 import { placeLabels } from './labels';
-import { CLEAR } from './router';
+import { CLEAR, type Seg, routeClear } from './router';
 import type { Doc, Edge, Node, Rect } from './types';
 
 const COLUMN = 60; // nodes whose centres are this close in x share a column
@@ -9,6 +10,7 @@ const PAD = 40; // space between an area frame and what it holds
 const EDGE = 120; // frame edges in neighbouring columns this close are made to line up
 const ROW_REACH = 200; // loose items further apart than this are not a row
 const ROW_EVEN = 40; // gaps this close to each other are made equal
+const TRIM = 16; // least space between an area frame and the tags hanging off what it holds
 
 const isH = (dir: string) => dir === 'left' || dir === 'right';
 
@@ -108,6 +110,32 @@ function level(doc: Doc, frozen: Set<string>): { nodes: Map<string, Node>; clash
   return { nodes, clash: null };
 }
 
+/**
+ * How far past its box each node's tags reach (the address and load tags above a device, the
+ * tags beside ports whose lines are drawn as tags, a picture's caption), measured as laid out now.
+ * A frame fitted round its members takes these in, so nothing hangs over its border.
+ */
+function reach(doc: Doc): Map<string, { l: number; t: number; r: number; b: number }> {
+  const out = new Map<string, { l: number; t: number; r: number; b: number }>();
+  const chips = tagChips(doc);
+  for (const n of doc.nodes) {
+    if (n.type === 'frame') continue;
+    const box = nodeRect(n);
+    const near = { x: box.x - 4, y: box.y - 4, w: box.w + 8, h: box.h + 8 };
+    const hung = [...(n.type === 'device' ? deviceTagRects(doc, n) : []), ...chips.filter((c) => overlap(c, near))];
+    const caption = captionBox(n);
+    if (caption) hung.push(caption);
+    if (!hung.length) continue;
+    out.set(n.id, {
+      l: Math.max(0, box.x - Math.min(...hung.map((r) => r.x))),
+      t: Math.max(0, box.y - Math.min(...hung.map((r) => r.y))),
+      r: Math.max(0, Math.max(...hung.map((r) => r.x + r.w)) - (box.x + box.w)),
+      b: Math.max(0, Math.max(...hung.map((r) => r.y + r.h)) - (box.y + box.h)),
+    });
+  }
+  return out;
+}
+
 const bounds = (list: Node[]): Rect => {
   const rects = list.map(nodeRect);
   const x = Math.min(...rects.map((r) => r.x));
@@ -174,6 +202,84 @@ function collision(doc: Doc, nodes: Map<string, Node>): [Node, Node] | null {
   return null;
 }
 
+/**
+ * How tangled the wiring is: crossings and lines run through boxes count most, then stretches of
+ * two lines lying on top of each other, then bends. Lower is cleaner.
+ */
+export function tangle(doc: Doc): number {
+  let score = 0;
+  for (const v of tangles(doc).values()) score += v;
+  return score;
+}
+
+/** The tangle laid at each line's door: its own bends and boxes, and half of every crossing or overlap it is in. */
+function tangles(doc: Doc): Map<string, number> {
+  const routes = routeEdges(doc);
+  const by = new Map<string, number>();
+  const add = (id: string, v: number) => by.set(id, (by.get(id) ?? 0) + v);
+  const boxes = doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'junction' && !isUnderlay(n)).map((n) => ({ id: n.id, r: nodeRect(n) }));
+  const runs: { id: string; flat: boolean; at: number; lo: number; hi: number }[] = [];
+  for (const e of doc.edges) {
+    const pts = routes.get(e.id);
+    if (!pts || isTagged(doc, e)) continue;
+    add(e.id, Math.max(0, pts.length - 2) * 2);
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const seg = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+      for (const { id, r } of boxes) if (id !== e.from.node && id !== e.to.node && seg.x < r.x + r.w - 2 && r.x + 2 < seg.x + seg.w && seg.y < r.y + r.h - 2 && r.y + 2 < seg.y + seg.h) add(e.id, 150);
+      if (Math.abs(a.y - b.y) < 0.5) runs.push({ id: e.id, flat: true, at: a.y, lo: seg.x, hi: seg.x + seg.w });
+      else if (Math.abs(a.x - b.x) < 0.5) runs.push({ id: e.id, flat: false, at: a.x, lo: seg.y, hi: seg.y + seg.h });
+    }
+  }
+  for (const [i, p] of runs.entries()) {
+    for (const q of runs.slice(i + 1)) {
+      if (p.id === q.id) continue;
+      let v = 0;
+      if (p.flat !== q.flat) {
+        // A crossing anywhere along both, short of where either line ends or turns.
+        const [h, w] = p.flat ? [p, q] : [q, p];
+        if (w.at > h.lo + 1 && w.at < h.hi - 1 && h.at > w.lo + 1 && h.at < w.hi - 1) v = 100;
+      } else if (Math.abs(p.at - q.at) < 3) {
+        const shared = Math.min(p.hi, q.hi) - Math.max(p.lo, q.lo);
+        if (shared > 4) v = shared / 4;
+      }
+      if (!v) continue;
+      add(p.id, v / 2);
+      add(q.id, v / 2);
+    }
+  }
+  return by;
+}
+
+/** Lines this many and more are left as levelling makes them, as weighing every move would take too long. */
+const WEIGH_UP_TO = 300;
+/** The most lines one tidy routes afresh round the others. */
+const UNTANGLE_AT_MOST = 12;
+
+/**
+ * Take back the moves of levelling that leave the wiring more tangled than they found it, the
+ * furthest first, so lining one line up never costs a crossing or a line through a box elsewhere.
+ */
+function undoTangles(doc: Doc, nodes: Map<string, Node>): void {
+  if (doc.edges.length >= WEIGH_UP_TO) return;
+  const laid = (m: Map<string, Node>): Doc => ({ ...doc, nodes: doc.nodes.map((n) => m.get(n.id)!), edges: comb(doc, m) });
+  const moved = doc.nodes.filter((n) => n.type !== 'frame' && nodes.get(n.id)!.y !== n.y).sort((p, q) => Math.abs(nodes.get(q.id)!.y - q.y) - Math.abs(nodes.get(p.id)!.y - p.y));
+  let best = tangle(laid(nodes));
+  for (const n of moved) {
+    const trial = new Map(nodes);
+    trial.set(n.id, { ...nodes.get(n.id)!, y: n.y });
+    for (const f of doc.nodes) if (f.type === 'frame') trial.set(f.id, f);
+    refit(doc, trial);
+    if (collision(doc, trial)) continue;
+    const score = tangle(laid(trial));
+    if (score >= best) continue;
+    best = score;
+    nodes.clear();
+    for (const [id, m] of trial) nodes.set(id, m);
+  }
+}
+
 /** Level the nodes, giving up on one move at a time until nothing ends up on top of anything else. */
 function settle(doc: Doc): Map<string, Node> {
   const members = membersOf(doc);
@@ -189,7 +295,12 @@ function settle(doc: Doc): Map<string, Node> {
     const levelled = doc.nodes.filter((n) => n.type !== 'frame' && shift(n.id) > 0).map((n) => n.id);
     refit(doc, nodes);
     const hit = collision(doc, nodes);
-    if (!hit) return nodes;
+    if (!hit) {
+      undoTangles(doc, nodes);
+      // Moves that only pay off together are weighed together too: all of them, or none.
+      if (doc.edges.length < WEIGH_UP_TO && tangle({ ...doc, nodes: doc.nodes.map((n) => nodes.get(n.id)!), edges: comb(doc, nodes) }) > tangle(doc)) break;
+      return nodes;
+    }
     // Blame the node that travelled furthest among those involved, or overall if none of them moved.
     const involved = hit.flatMap((n) => [n.id, ...(members.get(n.id) ?? [])]).filter((id) => levelled.includes(id));
     const culprit = (involved.length ? involved : levelled).sort((p, q) => shift(q) - shift(p))[0];
@@ -223,11 +334,17 @@ function stacks(frames: Node[], nodes: Map<string, Node>): Node[][] {
   return columns.map((col) => col.sort((p, q) => at(p).y - at(q).y));
 }
 
-/** Apply a change, and take it back if it puts anything on top of something it was clear of. */
+/**
+ * Apply a change, and take it back if it puts anything on top of something it was clear of, or
+ * leaves the wiring more tangled than before.
+ */
 function attempt(doc: Doc, nodes: Map<string, Node>, change: () => void): void {
   const before = new Map(nodes);
+  const laid = (m: Map<string, Node>): Doc => ({ ...doc, nodes: doc.nodes.map((n) => m.get(n.id)!), edges: comb(doc, m) });
+  const weigh = doc.edges.length < WEIGH_UP_TO;
+  const was = weigh ? tangle(laid(before)) : 0;
   change();
-  if (!collision(doc, nodes)) return;
+  if (!collision(doc, nodes) && (!weigh || tangle(laid(nodes)) <= was)) return;
   nodes.clear();
   for (const [id, n] of before) nodes.set(id, n);
 }
@@ -272,10 +389,18 @@ function arrange(doc: Doc): Map<string, Node> {
   const frames = plain(doc, nodes, members);
   const whole = (f: Node) => [f.id, ...members.get(f.id)!];
   const right = (col: Node[]) => Math.max(...col.map((f) => nodes.get(f.id)!.x + nodeRect(nodes.get(f.id)!).w));
+  const hangs = reach(doc);
   const fit = (f: Node) => {
-    const b = bounds(members.get(f.id)!.map((id) => nodes.get(id)!));
-    const top = ((f as { fontSize?: number }).fontSize ?? 13) + 19 + PAD - 12;
-    nodes.set(f.id, { ...f, x: b.x - PAD, y: b.y - top, w: b.w + PAD * 2, h: b.h + top + PAD } as Node);
+    const list = members.get(f.id)!.map((id) => nodes.get(id)!);
+    const b = bounds(list);
+    const title = ((f as { fontSize?: number }).fontSize ?? 13) + 19;
+    // The frame keeps its margin round the boxes, and at least a little more round their tags.
+    const out = (n: Node) => hangs.get(n.id) ?? { l: 0, t: 0, r: 0, b: 0 };
+    const x = Math.min(b.x - PAD, ...list.map((n) => n.x - out(n).l - TRIM));
+    const y = Math.min(b.y - (title + PAD - 12), ...list.map((n) => n.y - out(n).t - title - 4));
+    const right = Math.max(b.x + b.w + PAD, ...list.map((n) => n.x + nodeRect(n).w + out(n).r + TRIM));
+    const bottom = Math.max(b.y + b.h + PAD, ...list.map((n) => n.y + nodeRect(n).h + out(n).b + TRIM));
+    nodes.set(f.id, { ...f, x, y, w: right - x, h: bottom - y } as Node);
   };
   for (const col of stacks(frames, nodes)) {
     for (const f of col) attempt(doc, nodes, () => fit(f));
@@ -383,8 +508,9 @@ function rows(doc: Doc, nodes: Map<string, Node>): void {
 }
 
 /**
- * Lines between facing ports go back to automatic routing, which lays their bends side by side.
- * Other hand-made bends come along if both ends moved together, and are dropped otherwise.
+ * Lines whose ends stay put are left as they are. Hand-made bends come along when both ends moved
+ * together and otherwise stay where they were drawn. Automatic lines between facing ports lose any
+ * label position they had, as their bends are laid side by side afresh.
  */
 function comb(doc: Doc, nodes: Map<string, Node>): Edge[] {
   return doc.edges.map((e) => {
@@ -394,14 +520,73 @@ function comb(doc: Doc, nodes: Map<string, Node>): Edge[] {
     const { pa, pb } = at;
     const facing = (l: typeof pa, r: typeof pa) => l.dir === 'right' && r.dir === 'left' && r.x - l.x >= CLEAR * 2;
     const { route, labelAt, ...rest } = e;
-    if (facing(pa, pb) || facing(pb, pa)) return rest;
     const was = (id: string) => doc.nodes.find((n) => n.id === id)!;
     const da = { x: at.a.x - was(at.a.id).x, y: at.a.y - was(at.a.id).y };
     const db = { x: at.b.x - was(at.b.id).x, y: at.b.y - was(at.b.id).y };
+    // A line whose ends stay put keeps the way the user drew it.
     if (!da.x && !da.y && !db.x && !db.y) return e;
     if (route && da.x === db.x && da.y === db.y) return { ...e, route: route.map((p) => ({ x: p.x + da.x, y: p.y + da.y })) };
+    // Hand-placed bends stay: their outer bends follow the ends as drawn, and the drawing falls back
+    // to automatic routing by itself once they no longer line up. Only automatic lines are relaid.
+    if (route) return e;
+    if (facing(pa, pb) || facing(pb, pa)) return rest;
     return labelAt === undefined ? rest : { ...rest, labelAt };
   });
+}
+
+/** The straight pieces of a line's route, as a search kept clear of lines takes them. */
+function segments(pts: { x: number; y: number }[]): Seg[] {
+  const out: Seg[] = [];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    if (Math.abs(a.y - b.y) < 0.5) out.push({ flat: true, at: a.y, lo: Math.min(a.x, b.x), hi: Math.max(a.x, b.x) });
+    else if (Math.abs(a.x - b.x) < 0.5) out.push({ flat: false, at: a.x, lo: Math.min(a.y, b.y), hi: Math.max(a.y, b.y) });
+  }
+  return out;
+}
+
+/**
+ * Give automatic lines that cross others a way round them: each is routed afresh keeping clear of
+ * the lines already there, and the way is kept, as bends of its own, when it leaves the board less
+ * tangled. The worst lines go first; the router alone lays every line as if it were the only one.
+ */
+function untangle(doc: Doc): Doc {
+  if (doc.edges.length >= WEIGH_UP_TO) return doc;
+  const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
+  const obstacles = [...doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'text' && n.type !== 'junction').map(nodeRect), ...tagChips(doc)];
+  const own = tangles(doc);
+  let best = [...own.values()].reduce((sum, v) => sum + v, 0);
+  // A crossing is shared between its two lines; the worst few are tried, as each try weighs the board.
+  const tried = doc.edges
+    .filter((e) => !e.route && !isTagged(doc, e) && nodes.get(e.from.node)?.type !== 'junction' && nodes.get(e.to.node)?.type !== 'junction')
+    .map((e) => ({ e, cost: own.get(e.id) ?? 0 }))
+    .filter((t) => t.cost >= 40)
+    .sort((p, q) => q.cost - p.cost)
+    .slice(0, UNTANGLE_AT_MOST);
+  for (const { e } of tried) {
+    const at = ends(nodes, e);
+    if (!at) continue;
+    const routes = routeEdges(doc);
+    const segs = doc.edges.filter((x) => x.id !== e.id && !isTagged(doc, x)).flatMap((x) => segments(routes.get(x.id) ?? []));
+    const pts = routeClear(at.pa, at.pb, obstacles, segs);
+    if (!pts) continue;
+    const route = simplify(pts).slice(1, -1);
+    if (route.length < 2) continue;
+    let trial = { ...doc, edges: doc.edges.map((x) => (x.id === e.id ? { ...x, route } : x)) };
+    // Lines laid side by side with it are laid afresh without it: those keep the way they had.
+    const after = routeEdges(trial);
+    const same = (p: { x: number; y: number }[], q: { x: number; y: number }[] = []) => p.length === q.length && p.every((v, i) => v.x === q[i].x && v.y === q[i].y);
+    trial = { ...trial, edges: trial.edges.map((x) => {
+      const was = routes.get(x.id) ?? [];
+      return x.id === e.id || x.route || isTagged(doc, x) || was.length < 4 || same(was, after.get(x.id)) ? x : { ...x, route: was.slice(1, -1).map((p) => ({ x: p.x, y: p.y })) };
+    }) };
+    const score = tangle(trial);
+    if (score >= best) continue;
+    best = score;
+    doc = trial;
+  }
+  return doc;
 }
 
 function pass(doc: Doc): Doc {
@@ -426,6 +611,9 @@ export function tidy(doc: Doc): Doc {
     if (JSON.stringify(after) === JSON.stringify(next)) break;
     next = after;
   }
+  // Tidying must not leave the wiring worse than it found it: if it would, only the labels move.
+  if (tangle(next) > tangle(doc)) next = doc;
+  next = untangle(next);
   // Last, with everything where it ends up: each label slid along its line to where it is clear.
   next = placeLabels(next);
   return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;

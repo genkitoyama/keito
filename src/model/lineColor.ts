@@ -22,6 +22,9 @@ export function mix(hex: string, to: string, t: number): string {
 /** Colour a line is drawn in: its own, else its signal type's. */
 export const lineColor = (doc: Doc, e: Edge): string => e.color ?? signalColor(doc, e.signal);
 
+/** Whether a line is drawn dashed: as it says, else as its type is (radio, by default). */
+export const lineDashed = (e: Edge): boolean => e.dash ?? !!signalOf(e.signal).dashed;
+
 /**
  * Recolour a line (`color` null = back to the default). With `all`, the colour
  * goes to the line's whole signal type on this board — every HDMI cable, say —

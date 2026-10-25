@@ -1,0 +1,65 @@
+import { describe, expect, it } from 'vitest';
+import { deviceTagRects } from '../src/model/badges';
+import { frameOf, isTagged, labelPoint, nodeRect, routeEdges, tagChips } from '../src/model/geometry';
+import { sampleBoards } from '../src/model/sample';
+import { tangle, tidy } from '../src/model/tidy';
+import type { Doc, Rect } from '../src/model/types';
+
+const system = () => sampleBoards()[0];
+
+/** The board with every device nudged up or down a little, as boxes end up after dragging by hand. */
+function nudged(doc: Doc, seed: number): Doc {
+  let s = seed;
+  const rand = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  return { ...doc, nodes: doc.nodes.map((n) => (n.type === 'device' ? { ...n, y: n.y + Math.round((rand() - 0.5) * 60) } : n)), edges: doc.edges.map(({ route: _, ...e }) => e) };
+}
+
+const inside = (r: Rect, f: Rect) => r.x >= f.x && r.y >= f.y && r.x + r.w <= f.x + f.w && r.y + r.h <= f.y + f.h;
+
+describe('tidy', () => {
+  it('keeps the bends drawn by hand on lines whose ends stay put', () => {
+    const doc = system();
+    const drawn = doc.edges.filter((e) => e.route);
+    expect(drawn.length).toBeGreaterThan(0);
+    const after = tidy(doc);
+    for (const e of drawn) expect(after.edges.find((x) => x.id === e.id)!.route).toEqual(e.route);
+  });
+
+  it('never leaves the wiring more tangled than it found it', () => {
+    for (const doc of sampleBoards().filter((d) => d.edges.length)) {
+      expect(tangle(tidy(doc))).toBeLessThanOrEqual(tangle(doc));
+      for (const seed of [3, 11, 29]) {
+        const messy = nudged(doc, seed);
+        expect(tangle(tidy(messy))).toBeLessThanOrEqual(tangle(messy));
+      }
+    }
+  });
+
+  it('routes lines knocked off line by hand round the others', () => {
+    const doc = system();
+    for (const seed of [3, 11, 29]) expect(tangle(tidy(nudged(doc, seed)))).toBeLessThanOrEqual(tangle(doc) * 1.25);
+  });
+
+  it('lines up the labels of lines running side by side', () => {
+    const after = tidy(system());
+    const routes = routeEdges(after);
+    // The switch's lines out to the room run side by side: their labels line up.
+    const xs = after.edges.filter((e) => e.from.node === 'sw1' && !isTagged(after, e)).map((e) => Math.round(labelPoint(routes.get(e.id)!, e.labelAt ?? 0.5).x));
+    const column = Math.max(...xs.map((x) => xs.filter((v) => v === x).length));
+    expect(column).toBeGreaterThanOrEqual(2);
+  });
+
+  it('fits the areas round the tags hanging off what they hold', () => {
+    const after = tidy(system());
+    const chips = tagChips(after);
+    for (const n of after.nodes) {
+      if (n.type !== 'device') continue;
+      const frame = frameOf(after, n);
+      if (!frame) continue;
+      const box = nodeRect(n);
+      const near = { x: box.x - 4, y: box.y - 4, w: box.w + 8, h: box.h + 8 };
+      const hung = [...deviceTagRects(after, n), ...chips.filter((c) => c.x < near.x + near.w && near.x < c.x + c.w && c.y < near.y + near.h && near.y < c.y + c.h)];
+      for (const r of hung) expect(inside(r, nodeRect(frame)), `${n.id} tag sticks out of ${frame.id}`).toBe(true);
+    }
+  });
+});

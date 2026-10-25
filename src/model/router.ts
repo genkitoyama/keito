@@ -137,7 +137,34 @@ function withLines(base: number[], s: number, t: number): number[] {
   return out;
 }
 
-function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number): Pt[] | null {
+/** A straight piece of another line: across (`flat`) at y = `at`, or down at x = `at`, from `lo` to `hi`. */
+export interface Seg {
+  flat: boolean;
+  at: number;
+  lo: number;
+  hi: number;
+}
+/** What crossing another line costs a search that is told to keep clear of lines, against a bend's. */
+const CROSS = 400;
+
+/** The cost of running from (x0, y) to (x1, y), or (x, y0) to (x, y1), over the lines in `segs`. */
+function overLines(segs: Seg[], flat: boolean, at: number, lo: number, hi: number): number {
+  let cost = 0;
+  for (const q of segs) {
+    if (q.flat !== flat) {
+      // A line through the grid point at the near end counts on this edge, so none slips between two.
+      if (q.at > lo - 0.5 && q.at < hi - 0.5 && at > q.lo + 1 && at < q.hi - 1) cost += CROSS;
+    } else if (Math.abs(q.at - at) < 14) {
+      // Running on top of another line, or so close beside it that the two read as one.
+      const shared = Math.min(hi, q.hi) - Math.max(lo, q.lo);
+      // On top of it is worse than a crossing even for a short way: it reads as the same line.
+      if (shared > 0) cost += shared * (Math.abs(q.at - at) < 3 ? 40 : 4);
+    }
+  }
+  return cost;
+}
+
+function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: Seg[] = []): Pt[] | null {
   const out = (p: Anchor): Pt => ({ x: p.x + STEP[INDEX[p.dir]][0] * STUB, y: p.y + STEP[INDEX[p.dir]][1] * STUB });
   const s = out(a);
   const t = out(b);
@@ -146,8 +173,10 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number): Pt[] |
   if (inside(s.x, s.y) || inside(t.x, t.y)) return null;
 
   // Grid lines: every inflated node edge, the two ends, and a lane around the outside.
-  const xs = withLines(xb, s.x, t.x);
-  const ys = withLines(yb, s.y, t.y);
+  // Kept clear of other lines, it may also run halfway between two box edges, out of their way.
+  const halves = (v: number[]) => (segs.length ? [...v, ...v.slice(1).map((x, i) => (x + v[i]) / 2)].sort((p, q) => p - q) : v);
+  const xs = withLines(halves(xb), s.x, t.x);
+  const ys = withLines(halves(yb), s.y, t.y);
   const W = xs.length;
   const H = ys.length;
   if (W * H > 40000) return null;
@@ -164,6 +193,19 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number): Pt[] |
     const c = j * W + i;
     if (!down[c]) down[c] = inside(xs[i], (ys[j] + ys[j + 1]) / 2) ? -1 : 1;
     return down[c] === 1;
+  };
+  // What running over other lines costs on the grid edge leaving (i, j) to the right / downwards.
+  const linesRight = segs.length ? new Float64Array(W * H).fill(-1) : null;
+  const linesDown = segs.length ? new Float64Array(W * H).fill(-1) : null;
+  const over = (nd: number, i: number, j: number, ni: number, nj: number): number => {
+    if (!linesRight || !linesDown) return 0;
+    const flat = nd === 0 || nd === 2;
+    const ci = Math.min(i, ni);
+    const cj = Math.min(j, nj);
+    const c = cj * W + ci;
+    const cache = flat ? linesRight : linesDown;
+    if (cache[c] < 0) cache[c] = flat ? overLines(segs, true, ys[cj], xs[ci], xs[ci + 1]) : overLines(segs, false, xs[ci], ys[cj], ys[cj + 1]);
+    return cache[c];
   };
 
   const ti = xs.indexOf(t.x);
@@ -201,7 +243,7 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number): Pt[] |
       const nj = j + STEP[nd][1];
       if (ni < 0 || nj < 0 || ni >= W || nj >= H) continue;
       if (nd === 0 ? !clearRight(i, j) : nd === 2 ? !clearRight(ni, j) : nd === 1 ? !clearDown(i, j) : !clearDown(i, nj)) continue;
-      const cost = g[cur] + Math.abs(xs[ni] - xs[i]) + Math.abs(ys[nj] - ys[j]) + (nd === d ? 0 : BEND);
+      const cost = g[cur] + Math.abs(xs[ni] - xs[i]) + Math.abs(ys[nj] - ys[j]) + (nd === d ? 0 : BEND) + over(nd, i, j, ni, nj);
       const next = (nj * W + ni) * 4 + nd;
       if (cost < g[next] - 1e-9) {
         g[next] = cost;
@@ -228,6 +270,15 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number): Pt[] |
 export function routeAround(a: Anchor, b: Anchor, obstacles: Rect[], margin: number): Pt[] | null {
   for (const m of [margin, 6, 2]) {
     const pts = search(a, b, obstacles, m);
+    if (pts) return pts;
+  }
+  return null;
+}
+
+/** The way round the obstacles that crosses and runs over the lines in `segs` least, or null. */
+export function routeClear(a: Anchor, b: Anchor, obstacles: Rect[], segs: Seg[]): Pt[] | null {
+  for (const m of [12, 6]) {
+    const pts = search(a, b, obstacles, m, segs);
     if (pts) return pts;
   }
   return null;
@@ -290,12 +341,29 @@ export function lanes(runs: Run[], obstacles: Rect[], frames: Rect[]): Map<strin
   }
   const groups = new Map<number, Run[]>();
   for (const [i, u] of runs.entries()) groups.set(find(i), [...(groups.get(find(i)) ?? []), u]);
-
+  const fits = (list: Run[]) => {
+    const lo = Math.max(...list.map((u) => u.l.x)) + CLEAR;
+    const hi = Math.min(...list.map((u) => u.r.x)) - CLEAR;
+    return hi >= lo && (list.length < 2 || (hi - lo) / (list.length - 1) >= 8);
+  };
+  // Lines from different columns can leave no room to bend side by side, all of them together:
+  // those from one column, and into one, still get theirs.
+  const placed: Run[][] = [];
   for (const list of groups.values()) {
+    if (fits(list)) {
+      placed.push(list);
+      continue;
+    }
+    const by = new Map<string, Run[]>();
+    for (const u of list) by.set(`${u.l.x},${u.r.x}`, [...(by.get(`${u.l.x},${u.r.x}`) ?? []), u]);
+    placed.push(...by.values());
+  }
+
+  for (const list of placed) {
     const lo = Math.max(...list.map((u) => u.l.x)) + CLEAR;
     const hi = Math.min(...list.map((u) => u.r.x)) - CLEAR;
     const step = list.length > 1 ? Math.min(TRACK, (hi - lo) / (list.length - 1)) : 0;
-    if (hi < lo || (list.length > 1 && step < 8)) continue;
+    if (!fits(list)) continue;
     const order = ordered(list);
     const width = step * (list.length - 1);
     const mid = (lo + hi) / 2;

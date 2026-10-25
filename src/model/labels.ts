@@ -75,6 +75,11 @@ function onSegment(pts: Pt[], at: number): { i: number; before: number; after: n
   return { i: 0, before: 0, after: 0 };
 }
 
+/** Labels this far apart across their runs are not lined up with each other, in px. */
+const ALIGN_REACH = 480;
+/** What lining a label up with a neighbour is worth, against the costs below. */
+const ALIGNED = 24;
+
 /** Room kept between two labels, in px. */
 const GAP = 6;
 
@@ -84,7 +89,7 @@ const SPOTS = [0.5, ...Array.from({ length: 18 }, (_, i) => 0.5 + (i % 2 ? -1 : 
 /**
  * Slide every line's label along its line to where it is easiest to read: clear of the other
  * labels, the boxes, the tags beside ports, the area titles and borders and the other lines, on a straight run rather than over a
- * bend, and as near the middle as that allows. Lines with the least room are placed first.
+ * bend, in line with the labels of neighbouring lines, and as near the middle as that allows. Lines with the least room are placed first.
  * Only where a label sits along its own line changes; the same board always gives the same result.
  */
 export function placeLabels(doc: Doc): Doc {
@@ -114,11 +119,31 @@ export function placeLabels(doc: Doc): Doc {
     .sort((a, b) => a.len - b.len || a.e.id.localeCompare(b.e.id));
   if (!todo.length) return doc;
   const placed: Rect[] = [];
+  // Where the labels already placed sit, by the way their run goes: labels on runs across line up
+  // under each other, labels on runs down line up side by side.
+  const marks: { flat: boolean; x: number; y: number }[] = [];
   const at = new Map<string, number | undefined>();
-  for (const { e, pts, size } of todo) {
+  for (const { e, pts, size, len } of todo) {
     let best = 0.5;
     let bestCost = Infinity;
-    for (const t of SPOTS) {
+    // Besides the spots spread along it, the line may put its label in line with one already placed.
+    const spots = [...SPOTS];
+    let run = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1];
+      const b = pts[i];
+      const l = Math.hypot(b.x - a.x, b.y - a.y);
+      const flat = Math.abs(a.y - b.y) < 0.5;
+      const half = flat ? size.w / 2 : size.h / 2;
+      for (const m of marks) {
+        if (m.flat !== flat || Math.abs(flat ? m.y - a.y : m.x - a.x) > ALIGN_REACH) continue;
+        const d = flat ? Math.abs(m.x - a.x) : Math.abs(m.y - a.y);
+        const v = flat ? m.x : m.y;
+        if (v > Math.min(flat ? a.x : a.y, flat ? b.x : b.y) + half && v < Math.max(flat ? a.x : a.y, flat ? b.x : b.y) - half) spots.push((run + d) / len);
+      }
+      run += l;
+    }
+    for (const t of spots) {
       const p = labelPoint(pts, t);
       const r = { x: p.x - size.w / 2, y: p.y - size.h / 2, w: size.w, h: size.h };
       const own = size.w * size.h;
@@ -145,11 +170,18 @@ export function placeLabels(doc: Doc): Doc {
       const half = Math.abs(b.x - a.x) >= Math.abs(b.y - a.y) ? size.w / 2 : size.h / 2;
       if (s.before < half || s.after < half) cost += 40;
       cost += Math.abs(t - 0.5) * 40;
+      // Labels out of line with their neighbours read as scattered.
+      const flat = Math.abs(b.y - a.y) < 0.5;
+      if (marks.some((m) => m.flat === flat && (flat ? Math.abs(m.y - p.y) <= ALIGN_REACH && Math.abs(m.x - p.x) < 1 : Math.abs(m.x - p.x) <= ALIGN_REACH && Math.abs(m.y - p.y) < 1))) cost -= ALIGNED;
       if (cost < bestCost - 1e-6) [best, bestCost] = [t, cost];
     }
     const p = labelPoint(pts, best);
     placed.push({ x: p.x - size.w / 2, y: p.y - size.h / 2, w: size.w, h: size.h });
-    at.set(e.id, Math.abs(best - 0.5) < 0.02 ? undefined : Math.round(best * 1000) / 1000);
+    const s = onSegment(pts, best);
+    const a = pts[s.i];
+    const b = pts[s.i + 1] ?? a;
+    marks.push({ flat: Math.abs(b.y - a.y) < 0.5, x: p.x, y: p.y });
+    at.set(e.id, Math.abs(best - 0.5) < 0.02 ? undefined : Math.round(best * 10000) / 10000);
   }
   let changed = false;
   const edges = doc.edges.map((e) => {

@@ -2,9 +2,10 @@ import type { ReactNode } from 'react';
 import { CAPTION_SIZE, DEV, DEVICE_NAME, captionBox, crossings, deviceHead, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { edgeLabel, labelFont, labelSize, tagFont } from '../model/labels';
 import { LEGEND, shownRows } from '../model/legend';
-import { lineColor, mix, signalColor } from '../model/lineColor';
+import { lineColor, lineDashed, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, ipIssues, lengthShown, powerLoads } from '../model/lists';
 import { BLOCK_WORD, SEQ, SEQ_TEXT, parseSequence, seqBands, seqBlocks, seqLayout, seqPlace, seqScale } from '../model/sequence';
+import { IP_SIZE, LOAD_SIZE, ipBadgeWidth, loadBadgeText, tagsStacked } from '../model/badges';
 import { PALETTE, STICKY, STRONG } from '../model/signals';
 import { MONO_FONT, UI_FONT, measure, wrapText } from '../model/text';
 import { safeUrl } from '../model/url';
@@ -145,8 +146,6 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
   );
 }
 
-const IP_SIZE = 10.5;
-
 /**
  * The device's address on a tag above its top-left corner, in the device's own colour, so the
  * network reads straight off the drawing: the IP in bold, the host name after it. An address
@@ -178,50 +177,6 @@ function IpBadge({ n, doc }: { n: DeviceNode; doc?: Doc }) {
       </text>
     </g>
   );
-}
-
-/** Load summary above a power source: how many devices it feeds and how many watts they draw. */
-function loadBadgeText(doc: Doc, n: DeviceNode): string {
-  const load = powerLoads(doc).get(n.id);
-  if (!load) return '';
-  const watts = load.capacity != null ? `${load.watts} / ${load.capacity}W` : load.watts ? `${load.watts}W` : '';
-  return [`⚡ ${load.ids.length}台`, watts, load.over ? '容量超過' : ''].filter(Boolean).join(' · ');
-}
-const LOAD_SIZE = 10.5;
-const loadBadgeWidth = (doc: Doc, n: DeviceNode): number => {
-  const text = loadBadgeText(doc, n);
-  return text ? measure(text, `600 ${LOAD_SIZE}px ${UI_FONT}`) + 12 : 0;
-};
-
-/** Width of a device's address tag; 0 when it has no address. */
-function ipBadgeWidth(n: DeviceNode): number {
-  const ip = n.ip?.trim();
-  const host = n.host?.trim();
-  if (!ip && !host) return 0;
-  const gap = ip && host ? IP_SIZE * 0.8 : 0;
-  return (ip ? measure(ip, `700 ${IP_SIZE}px ${MONO_FONT}`) : 0) + gap + (host ? measure(host, `400 ${IP_SIZE}px ${MONO_FONT}`) : 0) + 12;
-}
-
-/**
- * Whether a device's address tag and power tag are too wide to share the row above it. Then the
- * two stack, address on top, and both line up on the device's left edge instead of one on each
- * side, which would leave them staggered.
- */
-function tagsStacked(doc: Doc, n: DeviceNode): boolean {
-  const ip = ipBadgeWidth(n);
-  const load = loadBadgeWidth(doc, n);
-  return !!ip && !!load && ip + load + 4 > n.w;
-}
-
-/** Where the tags over a device are drawn (its address, its power load): an exported picture takes them in. */
-export function deviceTagRects(doc: Doc, n: DeviceNode): Rect[] {
-  const out: Rect[] = [];
-  const stacked = tagsStacked(doc, n);
-  const ip = ipBadgeWidth(n);
-  if (ip) out.push({ x: n.x, y: n.y - 20 - (stacked ? 18 : 0), w: ip, h: 16 });
-  const load = loadBadgeWidth(doc, n);
-  if (load) out.push({ x: stacked ? n.x : n.x + n.w - load, y: n.y - 20, w: load, h: 16 });
-  return out;
 }
 
 function LoadBadge({ doc, n, theme }: { doc: Doc; n: DeviceNode; theme: Theme }) {
@@ -710,7 +665,7 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
   const intoJunction = doc.nodes.find((n) => n.id === e.to.node)?.type === 'junction';
   const signal = signalStroke(e.signal, theme, lineColor(doc, e));
   const stroke = signal.stroke;
-  const dash = e.dash ? '7 6' : undefined;
+  const dash = lineDashed(e) ? '7 6' : undefined;
   const label = hideLabel ? '' : edgeLabel(doc, e);
   const at = labelPoint(pts, e.labelAt);
   const size = labelFont(doc, e);

@@ -72,7 +72,7 @@ shapes:                    # フローチャート・付箋
     fontSize: 18           # 任意。文字サイズ(px)。shape: text は 20 以上で太字の見出しになる
     bold: true             # 任意。太字
     fill: solid            # 任意。tint(既定・淡色) solid(ベタ塗り。red で真っ赤) outline(白地) none(透過)
-    dash: true             # 任意。枠を点線に（cables / flows でも dash: true で点線）
+    dash: true             # 任意。枠を点線に（cables / flows でも dash: true で点線、無線は既定で点線なので実線にするなら dash: false）
 flows:                     # 矢印コネクタ（shapes / devices どちらも可）
   - { from: s1, to: s2, label: はい }   # toSide: left などで入る辺を固定（同じ辺に入る線は手前で合流する。fromSide も可）。toAt: 0.3 でその辺のどこか（0〜1、左端・上端から。省略で真ん中）
 images:                    # 埋め込み画像。データ本体は id で引き継がれる（src に data URL / URL も可）
@@ -200,7 +200,7 @@ export function toYaml(doc: Doc): string {
       put(o, 'label', e.label);
       put(o, 'note', e.note);
       if (e.arrow !== 'none') o.arrow = e.arrow;
-      if (e.dash) o.dash = true;
+      if (e.dash != null) o.dash = e.dash;
       if (e.color) o.color = e.color;
       if (e.tag != null) o.tag = e.tag;
       if (e.labelAt != null) o.labelAt = e.labelAt;
@@ -236,7 +236,7 @@ export function toYaml(doc: Doc): string {
       if (e.fontSize) o.fontSize = e.fontSize;
       if (e.arrow !== 'end') o.arrow = e.arrow;
       if (e.color) o.color = e.color;
-      if (e.dash) o.dash = true;
+      if (e.dash != null) o.dash = e.dash;
       if (e.labelAt != null) o.labelAt = e.labelAt;
       if (e.route?.length) o.route = e.route.map((p) => [r(p.x), r(p.y)]);
       return o;
@@ -531,7 +531,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     e.model = str(v.model) || undefined;
     e.url = str(v.url) || undefined;
     if (v.arrow === 'end' || v.arrow === 'both') e.arrow = v.arrow;
-    if (v.dash === true) e.dash = true;
+    if (typeof v.dash === 'boolean') e.dash = v.dash;
     if (HEX.test(str(v.color))) e.color = str(v.color);
     if (typeof v.tag === 'boolean') e.tag = v.tag;
     if (typeof v.labelAt === 'number') e.labelAt = Math.min(0.96, Math.max(0.04, v.labelAt));
@@ -551,7 +551,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (typeof v.fontSize === 'number' && v.fontSize > 0) e.fontSize = v.fontSize;
     if (v.arrow === 'none' || v.arrow === 'both') e.arrow = v.arrow;
     if (HEX.test(str(v.color))) e.color = str(v.color);
-    if (v.dash === true) e.dash = true;
+    if (typeof v.dash === 'boolean') e.dash = v.dash;
     if (typeof v.labelAt === 'number') e.labelAt = Math.min(0.96, Math.max(0.04, v.labelAt));
     // Hand-placed bends, as for cables (and dropped the same way by a fresh layout).
     const bends = relayout ? [] : arr(v.route).map((p) => nums(p, 2)).filter((p): p is number[] => !!p);

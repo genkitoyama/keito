@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { DocView, SCREEN, deviceTagRects } from '../canvas/render';
+import { DocView, SCREEN } from '../canvas/render';
+import { deviceTagRects } from '../model/badges';
 import { docBounds } from '../model/geometry';
 import type { Table } from '../model/lists';
 import type { Doc, Rect } from '../model/types';
