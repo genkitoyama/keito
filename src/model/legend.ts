@@ -1,10 +1,11 @@
-import { lineColor } from './lineColor';
+import { isTagged } from './geometry';
+import { lineColor, lineDashed } from './lineColor';
 import { colourKey } from './lists';
 import { COLOR_NAME, PALETTE, allSignals, signalOf } from './signals';
 import type { ColorKey, DeviceNode, Doc, LegendNode } from './types';
 
 /** Layout of a legend block: padding, the height of a row and of the title line. */
-export const LEGEND = { pad: 10, row: 22, title: 20, sample: 40, section: 18, column: 180, gap: 16 };
+export const LEGEND = { pad: 12, row: 22, title: 24, sample: 40, section: 20, column: 180, gap: 20 };
 
 export interface LegendRow {
   /** Left out of the drawn legend; still listed in the panel so it can be brought back. */
@@ -14,6 +15,9 @@ export interface LegendRow {
   name: string;
   /** What the row is called when no name was given: the signal types drawn in this colour. */
   usual: string;
+  /** How the lines of this colour are drawn, for the sample: dashed, and as tags beside the ports rather than lines. */
+  dashed: boolean;
+  tagged: boolean;
 }
 
 /**
@@ -23,17 +27,22 @@ export interface LegendRow {
 export function legendRows(doc: Doc, n: LegendNode): LegendRow[] {
   const order = allSignals().map((s) => s.id);
   const groups = new Map<string, Set<string>>();
+  // A sample is drawn as the lines are only when every line of the colour is drawn that way.
+  const dashed = new Map<string, boolean>();
+  const tagged = new Map<string, boolean>();
   for (const e of doc.edges) {
     if (e.signal === 'flow') continue;
     const color = lineColor(doc, e).toLowerCase();
     groups.set(color, (groups.get(color) ?? new Set()).add(e.signal));
+    dashed.set(color, (dashed.get(color) ?? true) && lineDashed(e));
+    tagged.set(color, (tagged.get(color) ?? true) && isTagged(doc, e));
   }
   const first = (signals: Set<string>) => Math.min(...[...signals].map((s) => (order.indexOf(s) < 0 ? order.length : order.indexOf(s))));
   return [...groups]
     .sort((a, b) => first(a[1]) - first(b[1]))
     .map(([color, signals]) => {
       const usual = [...signals].sort((a, b) => order.indexOf(a) - order.indexOf(b)).map((s) => signalOf(s).label).join(' / ');
-      return { color, usual, name: n.names?.[color]?.trim() || usual, hidden: !!n.hidden?.includes(color) };
+      return { color, usual, name: n.names?.[color]?.trim() || usual, hidden: !!n.hidden?.includes(color), dashed: !!dashed.get(color), tagged: !!tagged.get(color) };
     });
 }
 
