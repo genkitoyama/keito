@@ -39,6 +39,7 @@ devices:
     price: 120000          # 任意。単価（円）。機材リストで数量を掛けて金額になる
     qty: 2                 # 任意。この 1 枠が表す台数（省略時は名前末尾の「x2」、なければ 1）
     vendor: 手配先          # 任意。手配先・担当（機材リストの「区分」になる）
+    venue: true            # 任意。会場の設備（会場電源・備え付けの機材など）。持ち込まないので機材リストに載らない
     ip: 192.168.0.10       # 任意。IP アドレス / host でホスト名（ネットワーク表に出る）
     shared: sh_ab12cd34    # 任意。同じ案件のほかのボードと「同じもの」にするキー（同じキーどうしで名前・型番・IP などがそろう）
     runsOn: sh_ab12cd34    # 任意。ソフトウェア構成図の部品が動く機材の shared キー（ホスト名・IP がその機材に合う）
@@ -79,6 +80,7 @@ images:                    # 埋め込み画像。データ本体は id で引�
   - { id: img1, name: logo, pos: [x, y], size: [w, h] }   # under: true で下敷き（一番下に薄く敷き、クリックで選ばれない）
 legends:                   # 凡例。使っている線の色が自動で並ぶ。names で行の呼び名を付けられる
   - { id: legend1, pos: [x, y], title: 凡例, names: { "#ea7a2e": 映像系統 } }
+                           # devices: true で機材の色（手配先）と会場の設備の行も並ぶ（names のキーは "device:blue" / "device:venue"）。width が 396 以上なら線と機材が左右 2 列
 junctions:                 # 分岐点（古いボードの形式。新しくは書かない。同じ to に向かう線は図で自動的に合流する）
   - { id: j1, pos: [x, y] }
 sequences:
@@ -166,6 +168,7 @@ export function toYaml(doc: Doc): string {
       put(o, 'note', d.note);
       put(o, 'qty', d.qty);
       put(o, 'vendor', d.vendor);
+      if (d.venue) o.venue = true;
       put(o, 'ip', d.ip);
       put(o, 'host', d.host);
       put(o, 'shared', d.shared);
@@ -260,6 +263,7 @@ export function toYaml(doc: Doc): string {
       const o: Obj = { id: n.id, pos: [r(n.x), r(n.y)], width: r(n.w), title: n.text };
       if (n.names && Object.keys(n.names).length) o.names = n.names;
       if (n.hidden?.length) o.hidden = n.hidden;
+      if (n.devices) o.devices = true;
       return o;
     });
   }
@@ -388,6 +392,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
       color: str(v.color) in PALETTE ? (str(v.color) as ColorKey) : undefined,
       qty: typeof v.qty === 'number' && v.qty >= 1 ? Math.round(v.qty) : undefined,
       vendor: str(v.vendor) || undefined,
+      venue: v.venue === true || undefined,
       ip: str(v.ip) || undefined,
       host: str(v.host) || undefined,
       price: typeof v.price === 'number' ? v.price : undefined,
@@ -432,7 +437,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (!isObj(v)) throw new Error(`legends[${i}]: マップではありません`);
     const id = claim(v.id, 'legend', `legends[${i}]`);
     const names = isObj(v.names) ? Object.fromEntries(Object.entries(v.names).map(([k, name]) => [k.toLowerCase(), str(name)]).filter(([, name]) => name)) : {};
-    nodes.push({ id, type: 'legend', ...place(id, v.pos), w: typeof v.width === 'number' ? v.width : 200, h: 64, text: typeof v.title === 'string' ? v.title : '凡例', names: Object.keys(names).length ? names : undefined, hidden: arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean).length ? arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean) : undefined });
+    nodes.push({ id, type: 'legend', ...place(id, v.pos), w: typeof v.width === 'number' ? v.width : 200, h: 64, text: typeof v.title === 'string' ? v.title : '凡例', names: Object.keys(names).length ? names : undefined, hidden: arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean).length ? arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean) : undefined, devices: v.devices === true || undefined });
   });
 
   arr(root.sequences).forEach((v, i) => {

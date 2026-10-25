@@ -110,6 +110,21 @@ export const PALETTE: Record<ColorKey, { fill: string; stroke: string }> = {
   red: { fill: '#fee2e2', stroke: '#ef4444' },
   purple: { fill: '#fae8ff', stroke: '#c026d3' },
 };
+/** A device with no colour: its header and outline. */
+export const PLAIN_DEVICE = { fill: '#e8edf3', stroke: '#334155' };
+/** A device's header and outline in a colour: gray is the plain look. */
+export const deviceTint = (c: ColorKey): { fill: string; stroke: string } => (c === 'gray' ? PLAIN_DEVICE : PALETTE[c]);
+/** What each colour is called in the editor. */
+export const COLOR_NAME: Record<ColorKey, string> = {
+  white: '白',
+  gray: 'グレー',
+  blue: '青',
+  green: '緑',
+  yellow: '黄',
+  orange: 'オレンジ',
+  red: '赤',
+  purple: '紫',
+};
 /** Full-strength colours for solid fills and for the border of outline / see-through shapes. */
 export const STRONG: Record<ColorKey, { fill: string; text: string }> = {
   white: { fill: '#64748b', text: '#ffffff' },

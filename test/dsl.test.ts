@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { fromYaml, toYaml } from '../src/model/dsl';
 import { docBounds, nodeAt } from '../src/model/geometry';
 import type { DeviceNode } from '../src/model/types';
-import { sample } from './helpers';
+import { blank, sample } from './helpers';
 
 describe('YAML', () => {
   it('keeps label sizes, quantities and prices through a round trip', () => {
@@ -36,6 +36,22 @@ describe('YAML', () => {
   it('gives the same YAML back for the sample board', () => {
     const d = sample();
     expect(toYaml(fromYaml(toYaml(d), d))).toBe(toYaml(d));
+  });
+});
+
+describe('YAML keeps what devices and lines are', () => {
+  it('keeps a device the venue has, and a radio line made solid', () => {
+    const doc = fromYaml(`title: t
+devices:
+  - { id: w, name: 会場電源, venue: true, out: [AC:power] }
+  - { id: ap, name: AP, out: [Wi-Fi:wireless] }
+  - { id: pad, name: iPad, in: [Wi-Fi:wireless] }
+cables:
+  - { from: ap.Wi-Fi, to: pad.Wi-Fi, type: wireless, dash: false }
+`, blank());
+    const back = fromYaml(toYaml(doc), doc);
+    expect((back.nodes.find((n) => n.id === 'w') as DeviceNode).venue).toBe(true);
+    expect(back.edges[0].dash).toBe(false);
   });
 });
 

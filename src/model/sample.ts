@@ -3,6 +3,7 @@ import { docBounds } from './geometry';
 import { randomId } from './presets';
 import { catalog, pull } from './shared';
 import { placeLabels } from './labels';
+import { fitLegends } from './legend';
 import type { Doc } from './types';
 
 /**
@@ -28,8 +29,8 @@ project: ${PROJECT}
 signals:
   - { id: hdbt, label: HDBaseT, prefix: HDB, color: "#0d9488" }
 areas:
-  - { name: 制御ブース, color: blue, rect: [-20, 10, 910, 1090] }
-  - { name: 展示室, color: green, rect: [1090, 10, 970, 1090] }
+  - { name: 制御ブース, color: blue, rect: [-20, 10, 910, 1170] }
+  - { name: 展示室, color: green, rect: [1090, 10, 970, 1170] }
 devices:
   # The booth on the left, the room on the right: picture and sound run left to right in the
   # upper rows, the network along the lower ones, and every long run crosses once between them.
@@ -219,6 +220,24 @@ devices:
     in: [AC IN:power]
     out: [AC 1:power, AC 2:power, AC 3:power, AC 4:power, AC 5:power, AC 6:power, AC 7:power, AC 8:power]
     pos: [1560, 580]
+  - id: mains1
+    name: 会場電源
+    category: 電源
+    area: 制御ブース
+    venue: true
+    capacity: 1500
+    note: 壁コンセント（15A 回路）
+    out: [AC:power]
+    pos: [100, 1070]
+  - id: mains2
+    name: 会場電源
+    category: 電源
+    area: 展示室
+    venue: true
+    capacity: 1500
+    note: 壁コンセント（15A 回路）
+    out: [AC:power]
+    pos: [1180, 1070]
   - id: psu1
     name: 24V 電源
     maker: MEAN WELL
@@ -247,8 +266,8 @@ cables:
   - { from: sw1.PoE 6, to: ld2.LAN, type: lan, spec: Cat6, length: 30, route: [[1030, 731], [1030, 895]] }
   - { from: sw1.PoE 7, to: ap1.LAN/PoE, type: lan, spec: Cat6, length: 25, route: [[1000, 753], [1000, 1015]] }
   - { from: ap1.Wi-Fi, to: ipad1.Wi-Fi, type: wireless, label: Wi-Fi }
-  - { from: mains1, to: ups1.AC IN, type: power, length: 3 }
-  - { from: mains2, to: tap1.AC IN, type: power, length: 5 }
+  - { from: mains1.AC, to: ups1.AC IN, type: power, length: 3 }
+  - { from: mains2.AC, to: tap1.AC IN, type: power, length: 5 }
   - { from: ups1.AC 1, to: pc1.AC, type: power, length: 2 }
   - { from: ups1.AC 2, to: pc2.DC, type: power, length: 2 }
   - { from: ups1.AC 3, to: sw1.AC, type: power, length: 1.5 }
@@ -263,19 +282,9 @@ cables:
   - { from: tap1.AC 7, to: psu1.AC, type: power, length: 1 }
   - { from: psu1.DC 1, to: ld1.DC 24V, type: power, length: 10 }
   - { from: psu1.DC 2, to: ld2.DC 24V, type: power, length: 10 }
+legends:
+  - { id: legend, pos: [0, 0], width: 200, title: 凡例, devices: true }
 shapes:${NOTE('来場者の位置を床の LiDAR で読み取り、床に映す映像が変わる展示の構成です。')}
-  - id: mains1
-    shape: round
-    text: 会場電源
-    color: red
-    pos: [640, 990]
-    size: [180, 48]
-  - id: mains2
-    shape: round
-    text: 会場電源
-    color: red
-    pos: [1560, 850]
-    size: [180, 48]
 `;
 
 const SOFTWARE = `title: 【サンプル】ソフトウェア構成
@@ -367,10 +376,16 @@ export const SAMPLE_BOARDS = [SYSTEM, SOFTWARE, SEQUENCE];
 
 /** A board's banner (the sample's "これはサンプルです") over the top left of everything else. */
 function bannerOnTop(doc: Doc): Doc {
+  doc = fitLegends(doc);
   const note = doc.nodes.find((n) => n.id === 'note');
-  const rest = note && docBounds({ ...doc, nodes: doc.nodes.filter((n) => n !== note) });
+  // A legend goes in the margin on the right, level with the top of the drawing.
+  const legend = doc.nodes.find((n) => n.type === 'legend');
+  const rest = note && docBounds({ ...doc, nodes: doc.nodes.filter((n) => n !== note && n !== legend) });
   if (!note || !rest) return doc;
-  return { ...doc, nodes: doc.nodes.map((n) => (n === note ? { ...n, x: rest.x, y: rest.y - n.h - 40 } : n)) };
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => (n === note ? { ...n, x: rest.x, y: rest.y - n.h - 40 } : n === legend ? { ...n, x: rest.x + rest.w + 40, y: rest.y } : n)),
+  };
 }
 
 /** The sample project's boards, the PCs they share filled in on each (its software runs on them). */

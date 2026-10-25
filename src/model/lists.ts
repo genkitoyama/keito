@@ -273,7 +273,8 @@ export function equipmentTable(doc: Doc, withUrl = true): Table {
   // A supplier typed on the device wins over what its colour stands for.
   const groupOf = (d: DeviceNode): string => d.vendor?.trim() || key.get(d.color ?? 'gray') || '';
   const groups = new Map<string, { d: DeviceNode; ids: string[]; names: Set<string>; places: Set<string>; count: number; watts: number | null; prices: Set<number | null>; amount: number | null }>();
-  for (const d of devices(doc)) {
+  // What the venue already has is not brought: it is on the drawing, not on the list.
+  for (const d of devices(doc).filter((x) => !x.venue)) {
     const q = unitsOf(d);
     // Devices share a row only when they are the same thing under the same name: PC1 and PC2 of
     // one model stay apart, so each can be edited (and counted) on its own row.
@@ -567,22 +568,31 @@ export function powerTable(doc: Doc): Table {
   const byId = new Map((doc.whole ?? doc).nodes.map((n) => [n.id, n]));
   const shown = new Set(doc.nodes.map((n) => n.id));
   const name = (id: string): string => oneLine(byId.get(id)?.text ?? '') || id;
+  const loads = powerLoads(doc);
+  // Two sources of one name (an outlet in each room, two power strips) are told apart by where they are.
+  const named = new Map<string, number>();
+  for (const id of loads.keys()) named.set(name(id), (named.get(name(id)) ?? 0) + 1);
+  const source = (id: string): string => {
+    const n = byId.get(id);
+    const place = n ? placeOf(doc, n) : '';
+    return (named.get(name(id)) ?? 0) > 1 && place ? `${name(id)}（${place}）` : name(id);
+  };
   const rows: string[][] = [];
   const refs: string[][] = [];
   const rowClass: (string | undefined)[] = [];
-  for (const [id, load] of powerLoads(doc)) {
+  for (const [id, load] of loads) {
     if (!shown.has(id)) continue;
     for (const d of load.ids) {
       const n = byId.get(d);
       const draw = n?.type === 'device' ? drawOf(doc, d) : null;
-      rows.push([name(id), name(d), draw == null ? '' : String(draw), '', '']);
+      rows.push([source(id), name(d), draw == null ? '' : String(draw), '', '']);
       refs.push([d]);
       rowClass.push('member');
     }
     // The sum closes each source's group, with how much of its capacity the load takes.
     const use = load.capacity ? ` · 使用率 ${Math.round((load.watts / load.capacity) * 100)}%` : '';
     const verdict = load.capacity == null ? '容量未設定' : load.over ? `超過 ${load.watts - load.capacity}W${use}` : `余裕 ${load.capacity - load.watts}W${use}`;
-    rows.push([name(id), `合計 ${load.ids.length} 台`, String(load.watts), load.capacity == null ? '' : String(load.capacity), verdict]);
+    rows.push([source(id), `合計 ${load.ids.length} 台`, String(load.watts), load.capacity == null ? '' : String(load.capacity), verdict]);
     refs.push([id]);
     rowClass.push(load.over ? 'subtotal over' : load.capacity == null ? 'subtotal unknown' : 'subtotal');
   }
@@ -644,7 +654,7 @@ export function checkTable(doc: Doc): Table {
     if (load.capacity == null) found.push({ level: 1, what: '給電容量が未入力', target: name(id), detail: `${load.ids.length} 台に給電していますが、容量がわからないため超過を判定できません`, ref: [id] });
   }
   // Once prices are being entered, the devices still without one, in one row.
-  const all = devices(doc);
+  const all = devices(doc).filter((d) => !d.venue);
   const unpriced = all.filter((d) => d.price == null);
   if (unpriced.length && unpriced.length < all.length) {
     const names = [...new Set(unpriced.map((d) => unitsOf(d).name))];

@@ -100,35 +100,45 @@ export function DevicePanel({ n }: { n: DeviceNode }) {
       </Section>
       {/* A piece of software has no quantity, price, power or supplier: those belong to the gear it runs on. */}
       {!soft && (
-        <Section title="手配" note="機材リストに出ます">
-          <Field label="手配先・担当（区分）" placeholder="例: 自社 / レンタル / 先方支給" value={n.vendor ?? ''} onChange={(v) => patch({ vendor: v || undefined })} />
-          {/* What the board's colour key says is only a guess (the colours may mean something else),
-              so it is offered, never written in unasked. */}
-          {group && group !== (n.vendor?.trim() ?? '') && (
-            <p className="suggest">
-              <span>{n.vendor?.trim() ? <>色分けでは「{group}」</> : <>空欄のときは色分けの「{group}」を表に使います</>}</span>
-              <button className="mini" onClick={() => patch({ vendor: group }, true)}>
-                入れる
-              </button>
-            </p>
-          )}
-          {many && (
-            <div className="grid2">
-              <Field label="数量（この枠の台数）" type="number" placeholder={`${quantityOf(n.text).count}（名前から）`} value={n.qty == null ? '' : String(n.qty)} onChange={(v) => patch({ qty: num(v) && num(v)! >= 1 ? Math.round(num(v)!) : undefined })} />
-            </div>
-          )}
-          {/* Prices are typed in the equipment list, where the rows can be gone down one after another. */}
-          <p className="hint price-hint">
-            {n.price != null ? <>単価 {n.price.toLocaleString('ja-JP')} 円{unitsOf(n).count > 1 && <>（金額 {(n.price * unitsOf(n).count).toLocaleString('ja-JP')} 円）</>}。</> : <>単価は</>}
-            <button className="link" onClick={() => st().setPanel('lists')}>
-              機材リスト
-            </button>
-            {n.price != null ? 'で変えられます。' : 'の「単価(円)」欄に入力します。'}
-          </p>
-          {!many && (
-            <button className="mini add-field" onClick={() => setMany(true)}>
-              ＋数量（1 枠で複数台を表すとき）
-            </button>
+        <Section title="手配" note={n.venue ? '機材リストに出ません' : '機材リストに出ます'}>
+          <label className="check">
+            <input type="checkbox" checked={!!n.venue} onChange={(e) => patch({ venue: e.target.checked || undefined }, true)} />
+            会場の設備（持ち込まない）
+          </label>
+          {n.venue ? (
+            <p className="hint">会場電源や備え付けの機材など。図と電源系統・ネットワークの表には出ますが、機材リストには載せません。</p>
+          ) : (
+            <>
+              <Field label="手配先・担当（区分）" placeholder="例: 自社 / レンタル / 先方支給" value={n.vendor ?? ''} onChange={(v) => patch({ vendor: v || undefined })} />
+              {/* What the board's colour key says is only a guess (the colours may mean something else),
+                  so it is offered, never written in unasked. */}
+              {group && group !== (n.vendor?.trim() ?? '') && (
+                <p className="suggest">
+                  <span>{n.vendor?.trim() ? <>色分けでは「{group}」</> : <>空欄のときは色分けの「{group}」を表に使います</>}</span>
+                  <button className="mini" onClick={() => patch({ vendor: group }, true)}>
+                    入れる
+                  </button>
+                </p>
+              )}
+              {many && (
+                <div className="grid2">
+                  <Field label="数量（この枠の台数）" type="number" placeholder={`${quantityOf(n.text).count}（名前から）`} value={n.qty == null ? '' : String(n.qty)} onChange={(v) => patch({ qty: num(v) && num(v)! >= 1 ? Math.round(num(v)!) : undefined })} />
+                </div>
+              )}
+              {/* Prices are typed in the equipment list, where the rows can be gone down one after another. */}
+              <p className="hint price-hint">
+                {n.price != null ? <>単価 {n.price.toLocaleString('ja-JP')} 円{unitsOf(n).count > 1 && <>（金額 {(n.price * unitsOf(n).count).toLocaleString('ja-JP')} 円）</>}。</> : <>単価は</>}
+                <button className="link" onClick={() => st().setPanel('lists')}>
+                  機材リスト
+                </button>
+                {n.price != null ? 'で変えられます。' : 'の「単価(円)」欄に入力します。'}
+              </p>
+              {!many && (
+                <button className="mini add-field" onClick={() => setMany(true)}>
+                  ＋数量（1 枠で複数台を表すとき）
+                </button>
+              )}
+            </>
           )}
         </Section>
       )}
