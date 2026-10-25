@@ -116,6 +116,8 @@ export interface DeviceNode extends Base, Shareable {
   price?: number;
   /** Who supplies or looks after it; shown as the device's group in the equipment list. */
   vendor?: string;
+  /** Part of the venue (its outlets, its house projector …): drawn and wired, but not brought, so left off the equipment list. */
+  venue?: boolean;
   /** Network settings, listed in the network table. */
   ip?: string;
   host?: string;

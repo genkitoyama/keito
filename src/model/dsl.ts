@@ -39,6 +39,7 @@ devices:
     price: 120000          # 任意。単価（円）。機材リストで数量を掛けて金額になる
     qty: 2                 # 任意。この 1 枠が表す台数（省略時は名前末尾の「x2」、なければ 1）
     vendor: 手配先          # 任意。手配先・担当（機材リストの「区分」になる）
+    venue: true            # 任意。会場の設備（会場電源・備え付けの機材など）。持ち込まないので機材リストに載らない
     ip: 192.168.0.10       # 任意。IP アドレス / host でホスト名（ネットワーク表に出る）
     shared: sh_ab12cd34    # 任意。同じ案件のほかのボードと「同じもの」にするキー（同じキーどうしで名前・型番・IP などがそろう）
     runsOn: sh_ab12cd34    # 任意。ソフトウェア構成図の部品が動く機材の shared キー（ホスト名・IP がその機材に合う）
@@ -166,6 +167,7 @@ export function toYaml(doc: Doc): string {
       put(o, 'note', d.note);
       put(o, 'qty', d.qty);
       put(o, 'vendor', d.vendor);
+      if (d.venue) o.venue = true;
       put(o, 'ip', d.ip);
       put(o, 'host', d.host);
       put(o, 'shared', d.shared);
@@ -388,6 +390,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
       color: str(v.color) in PALETTE ? (str(v.color) as ColorKey) : undefined,
       qty: typeof v.qty === 'number' && v.qty >= 1 ? Math.round(v.qty) : undefined,
       vendor: str(v.vendor) || undefined,
+      venue: v.venue === true || undefined,
       ip: str(v.ip) || undefined,
       host: str(v.host) || undefined,
       price: typeof v.price === 'number' ? v.price : undefined,

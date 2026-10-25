@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { lineDashed } from '../src/model/lineColor';
 import { allSignals, groupSignals, isBuiltInSignal, registerSignals, signalOf } from '../src/model/signals';
 
 afterEach(() => registerSignals(undefined));
@@ -9,6 +10,13 @@ describe('signal types', () => {
     expect(groups.map((g) => g.label)).toEqual(['ケーブル（端子の種類）', '光・無線（中身は問わない）', 'その他']);
     expect(groups[0].items.map((s) => s.id)).toContain('sync');
     expect(groups[1].items.map((s) => s.id)).toEqual(['fiber', 'wireless']);
+  });
+
+  it('draws radio dashed unless the line says otherwise', () => {
+    const line = { id: 'e', from: { node: 'a' }, to: { node: 'b' }, label: '', arrow: 'none' as const };
+    expect(lineDashed({ ...line, signal: 'wireless' })).toBe(true);
+    expect(lineDashed({ ...line, signal: 'wireless', dash: false })).toBe(false);
+    expect(lineDashed({ ...line, signal: 'lan' })).toBe(false);
   });
 
   it("keeps a board's own type over a built-in one added later", () => {

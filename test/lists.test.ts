@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cableIds, checkTable, editCell, editable, equipmentTable, powerLoads } from '../src/model/lists';
+import { cableIds, checkTable, editCell, editable, equipmentTable, powerLoads, powerTable } from '../src/model/lists';
 import type { DeviceNode, Doc } from '../src/model/types';
 import { blank, sample } from './helpers';
 
@@ -22,6 +22,42 @@ describe('equipment list', () => {
     const t = equipmentTable(d);
     const row = t.rows.findIndex((r) => r.includes('ディスプレイ'));
     expect(editable(t, row, t.head.indexOf('数量'))).toBeNull();
+  });
+});
+
+describe('venue equipment', () => {
+  const board = (): Doc => ({
+    ...blank(),
+    nodes: [
+      device('w1', '会場電源', [{ id: 'o', name: 'AC', side: 'right', signal: 'power' }], { venue: true, capacity: 1500, category: '電源' }),
+      device('w2', '会場電源', [{ id: 'o', name: 'AC', side: 'right', signal: 'power' }], { venue: true, capacity: 1500, category: '電源' }),
+      device('p1', 'プロジェクター', [{ id: 'ac', name: 'AC', side: 'left', signal: 'power' }], { watts: 560 }),
+      device('p2', 'プロジェクター', [{ id: 'ac', name: 'AC', side: 'left', signal: 'power' }], { watts: 560 }),
+    ],
+    edges: [
+      { id: 'e1', from: { node: 'w1', port: 'o' }, to: { node: 'p1', port: 'ac' }, signal: 'power', label: '', arrow: 'none' },
+      { id: 'e2', from: { node: 'w2', port: 'o' }, to: { node: 'p2', port: 'ac' }, signal: 'power', label: '', arrow: 'none' },
+    ],
+  });
+
+  it('leaves what the venue has off the equipment list, but weighs its load', () => {
+    const d = board();
+    expect(equipmentTable(d).rows.some((r) => r.includes('会場電源'))).toBe(false);
+    expect(powerLoads(d).get('w1')?.watts).toBe(560);
+    // Nor does it ask for a price for it.
+    const priced = { ...d, nodes: d.nodes.map((n) => (n.id.startsWith('p') ? { ...n, price: 1 } : n)) };
+    expect(checkTable(priced).rows.some((r) => r.includes('単価が未入力'))).toBe(false);
+  });
+
+  it('tells two power sources of one name apart by where they are', () => {
+    const d = board();
+    const frames = [
+      { id: 'a1', type: 'frame' as const, x: -100, y: -100, w: 400, h: 400, text: 'ブース' },
+      { id: 'a2', type: 'frame' as const, x: 400, y: -100, w: 400, h: 400, text: '展示室' },
+    ];
+    const placed = { ...d, nodes: [...frames, ...d.nodes.map((n) => (n.id === 'w2' ? { ...n, x: 500 } : n))] };
+    const sources = new Set(powerTable(placed).rows.map((r) => r[0]));
+    expect(sources).toEqual(new Set(['会場電源（ブース）', '会場電源（展示室）']));
   });
 });
 
