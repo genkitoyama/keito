@@ -97,6 +97,9 @@ export function TextBlock({ x, y, w, text, size, theme, weight = 400, fill = INK
 /** A line is drawn in its colour; the signal type and theme are kept in the call for when looks differ. */
 const signalStroke = (_signal: string, _theme: Theme, color: string): { stroke: string } => ({ stroke: color });
 
+/** The outline and mark of a device the venue has. */
+const VENUE_LINE = '#64748b';
+
 function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
   const { w, h } = nodeSize(n);
   const { x, y } = n;
@@ -111,10 +114,26 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
   // A name that runs to several lines pushes the maker / model line and the ports down.
   const extra = top - DEV.head;
   const head = `M${x},${y + top} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + top} Z`;
+  // What the venue already has reads apart from what is brought in: a dashed outline and a striped
+  // header, as drawings mark work by others, and a small "会場" in the corner.
+  const venue = n.venue ? `venue-${n.id}` : null;
   return (
     <g>
-      <rect x={x} y={y} width={w} height={h} rx={r} fill="#fff" stroke={line} strokeWidth={sw} />
-      <path d={head} fill={(tint?.fill ?? '#e8edf3')} stroke={line} strokeWidth={sw} />
+      {venue && (
+        <defs>
+          <pattern id={venue} width={7} height={7} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+            <rect width={7} height={7} fill="#f1f5f9" />
+            <line x1={0} y1={0} x2={0} y2={7} stroke="#cbd5e1" strokeWidth={3} />
+          </pattern>
+        </defs>
+      )}
+      <rect x={x} y={y} width={w} height={h} rx={r} fill="#fff" stroke={venue ? VENUE_LINE : line} strokeWidth={sw} strokeDasharray={venue ? '6 4' : undefined} />
+      <path d={head} fill={venue ? `url(#${venue})` : (tint?.fill ?? '#e8edf3')} stroke={venue ? VENUE_LINE : line} strokeWidth={sw} strokeDasharray={venue ? '6 4' : undefined} />
+      {venue && (
+        <text x={x + 7} y={y + 12} fontFamily={theme.font} fontSize={9} fontWeight={700} fill={VENUE_LINE}>
+          会場
+        </text>
+      )}
       <TextBlock x={x + w / 2} y={y + (sub ? 16 : DEV.head / 2) + extra / 2} w={w - 12} text={n.text} size={DEVICE_NAME.size} weight={700} theme={theme} />
       {sub &&
         (link ? (

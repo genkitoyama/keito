@@ -28,8 +28,8 @@ project: ${PROJECT}
 signals:
   - { id: hdbt, label: HDBaseT, prefix: HDB, color: "#0d9488" }
 areas:
-  - { name: 制御ブース, color: blue, rect: [-20, 10, 910, 1150] }
-  - { name: 展示室, color: green, rect: [1090, 10, 970, 1150] }
+  - { name: 制御ブース, color: blue, rect: [-20, 10, 910, 1170] }
+  - { name: 展示室, color: green, rect: [1090, 10, 970, 1170] }
 devices:
   # The booth on the left, the room on the right: picture and sound run left to right in the
   # upper rows, the network along the lower ones, and every long run crosses once between them.
@@ -218,7 +218,7 @@ devices:
     capacity: 1500
     in: [AC IN:power]
     out: [AC 1:power, AC 2:power, AC 3:power, AC 4:power, AC 5:power, AC 6:power, AC 7:power, AC 8:power]
-    pos: [1560, 530]
+    pos: [1560, 580]
   - id: mains1
     name: 会場電源
     category: 電源
@@ -227,7 +227,7 @@ devices:
     capacity: 1500
     note: 壁コンセント（15A 回路）
     out: [AC:power]
-    pos: [100, 1050]
+    pos: [100, 1070]
   - id: mains2
     name: 会場電源
     category: 電源
@@ -236,7 +236,7 @@ devices:
     capacity: 1500
     note: 壁コンセント（15A 回路）
     out: [AC:power]
-    pos: [1560, 400]
+    pos: [1180, 1070]
   - id: psu1
     name: 24V 電源
     maker: MEAN WELL
@@ -246,7 +246,7 @@ devices:
     capacity: 50
     in: [AC:power]
     out: [DC 1:power, DC 2:power]
-    pos: [1560, 800]
+    pos: [1560, 420]
 cables:
   - { from: pc1.DP 1, to: tx1.HDMI IN, type: video, spec: DP→HDMI 変換, length: 2 }
   - { from: pc1.DP 2, to: tx2.HDMI IN, type: video, spec: DP→HDMI 変換, length: 2 }
