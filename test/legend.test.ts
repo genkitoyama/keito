@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deviceRows, legendLayout } from '../src/model/legend';
+import { deviceRows, legendLayout, legendRows } from '../src/model/legend';
 import type { DeviceNode, Doc, LegendNode, Node } from '../src/model/types';
 import { blank } from './helpers';
 
@@ -33,5 +33,23 @@ describe('legend of devices', () => {
     expect(wide.devices.y).toBe(wide.lines.y);
     expect(wide.devices.x).toBeGreaterThan(wide.lines.x);
     expect(wide.h).toBeLessThan(narrow.h);
+  });
+});
+
+describe('legend of lines', () => {
+  it('draws each sample as its lines are drawn: radio dashed, power drawn as tags as a tag', () => {
+    const doc: Doc = {
+      ...blank(),
+      nodes: [device('a'), device('b')],
+      edges: [
+        { id: 'w', from: { node: 'a' }, to: { node: 'b' }, signal: 'wireless', label: '', arrow: 'none' },
+        { id: 'p', from: { node: 'a' }, to: { node: 'b' }, signal: 'power', label: '', arrow: 'none' },
+        { id: 'v', from: { node: 'a' }, to: { node: 'b' }, signal: 'video', label: '', arrow: 'none' },
+      ],
+    };
+    const rows = new Map(legendRows(doc, legend()).map((r) => [r.usual, r]));
+    expect(rows.get('無線')).toMatchObject({ dashed: true, tagged: false });
+    expect(rows.get('電源')).toMatchObject({ dashed: false, tagged: true });
+    expect(rows.get('映像')).toMatchObject({ dashed: false, tagged: false });
   });
 });

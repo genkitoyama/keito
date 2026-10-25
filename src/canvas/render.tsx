@@ -457,29 +457,43 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
       const anyLines = doc.edges.some((e) => e.signal !== 'flow');
       const empty = !lay.lines.rows.length && !lay.devices.rows.length;
       const stripes = `legend-venue-${n.id}`;
-      const heading = (bx: number, by: number, bw: number, text: string) => <TextBlock x={x + bx} y={y + by + LEGEND.section / 2 - 2} w={bw} text={text} size={10} weight={700} fill="#94a3b8" anchor="start" theme={theme} />;
+      const heading = (bx: number, by: number, bw: number, text: string) => <TextBlock x={x + bx} y={y + by + LEGEND.section / 2 - 2} w={bw} text={text} size={10.5} weight={700} fill="#64748b" anchor="start" theme={theme} />;
       const rowsTop = (part: { y: number; heading: boolean }) => y + part.y + (part.heading ? LEGEND.section : 0);
+      // Stacked parts are set apart by a rule; side by side, the gap between the columns does it.
+      const rule = lay.lines.rows.length > 0 && lay.devices.rows.length > 0 && lay.devices.x === lay.lines.x;
       return (
         <g>
           <rect x={x} y={y} width={w} height={h} rx={8} fill="#fff" stroke="#cbd5e1" strokeWidth={1.2} />
-          {n.text.trim() && <TextBlock x={x + LEGEND.pad} y={y + LEGEND.pad + 7} w={w - LEGEND.pad * 2} text={n.text} size={11} weight={700} fill="#64748b" anchor="start" theme={theme} />}
+          {n.text.trim() && <TextBlock x={x + LEGEND.pad} y={y + LEGEND.pad + 8} w={w - LEGEND.pad * 2} text={n.text} size={12.5} weight={700} fill="#334155" anchor="start" theme={theme} />}
           {lay.lines.heading && heading(lay.lines.x, lay.lines.y, lay.lines.w, '線')}
           {lay.lines.rows.map((row, i) => {
             const cy = rowsTop(lay.lines) + i * LEGEND.row + LEGEND.row / 2;
             const lx = x + lay.lines.x;
             return (
               <g key={row.color}>
-                <line x1={lx} y1={cy} x2={lx + LEGEND.sample} y2={cy} stroke={row.color} strokeWidth={2.4} strokeLinecap="round" />
+                {/* Each sample as its lines are drawn: dashed, or the tag beside a port for lines drawn as tags. */}
+                {row.tagged ? (
+                  <>
+                    <line x1={lx} y1={cy} x2={lx + 8} y2={cy} stroke={row.color} strokeWidth={1.4} />
+                    <rect x={lx + 8} y={cy - 7} width={LEGEND.sample - 8} height={14} rx={3} fill={mix(row.color, '#ffffff', 0.84)} stroke={row.color} strokeWidth={1} />
+                    <text x={lx + 8 + (LEGEND.sample - 8) / 2} y={mid(cy, 9)} fontFamily={theme.font} fontSize={9} fill={mix(row.color, '#0f172a', 0.5)} textAnchor="middle">
+                      ⚡
+                    </text>
+                  </>
+                ) : (
+                  <line x1={lx} y1={cy} x2={lx + LEGEND.sample} y2={cy} stroke={row.color} strokeWidth={2.4} strokeDasharray={row.dashed ? '7 4' : undefined} strokeLinecap={row.dashed ? undefined : 'round'} />
+                )}
                 <TextBlock x={lx + LEGEND.sample + 10} y={cy} w={lay.lines.w - LEGEND.sample - 10} text={row.name} size={12} fill={INK} anchor="start" theme={theme} />
               </g>
             );
           })}
+          {rule && <line x1={x + LEGEND.pad} y1={y + lay.devices.y - LEGEND.pad / 4} x2={x + w - LEGEND.pad} y2={y + lay.devices.y - LEGEND.pad / 4} stroke="#e2e8f0" strokeWidth={1} />}
           {lay.devices.heading && heading(lay.devices.x, lay.devices.y, lay.devices.w, '機材')}
           {lay.devices.rows.some((r) => r.color === 'venue') && (
             <defs>
               <pattern id={stripes} width={5} height={5} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
                 <rect width={5} height={5} fill="#f1f5f9" />
-                <line x1={0} y1={0} x2={0} y2={5} stroke="#cbd5e1" strokeWidth={2.2} />
+                <line x1={0} y1={0} x2={0} y2={5} stroke="#b6c2d1" strokeWidth={2.2} />
               </pattern>
             </defs>
           )}
@@ -490,7 +504,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
             const tint = row.color === 'venue' ? null : deviceTint(row.color);
             return (
               <g key={row.key}>
-                <rect x={lx + 6} y={cy - 7} width={LEGEND.sample - 12} height={14} rx={3} fill={tint ? tint.fill : `url(#${stripes})`} stroke={tint ? tint.stroke : VENUE_LINE} strokeWidth={1.3} strokeDasharray={tint ? undefined : '4 2.5'} />
+                <rect x={lx + 4} y={cy - 8} width={LEGEND.sample - 8} height={16} rx={3} fill={tint ? tint.fill : `url(#${stripes})`} stroke={tint ? tint.stroke : VENUE_LINE} strokeWidth={1.3} strokeDasharray={tint ? undefined : '4 2.5'} />
                 <TextBlock x={lx + LEGEND.sample + 10} y={cy} w={lay.devices.w - LEGEND.sample - 10} text={row.name} size={12} fill={INK} anchor="start" theme={theme} />
               </g>
             );
