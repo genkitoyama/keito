@@ -3,6 +3,7 @@ import { docBounds } from './geometry';
 import { randomId } from './presets';
 import { catalog, pull } from './shared';
 import { placeLabels } from './labels';
+import { fitLegends } from './legend';
 import type { Doc } from './types';
 
 /**
@@ -281,6 +282,8 @@ cables:
   - { from: tap1.AC 7, to: psu1.AC, type: power, length: 1 }
   - { from: psu1.DC 1, to: ld1.DC 24V, type: power, length: 10 }
   - { from: psu1.DC 2, to: ld2.DC 24V, type: power, length: 10 }
+legends:
+  - { id: legend, pos: [0, 0], width: 200, title: 凡例, devices: true }
 shapes:${NOTE('来場者の位置を床の LiDAR で読み取り、床に映す映像が変わる展示の構成です。')}
 `;
 
@@ -373,10 +376,16 @@ export const SAMPLE_BOARDS = [SYSTEM, SOFTWARE, SEQUENCE];
 
 /** A board's banner (the sample's "これはサンプルです") over the top left of everything else. */
 function bannerOnTop(doc: Doc): Doc {
+  doc = fitLegends(doc);
   const note = doc.nodes.find((n) => n.id === 'note');
-  const rest = note && docBounds({ ...doc, nodes: doc.nodes.filter((n) => n !== note) });
+  // A legend goes in the margin on the right, level with the top of the drawing.
+  const legend = doc.nodes.find((n) => n.type === 'legend');
+  const rest = note && docBounds({ ...doc, nodes: doc.nodes.filter((n) => n !== note && n !== legend) });
   if (!note || !rest) return doc;
-  return { ...doc, nodes: doc.nodes.map((n) => (n === note ? { ...n, x: rest.x, y: rest.y - n.h - 40 } : n)) };
+  return {
+    ...doc,
+    nodes: doc.nodes.map((n) => (n === note ? { ...n, x: rest.x, y: rest.y - n.h - 40 } : n === legend ? { ...n, x: rest.x + rest.w + 40, y: rest.y } : n)),
+  };
 }
 
 /** The sample project's boards, the PCs they share filled in on each (its software runs on them). */
