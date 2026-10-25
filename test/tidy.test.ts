@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { deviceTagRects } from '../src/model/badges';
-import { frameOf, nodeRect, tagChips } from '../src/model/geometry';
+import { frameOf, isTagged, labelPoint, nodeRect, routeEdges, tagChips } from '../src/model/geometry';
 import { sampleBoards } from '../src/model/sample';
 import { tangle, tidy } from '../src/model/tidy';
 import type { Doc, Rect } from '../src/model/types';
@@ -38,6 +38,15 @@ describe('tidy', () => {
   it('routes lines knocked off line by hand round the others', () => {
     const doc = system();
     for (const seed of [3, 11, 29]) expect(tangle(tidy(nudged(doc, seed)))).toBeLessThanOrEqual(tangle(doc) * 1.25);
+  });
+
+  it('lines up the labels of lines running side by side', () => {
+    const after = tidy(system());
+    const routes = routeEdges(after);
+    // The switch's lines out to the room run side by side: their labels line up.
+    const xs = after.edges.filter((e) => e.from.node === 'sw1' && !isTagged(after, e)).map((e) => Math.round(labelPoint(routes.get(e.id)!, e.labelAt ?? 0.5).x));
+    const column = Math.max(...xs.map((x) => xs.filter((v) => v === x).length));
+    expect(column).toBeGreaterThanOrEqual(2);
   });
 
   it('fits the areas round the tags hanging off what they hold', () => {
