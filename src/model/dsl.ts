@@ -80,6 +80,7 @@ images:                    # 埋め込み画像。データ本体は id で引�
   - { id: img1, name: logo, pos: [x, y], size: [w, h] }   # under: true で下敷き（一番下に薄く敷き、クリックで選ばれない）
 legends:                   # 凡例。使っている線の色が自動で並ぶ。names で行の呼び名を付けられる
   - { id: legend1, pos: [x, y], title: 凡例, names: { "#ea7a2e": 映像系統 } }
+                           # devices: true で機材の色（手配先）と会場の設備の行も並ぶ（names のキーは "device:blue" / "device:venue"）。width が 396 以上なら線と機材が左右 2 列
 junctions:                 # 分岐点（古いボードの形式。新しくは書かない。同じ to に向かう線は図で自動的に合流する）
   - { id: j1, pos: [x, y] }
 sequences:
@@ -262,6 +263,7 @@ export function toYaml(doc: Doc): string {
       const o: Obj = { id: n.id, pos: [r(n.x), r(n.y)], width: r(n.w), title: n.text };
       if (n.names && Object.keys(n.names).length) o.names = n.names;
       if (n.hidden?.length) o.hidden = n.hidden;
+      if (n.devices) o.devices = true;
       return o;
     });
   }
@@ -435,7 +437,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (!isObj(v)) throw new Error(`legends[${i}]: マップではありません`);
     const id = claim(v.id, 'legend', `legends[${i}]`);
     const names = isObj(v.names) ? Object.fromEntries(Object.entries(v.names).map(([k, name]) => [k.toLowerCase(), str(name)]).filter(([, name]) => name)) : {};
-    nodes.push({ id, type: 'legend', ...place(id, v.pos), w: typeof v.width === 'number' ? v.width : 200, h: 64, text: typeof v.title === 'string' ? v.title : '凡例', names: Object.keys(names).length ? names : undefined, hidden: arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean).length ? arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean) : undefined });
+    nodes.push({ id, type: 'legend', ...place(id, v.pos), w: typeof v.width === 'number' ? v.width : 200, h: 64, text: typeof v.title === 'string' ? v.title : '凡例', names: Object.keys(names).length ? names : undefined, hidden: arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean).length ? arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean) : undefined, devices: v.devices === true || undefined });
   });
 
   arr(root.sequences).forEach((v, i) => {

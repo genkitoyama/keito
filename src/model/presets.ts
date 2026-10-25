@@ -367,7 +367,7 @@ export function claimPort(doc: Doc, nodeId: string, signal: string, side: Port['
 export const JUNCTION = 12;
 
 /** A legend block with its top-left corner at (x, y); its height follows its rows once it is on a board. */
-export const makeLegend = (taken: Set<string>, x: number, y: number): Node => ({ id: freshId(taken, 'legend'), type: 'legend', x, y, w: 200, h: 64, text: '凡例' });
+export const makeLegend = (taken: Set<string>, x: number, y: number): Node => ({ id: freshId(taken, 'legend'), type: 'legend', x, y, w: 200, h: 64, text: '凡例', devices: true });
 
 /** The kind of line a junction carries, taken from any line already on it. */
 export const junctionSignal = (doc: Doc, node: string): string | undefined => doc.edges.find((e) => e.from.node === node || e.to.node === node)?.signal;

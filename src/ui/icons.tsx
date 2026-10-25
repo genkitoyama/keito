@@ -64,16 +64,7 @@ export const ICON = {
   ),
 };
 
-export const COLOR_NAME: Record<ColorKey, string> = {
-  white: '白',
-  gray: 'グレー',
-  blue: '青',
-  green: '緑',
-  yellow: '黄',
-  orange: 'オレンジ',
-  red: '赤',
-  purple: '紫',
-};
+export { COLOR_NAME } from '../model/signals';
 
 /** Font sizes on offer. `px: undefined` is the node's built-in size. */
 export interface SizeOption {

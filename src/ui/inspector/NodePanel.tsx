@@ -1,5 +1,6 @@
 import { pinLabel } from '../../model/comments';
-import { legendRows } from '../../model/legend';
+import { deviceRows, legendRows } from '../../model/legend';
+import { deviceTint } from '../../model/signals';
 import { readImageFile } from '../../platform/storage';
 import { tell } from '../../platform/io';
 import { storeImage, useStore } from '../../model/store';
@@ -49,41 +50,53 @@ export function NodePanel({ n }: { n: Node }) {
   if (n.type === 'legend') {
     const doc = useStore.getState().doc;
     const rows = legendRows(doc, n);
+    const devices = deviceRows(doc, n);
+    // Lines are keyed by their colour, devices by deviceKey(): both in the same names and hidden lists.
+    const show = (key: string, on: boolean) => {
+      const hidden = on ? (n.hidden ?? []).filter((c) => c !== key) : [...(n.hidden ?? []), key];
+      patch({ hidden: hidden.length ? hidden : undefined }, true);
+    };
+    const rename = (key: string, name: string) => {
+      burst();
+      const names = { ...n.names, [key]: name };
+      if (!name) delete names[key];
+      patch({ names: Object.keys(names).length ? names : undefined });
+    };
+    const row = (key: string, hidden: boolean, usual: string, swatch: React.CSSProperties) => (
+      <div key={key} className={`legend-row${hidden ? ' off' : ''}`}>
+        <input type="checkbox" checked={!hidden} title={hidden ? 'この行を凡例に出す' : 'この行を凡例から外す'} onChange={(e) => show(key, e.target.checked)} />
+        <span className="swatch" style={swatch} />
+        <input value={n.names?.[key] ?? ''} placeholder={usual} onChange={(e) => rename(key, e.target.value)} />
+      </div>
+    );
     return (
       <>
         <Head title="凡例" id={n.id} />
         <Section title="見出し">
           <Field label="空にすると見出しを出しません" value={n.text} onChange={(v) => patch({ text: v })} />
         </Section>
-        <Section title="並べる行" note="チェックを外すと出しません">
-          {rows.map((row) => (
-            <div key={row.color} className={`legend-row${row.hidden ? ' off' : ''}`}>
-              <input
-                type="checkbox"
-                checked={!row.hidden}
-                title={row.hidden ? 'この行を凡例に出す' : 'この行を凡例から外す'}
-                onChange={(e) => {
-                  const hidden = e.target.checked ? (n.hidden ?? []).filter((c) => c !== row.color) : [...(n.hidden ?? []), row.color];
-                  patch({ hidden: hidden.length ? hidden : undefined }, true);
-                }}
-              />
-              <span className="swatch" style={{ background: row.color }} />
-              <input
-                value={n.names?.[row.color] ?? ''}
-                placeholder={row.usual}
-                onChange={(e) => {
-                  burst();
-                  const names = { ...n.names, [row.color]: e.target.value };
-                  if (!e.target.value) delete names[row.color];
-                  patch({ names: Object.keys(names).length ? names : undefined });
-                }}
-              />
-            </div>
-          ))}
+        <Section title="線" note="チェックを外すと出しません">
+          {rows.map((r) => row(r.color, r.hidden, r.usual, { background: r.color }))}
           <p className="hint">
             このボードで使っている線の色が 1 行ずつ並びます。同じ色の種別は 1 行にまとまり、名前を書くとその行の呼び名になります（空なら種別の名前）。線の色を変えると自動で追従します。
           </p>
         </Section>
+        <Section title="機材" note={n.devices ? 'チェックを外すと出しません' : undefined}>
+          <label className="check">
+            <input type="checkbox" checked={!!n.devices} onChange={(e) => patch({ devices: e.target.checked || undefined }, true)} />
+            機材の色（手配先）と会場の設備も並べる
+          </label>
+        </Section>
+        {devices.length > 0 && (
+          <Section title="機材の行" note="チェックを外すと出しません">
+            {devices.map((r) =>
+              row(r.key, r.hidden, r.usual, r.color === 'venue' ? { background: 'repeating-linear-gradient(45deg, #f1f5f9 0 3px, #cbd5e1 3px 5px)', border: '1px dashed #64748b' } : { background: deviceTint(r.color).fill, border: `1px solid ${deviceTint(r.color).stroke}` }),
+            )}
+            <p className="hint">
+              機材の色が 1 行ずつ並びます（手配先や担当の色分け）。呼び名は、名前を書かなければ色付きの四角の見本か機材の手配先から取ります。会場の設備があれば、網掛けの行が最後に付きます。凡例の幅を広げると、線と機材が左右 2 列に並びます。
+            </p>
+          </Section>
+        )}
       </>
     );
   }

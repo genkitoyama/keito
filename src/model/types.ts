@@ -159,6 +159,8 @@ export interface LegendNode extends Base {
   names?: Record<string, string>;
   /** Line colours left out of the legend. */
   hidden?: string[];
+  /** Also lists the device colours and the venue's equipment; legends from before it was offered leave it out. */
+  devices?: boolean;
 }
 export type Node = ShapeNode | StickyNode | TextNode | FrameNode | DeviceNode | SequenceNode | ImageNode | JunctionNode | LegendNode;
 /** Nodes whose `text` is edited in place on the canvas. */

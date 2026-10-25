@@ -1,12 +1,12 @@
 import type { ReactNode } from 'react';
 import { CAPTION_SIZE, DEV, DEVICE_NAME, captionBox, crossings, deviceHead, deviceNameWidth, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { edgeLabel, labelFont, labelSize, tagFont } from '../model/labels';
-import { LEGEND, shownRows } from '../model/legend';
+import { LEGEND, legendLayout } from '../model/legend';
 import { lineColor, lineDashed, mix, signalColor } from '../model/lineColor';
 import { cableIds, idShown, ipIssues, lengthShown, powerLoads } from '../model/lists';
 import { BLOCK_WORD, SEQ, SEQ_TEXT, parseSequence, seqBands, seqBlocks, seqLayout, seqPlace, seqScale } from '../model/sequence';
 import { IP_SIZE, LOAD_SIZE, ipBadgeWidth, loadBadgeText, tagsStacked } from '../model/badges';
-import { PALETTE, STICKY, STRONG } from '../model/signals';
+import { PALETTE, PLAIN_DEVICE, STICKY, STRONG, deviceTint } from '../model/signals';
 import { MONO_FONT, UI_FONT, measure, wrapText } from '../model/text';
 import { safeUrl } from '../model/url';
 import type { DeviceNode, Doc, Edge, Node, Pt, Rect, SequenceNode } from '../model/types';
@@ -106,7 +106,7 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
   const r = 7;
   // Colour-coded devices take the tint on their header and outline; gray is the plain look.
   const tint = n.color && n.color !== 'gray' ? PALETTE[n.color] : null;
-  const line = (tint?.stroke ?? '#334155');
+  const line = tint?.stroke ?? PLAIN_DEVICE.stroke;
   const sw = 1.5;
   const sub = [n.maker, n.model].filter(Boolean).join(' ');
   const link = safeUrl(n.url);
@@ -131,7 +131,7 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
         </defs>
       )}
       <rect x={x} y={y} width={w} height={h} rx={r} fill="#fff" stroke={edge} strokeWidth={sw} strokeDasharray={venue ? '6 4' : undefined} />
-      <path d={head} fill={venue ? `url(#${venue})` : (tint?.fill ?? '#e8edf3')} stroke={edge} strokeWidth={sw} strokeDasharray={venue ? '6 4' : undefined} />
+      <path d={head} fill={venue ? `url(#${venue})` : (tint?.fill ?? PLAIN_DEVICE.fill)} stroke={edge} strokeWidth={sw} strokeDasharray={venue ? '6 4' : undefined} />
       {venue && (
         <text x={x + 7} y={y + 12} fontFamily={theme.font} fontSize={9} fontWeight={700} fill={edge}>
           会場
@@ -453,23 +453,49 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
     case 'legend': {
       // A drawing sheet carries its own legend, by line type rather than colour.
       if (!doc) return null;
-      const rows = shownRows(doc, n);
-      const legendRows = doc.edges.some((e) => e.signal !== 'flow');
-      const top = y + LEGEND.pad + (n.text.trim() ? LEGEND.title : 0);
+      const lay = legendLayout(doc, n);
+      const anyLines = doc.edges.some((e) => e.signal !== 'flow');
+      const empty = !lay.lines.rows.length && !lay.devices.rows.length;
+      const stripes = `legend-venue-${n.id}`;
+      const heading = (bx: number, by: number, bw: number, text: string) => <TextBlock x={x + bx} y={y + by + LEGEND.section / 2 - 2} w={bw} text={text} size={10} weight={700} fill="#94a3b8" anchor="start" theme={theme} />;
+      const rowsTop = (part: { y: number; heading: boolean }) => y + part.y + (part.heading ? LEGEND.section : 0);
       return (
         <g>
           <rect x={x} y={y} width={w} height={h} rx={8} fill="#fff" stroke="#cbd5e1" strokeWidth={1.2} />
           {n.text.trim() && <TextBlock x={x + LEGEND.pad} y={y + LEGEND.pad + 7} w={w - LEGEND.pad * 2} text={n.text} size={11} weight={700} fill="#64748b" anchor="start" theme={theme} />}
-          {rows.map((row, i) => {
-            const cy = top + i * LEGEND.row + LEGEND.row / 2;
+          {lay.lines.heading && heading(lay.lines.x, lay.lines.y, lay.lines.w, '線')}
+          {lay.lines.rows.map((row, i) => {
+            const cy = rowsTop(lay.lines) + i * LEGEND.row + LEGEND.row / 2;
+            const lx = x + lay.lines.x;
             return (
               <g key={row.color}>
-                <line x1={x + LEGEND.pad} y1={cy} x2={x + LEGEND.pad + LEGEND.sample} y2={cy} stroke={row.color} strokeWidth={2.4} strokeLinecap="round" />
-                <TextBlock x={x + LEGEND.pad + LEGEND.sample + 10} y={cy} w={w - LEGEND.pad * 2 - LEGEND.sample - 10} text={row.name} size={12} fill={INK} anchor="start" theme={theme} />
+                <line x1={lx} y1={cy} x2={lx + LEGEND.sample} y2={cy} stroke={row.color} strokeWidth={2.4} strokeLinecap="round" />
+                <TextBlock x={lx + LEGEND.sample + 10} y={cy} w={lay.lines.w - LEGEND.sample - 10} text={row.name} size={12} fill={INK} anchor="start" theme={theme} />
               </g>
             );
           })}
-          {!rows.length && <TextBlock x={x + LEGEND.pad} y={top + LEGEND.row / 2} w={w - LEGEND.pad * 2} text={legendRows ? 'すべての行を隠しています' : '線を引くと、ここに色が並びます'} size={11} fill="#94a3b8" anchor="start" theme={theme} />}
+          {lay.devices.heading && heading(lay.devices.x, lay.devices.y, lay.devices.w, '機材')}
+          {lay.devices.rows.some((r) => r.color === 'venue') && (
+            <defs>
+              <pattern id={stripes} width={5} height={5} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <rect width={5} height={5} fill="#f1f5f9" />
+                <line x1={0} y1={0} x2={0} y2={5} stroke="#cbd5e1" strokeWidth={2.2} />
+              </pattern>
+            </defs>
+          )}
+          {lay.devices.rows.map((row, i) => {
+            const cy = rowsTop(lay.devices) + i * LEGEND.row + LEGEND.row / 2;
+            const lx = x + lay.devices.x;
+            // A small device: its colour on the header and outline, or the venue's dashes and stripes.
+            const tint = row.color === 'venue' ? null : deviceTint(row.color);
+            return (
+              <g key={row.key}>
+                <rect x={lx + 6} y={cy - 7} width={LEGEND.sample - 12} height={14} rx={3} fill={tint ? tint.fill : `url(#${stripes})`} stroke={tint ? tint.stroke : VENUE_LINE} strokeWidth={1.3} strokeDasharray={tint ? undefined : '4 2.5'} />
+                <TextBlock x={lx + LEGEND.sample + 10} y={cy} w={lay.devices.w - LEGEND.sample - 10} text={row.name} size={12} fill={INK} anchor="start" theme={theme} />
+              </g>
+            );
+          })}
+          {empty && <TextBlock x={x + LEGEND.pad} y={rowsTop(lay.lines) + LEGEND.row / 2} w={w - LEGEND.pad * 2} text={anyLines ? 'すべての行を隠しています' : '線を引くと、ここに色が並びます'} size={11} fill="#94a3b8" anchor="start" theme={theme} />}
         </g>
       );
     }
