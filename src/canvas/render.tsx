@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { CAPTION_SIZE, DEV, DEVICE_NAME, captionBox, crossings, deviceHead, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { CAPTION_SIZE, DEV, DEVICE_NAME, captionBox, crossings, deviceHead, deviceNameWidth, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { edgeLabel, labelFont, labelSize, tagFont } from '../model/labels';
 import { LEGEND, shownRows } from '../model/legend';
 import { lineColor, lineDashed, mix, signalColor } from '../model/lineColor';
@@ -115,26 +115,29 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
   const extra = top - DEV.head;
   const head = `M${x},${y + top} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + top} Z`;
   // What the venue already has reads apart from what is brought in: a dashed outline and a striped
-  // header, as drawings mark work by others, and a small "会場" in the corner.
+  // header, as drawings mark work by others, and a small "会場" in the corner. It keeps its colour.
   const venue = n.venue ? `venue-${n.id}` : null;
+  const edge = venue ? (tint?.stroke ?? VENUE_LINE) : line;
+  const ground = tint?.fill ?? '#f1f5f9';
+  const stripe = tint ? mix(tint.stroke, '#ffffff', 0.65) : '#cbd5e1';
   return (
     <g>
       {venue && (
         <defs>
           <pattern id={venue} width={7} height={7} patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
-            <rect width={7} height={7} fill="#f1f5f9" />
-            <line x1={0} y1={0} x2={0} y2={7} stroke="#cbd5e1" strokeWidth={3} />
+            <rect width={7} height={7} fill={ground} />
+            <line x1={0} y1={0} x2={0} y2={7} stroke={stripe} strokeWidth={3} />
           </pattern>
         </defs>
       )}
-      <rect x={x} y={y} width={w} height={h} rx={r} fill="#fff" stroke={venue ? VENUE_LINE : line} strokeWidth={sw} strokeDasharray={venue ? '6 4' : undefined} />
-      <path d={head} fill={venue ? `url(#${venue})` : (tint?.fill ?? '#e8edf3')} stroke={venue ? VENUE_LINE : line} strokeWidth={sw} strokeDasharray={venue ? '6 4' : undefined} />
+      <rect x={x} y={y} width={w} height={h} rx={r} fill="#fff" stroke={edge} strokeWidth={sw} strokeDasharray={venue ? '6 4' : undefined} />
+      <path d={head} fill={venue ? `url(#${venue})` : (tint?.fill ?? '#e8edf3')} stroke={edge} strokeWidth={sw} strokeDasharray={venue ? '6 4' : undefined} />
       {venue && (
-        <text x={x + 7} y={y + 12} fontFamily={theme.font} fontSize={9} fontWeight={700} fill={VENUE_LINE}>
+        <text x={x + 7} y={y + 12} fontFamily={theme.font} fontSize={9} fontWeight={700} fill={edge}>
           会場
         </text>
       )}
-      <TextBlock x={x + w / 2} y={y + (sub ? 16 : DEV.head / 2) + extra / 2} w={w - 12} text={n.text} size={DEVICE_NAME.size} weight={700} theme={theme} />
+      <TextBlock x={x + w / 2} y={y + (sub ? 16 : DEV.head / 2) + extra / 2} w={deviceNameWidth(n)} text={n.text} size={DEVICE_NAME.size} weight={700} theme={theme} />
       {sub &&
         (link ? (
           // A real link in exported SVG / PDF. On the board, text never takes clicks, so the device still selects.

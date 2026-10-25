@@ -9,8 +9,11 @@ export const DEV = { head: 44, row: 22, pad: 8 };
 export const DEVICE_NAME = { size: 13, line: 13 * 1.4 };
 
 /** Height of a device's header: one line of name (and the maker / model line), plus any further lines of name. */
+/** How wide a device's name may run: a venue device keeps clear of the 会場 mark on either side. */
+export const deviceNameWidth = (d: DeviceNode): number => d.w - 12 - (d.venue ? 48 : 0);
+
 export function deviceHead(d: DeviceNode): number {
-  const lines = wrapText(d.text, d.w - 12, `700 ${DEVICE_NAME.size}px ${UI_FONT}`).length;
+  const lines = wrapText(d.text, deviceNameWidth(d), `700 ${DEVICE_NAME.size}px ${UI_FONT}`).length;
   return DEV.head + (Math.max(1, lines) - 1) * DEVICE_NAME.line;
 }
 export const snap = (v: number): number => Math.round(v / GRID) * GRID;
