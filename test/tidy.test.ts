@@ -35,6 +35,11 @@ describe('tidy', () => {
     }
   });
 
+  it('routes lines knocked off line by hand round the others', () => {
+    const doc = system();
+    for (const seed of [3, 11, 29]) expect(tangle(tidy(nudged(doc, seed)))).toBeLessThanOrEqual(tangle(doc) * 1.25);
+  });
+
   it('fits the areas round the tags hanging off what they hold', () => {
     const after = tidy(system());
     const chips = tagChips(after);
