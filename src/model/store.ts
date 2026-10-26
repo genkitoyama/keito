@@ -915,6 +915,9 @@ export async function boot(given?: Backend): Promise<void> {
       if (doc) break;
       doc = await tryLoad(backend, info.id);
     }
+    // Boards there, and none of them could be read: never taken for a first run (the sample project
+    // would be written in among them). The page says so and stays empty until reloaded.
+    if (!doc && boards.length) throw new Error(`ボードを ${boards.length} 枚見つけましたが、どれも読み込めませんでした`);
     // A first run: the sample project, opened on its system diagram.
     if (!doc) {
       const docs = sampleBoards();
@@ -928,6 +931,7 @@ export async function boot(given?: Backend): Promise<void> {
   } catch (e) {
     console.error(e);
     useStore.setState({ ready: true, saving: 'error' });
+    void tell(`ボードを開けませんでした: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 

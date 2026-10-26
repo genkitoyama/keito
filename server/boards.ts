@@ -172,10 +172,9 @@ export function keitoBoards(root = boardsRoot()): Plugin {
           return void res.end(fs.readFileSync(file));
         }
         if (req.method === 'PUT') {
-          if (!dir) return send(404, { error: 'save the board first' });
-          fs.mkdirSync(path.join(dir, 'assets'), { recursive: true });
-          fs.writeFileSync(path.join(dir, 'assets', name), await readBody(req));
-          return send(204);
+          // The body first, then the folder as it is now (it may have been renamed meanwhile).
+          const body = await readBody(req);
+          return boards.writeInto(id, 'assets', name, body) ? send(204) : send(404, { error: 'save the board first' });
         }
         return send(405);
       }
@@ -188,10 +187,8 @@ export function keitoBoards(root = boardsRoot()): Plugin {
           return send(200, fs.readFileSync(file), 'application/json');
         }
         if (req.method === 'PUT') {
-          if (!dir || !file) return send(404, { error: 'save the board first' });
-          fs.mkdirSync(path.dirname(file), { recursive: true });
-          fs.writeFileSync(file, JSON.stringify(JSON.parse((await readBody(req)).toString('utf8')), null, 2));
-          return send(204);
+          const text = JSON.stringify(JSON.parse((await readBody(req)).toString('utf8')), null, 2);
+          return boards.writeInto(id, 'revisions', `${name}.json`, text) ? send(204) : send(404, { error: 'save the board first' });
         }
         if (req.method === 'DELETE') {
           if (file && fs.existsSync(file)) fs.rmSync(file);
@@ -229,6 +226,8 @@ export function keitoBoards(root = boardsRoot()): Plugin {
       }
       return send(405);
     } catch (e) {
+      // The folder busy with another writer is for a while only: the page tries again.
+      if (e instanceof Busy) return send(503, { error: e.message });
       return send(500, { error: e instanceof Error ? e.message : String(e) });
     }
   };

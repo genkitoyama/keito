@@ -43,3 +43,21 @@ describe('the boards folder lock', () => {
     expect(fs.readdirSync(store(root).dirOf('shared1')!).filter((f) => f.endsWith('.tmp'))).toEqual([]);
   }, 60_000);
 });
+
+describe('a lock taken over', () => {
+  it('is let go only by its holder', async () => {
+    const fs = await import('node:fs');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const { locked } = await import('../server/store');
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'keito-lock-'));
+    const file = path.join(root, '.keito.lock');
+    locked(root, () => {
+      // Meanwhile (this holder too slow) another writer takes the lock over.
+      fs.writeFileSync(file, 'someone-else');
+    });
+    // Ours is done: theirs stays.
+    expect(fs.readFileSync(file, 'utf8')).toBe('someone-else');
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});

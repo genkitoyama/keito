@@ -90,21 +90,30 @@ export class Busy extends Error {
 }
 const pause = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
-/** Run `change` holding the folder's write lock, waiting up to `wait` ms for it. */
+/**
+ * Run `change` holding the folder's write lock, waiting up to `wait` ms for it. The lock holds a
+ * token of its holder: a lock left by a writer that died is taken over by moving it aside (only one
+ * writer can), and a holder lets go only of its own lock, never of one taken over from it.
+ */
 export function locked<T>(root: string, change: () => T, wait = WAIT_MS): T {
   const file = path.join(root, LOCK);
+  const token = `${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   fs.mkdirSync(root, { recursive: true });
   const until = Date.now() + wait;
   for (;;) {
     try {
-      fs.closeSync(fs.openSync(file, 'wx'));
+      fs.writeFileSync(file, token, { flag: 'wx' });
       break;
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
       try {
-        if (Date.now() - fs.statSync(file).mtimeMs > STALE_MS) fs.rmSync(file, { force: true });
+        if (Date.now() - fs.statSync(file).mtimeMs > STALE_MS) {
+          const aside = `${file}.${token}.stale`;
+          fs.renameSync(file, aside);
+          fs.rmSync(aside, { force: true });
+        }
       } catch {
-        // Let go meanwhile: try again.
+        // Let go or taken over meanwhile: try again.
       }
       if (Date.now() > until) throw new Busy();
       pause(15);
@@ -113,15 +122,34 @@ export function locked<T>(root: string, change: () => T, wait = WAIT_MS): T {
   try {
     return change();
   } finally {
-    fs.rmSync(file, { force: true });
+    try {
+      if (fs.readFileSync(file, 'utf8') === token) fs.rmSync(file, { force: true });
+    } catch {
+      // Already gone.
+    }
   }
 }
 
-/** Write a file whole or not at all, under a name no other writer uses for the moment. */
-function writeWhole(file: string, text: string): void {
+/**
+ * Write a file whole or not at all, under a name no other writer uses for the moment, and onto the
+ * disk before it takes the real name: a crash or a power cut leaves the old file or the new, never
+ * half of one. A failed write leaves nothing behind.
+ */
+export function writeWhole(file: string, data: string | Buffer): void {
   const tmp = `${file}.${process.pid}-${Math.random().toString(36).slice(2, 8)}.tmp`;
-  fs.writeFileSync(tmp, text);
-  fs.renameSync(tmp, file);
+  try {
+    const fd = fs.openSync(tmp, 'w');
+    try {
+      fs.writeSync(fd, data);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmp, file);
+  } catch (e) {
+    fs.rmSync(tmp, { force: true });
+    throw e;
+  }
 }
 
 export interface BoardFile {
@@ -212,6 +240,21 @@ export function store(root: string) {
      */
     write(doc: Stored, base: number | undefined): { serial: number; folder: string } {
       return locked(root, () => writeBoard(doc, base));
+    },
+
+    /**
+     * Write a file into a board's folder (a picture, a state of its history), holding the lock and
+     * finding the folder under it: a folder renamed meanwhile (a new title) is followed, never made
+     * again under its old name. False when the board has no folder.
+     */
+    writeInto(id: string, sub: string, name: string, data: string | Buffer): boolean {
+      return locked(root, () => {
+        const dir = dirOf(id);
+        if (!dir) return false;
+        fs.mkdirSync(path.join(dir, sub), { recursive: true });
+        writeWhole(path.join(dir, sub, name), data);
+        return true;
+      });
     },
 
     /** Deleting moves the folder aside instead of destroying it. */
