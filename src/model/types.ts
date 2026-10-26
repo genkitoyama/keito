@@ -211,6 +211,8 @@ export interface Edge {
   labelAt?: number;
   /** Hand-placed bend points between the two ends; absent = routed automatically. */
   route?: Pt[];
+  /** The bends were laid by tidying, not by hand: the next tidy lays the line afresh. */
+  tidied?: boolean;
   /** Draw as a pair of labelled tags instead of a line. Unset: power cables follow the board setting. */
   tag?: boolean;
 }

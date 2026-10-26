@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { fromYaml } from '../src/model/dsl';
-import { crossingGaps, isTagged, nodeRect, routeEdges } from '../src/model/geometry';
+import { crossingGaps, crossings, isTagged, nodeRect, routeEdges } from '../src/model/geometry';
 import { collides, routeAround } from '../src/model/router';
 import { sampleBoards } from '../src/model/sample';
 import { tangle, tidy } from '../src/model/tidy';
@@ -131,5 +131,27 @@ cables:
         blank('beside'),
       );
     expect(tangle(pair(7))).toBeGreaterThan(tangle(pair(40)));
+  });
+});
+
+describe('crossings drawn with hops', () => {
+  it('break the line down where a crossing is too near a corner for a hop', () => {
+    // The line across turns just past where the line down crosses it: no room for a hop there.
+    const doc = fromYaml(
+      `kind: software
+hops: true
+devices:
+  - { id: a, name: A, out: [OUT:http], pos: [0, 100] }
+  - { id: b, name: B, in: [IN:http], pos: [500, 200] }
+  - { id: c, name: C, out: [OUT:http], pos: [0, -60] }
+  - { id: d, name: D, in: [IN:http], pos: [500, 300] }
+cables:
+  - { id: across, from: a.OUT, to: b.IN, type: http, route: [[330, 137], [330, 237]] }
+  - { id: down, from: c.OUT, to: d.IN, type: http, route: [[325, -23], [325, 337]] }
+`,
+      blank('near'),
+    );
+    expect(crossings(doc).get('across')?.size ?? 0).toBe(0);
+    expect(crossingGaps(doc).get('down')).toHaveLength(1);
   });
 });

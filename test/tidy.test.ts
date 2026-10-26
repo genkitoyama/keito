@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { deviceTagRects } from '../src/model/badges';
 import { frameOf, frameTitles, isTagged, labelPoint, nodeRect, routeEdges, tagChips } from '../src/model/geometry';
-import { fromYaml } from '../src/model/dsl';
+import { fromYaml, toYaml } from '../src/model/dsl';
 import { sampleBoards } from '../src/model/sample';
 import { tangle, tidy } from '../src/model/tidy';
 import type { Doc, Rect } from '../src/model/types';
@@ -253,5 +253,50 @@ cables:
     expect(holds(frame('クラウド'), frame('VPC'))).toBe(true);
     expect(holds(frame('クラウド'), frame('エッジ'))).toBe(true);
     expect(holds(frame('VPC'), frame('公開'))).toBe(true);
+  });
+});
+
+describe('bends a tidy laid', () => {
+  const board = (tidied: boolean) =>
+    fromYaml(
+      `kind: software
+devices:
+  - { id: a, name: A, out: [OUT:http], pos: [0, 0] }
+  - { id: b, name: B, in: [IN:http], pos: [400, 200] }
+cables:
+  - { id: l, from: a.OUT, to: b.IN, type: http, route: [[40, 37], [40, 500], [300, 500], [300, 237]]${tidied ? ', tidied: true' : ''} }
+`,
+      blank('laid'),
+    );
+
+  it('are laid afresh by the next tidy, while bends drawn by hand stay', () => {
+    expect(tidy(board(true)).edges[0].route).toBeUndefined();
+    expect(tidy(board(false)).edges[0].route).toEqual(board(false).edges[0].route);
+  });
+
+  it('are told apart in YAML', () => {
+    expect(fromYaml(toYaml(board(true)), blank('laid')).edges[0].tidied).toBe(true);
+    expect(fromYaml(toYaml(board(false)), blank('laid')).edges[0].tidied).toBeUndefined();
+  });
+});
+
+describe('ports in the order the lines come in', () => {
+  it('put a line coming over the top of the board above one coming straight in', () => {
+    // The webhook's far end is well below, but a wall in the way sends it round over the top.
+    const doc = fromYaml(
+      `kind: software
+devices:
+  - { id: waf, name: WAF, out: [OUT:http], pos: [0, 100] }
+  - { id: alb, name: ALB, in: [HTTPS:http, Webhook:http], pos: [300, 100] }
+  - { id: wall, name: 壁, width: 700, in: [X:http], pos: [200, 180] }
+  - { id: pay, name: 決済, out: [Webhook:http], pos: [700, 400] }
+cables:
+  - { from: waf.OUT, to: alb.HTTPS, type: http }
+  - { from: pay.Webhook, to: alb.Webhook, type: http }
+`,
+      blank('approach'),
+    );
+    const names = (d: Doc) => (d.nodes.find((n) => n.id === 'alb') as { ports: { name: string }[] }).ports.map((p) => p.name);
+    expect(names(tidy(doc))).toEqual(['Webhook', 'HTTPS']);
   });
 });

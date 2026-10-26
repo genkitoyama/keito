@@ -668,13 +668,13 @@ function untangle(doc: Doc): Doc {
     if (!pts) continue;
     const route = simplify(pts).slice(1, -1);
     if (route.length < 2) continue;
-    let trial = { ...doc, edges: doc.edges.map((x) => (x.id === e.id ? { ...x, route } : x)) };
+    let trial = { ...doc, edges: doc.edges.map((x) => (x.id === e.id ? { ...x, route, tidied: true } : x)) };
     // Lines laid side by side with it are laid afresh without it: those keep the way they had.
     const after = routeEdges(trial);
     const same = (p: { x: number; y: number }[], q: { x: number; y: number }[] = []) => p.length === q.length && p.every((v, i) => v.x === q[i].x && v.y === q[i].y);
     trial = { ...trial, edges: trial.edges.map((x) => {
       const was = routes.get(x.id) ?? [];
-      return x.id === e.id || x.route || isTagged(doc, x) || was.length < 4 || same(was, after.get(x.id)) ? x : { ...x, route: was.slice(1, -1).map((p) => ({ x: p.x, y: p.y })) };
+      return x.id === e.id || x.route || isTagged(doc, x) || was.length < 4 || same(was, after.get(x.id)) ? x : { ...x, route: was.slice(1, -1).map((p) => ({ x: p.x, y: p.y })), tidied: true };
     }) };
     const score = tangle(trial);
     if (score >= best) continue;
@@ -685,9 +685,9 @@ function untangle(doc: Doc): Doc {
 }
 
 /**
- * On a board whose ports may move (software), each box's ports on a side are put in the order of
- * where what they lead to stands, top to bottom, so the lines between two columns run side by side
- * rather than across each other. A box's new order is kept only when it leaves the wiring less
+ * On a board whose ports may move (software), each box's ports on a side are put in the order the
+ * lines come in, top to bottom, so the lines run side by side into a box rather than across each
+ * other in front of it. A box's new order is kept only when it leaves the wiring less
  * tangled; ports with nothing on them, or with bends drawn by hand, keep their places.
  */
 function orderPorts(doc: Doc): Doc {
@@ -700,15 +700,23 @@ function orderPorts(doc: Doc): Doc {
       const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
       const self = nodes.get(id)!;
       if (self.type !== 'device') continue;
-      const toward = center(nodeRect(self));
-      // Where the far ends of a port's lines stand, on average; null for a port left as it is.
+      const routes = routeEdges(doc);
+      // Which way a port's lines come in, on average: the height they run at before their last turn
+      // into it (a line round the top of the board comes in from above, wherever its far end is).
+      // Null for a port left as it is.
       const where = (port: Port): number | null => {
         const ends = doc.edges.flatMap((e) => {
           const far = e.from.node === id && e.from.port === port.id ? e.to : e.to.node === id && e.to.port === port.id ? e.from : null;
-          return far ? [{ e, far }] : [];
+          return far ? [{ e, far, out: e.from.node === id }] : [];
         });
         if (!ends.length || ends.some(({ e, far }) => e.route || far.node === id || !nodes.has(far.node))) return null;
-        return ends.reduce((sum, { far }) => sum + anchorOf(nodes.get(far.node)!, far, toward).y, 0) / ends.length;
+        const from = ({ e, out }: (typeof ends)[number]): number => {
+          const pts = routes.get(e.id) ?? [];
+          const run = out ? pts : [...pts].reverse();
+          const level = run[0]?.y ?? 0;
+          return run.find((p) => Math.abs(p.y - level) > 0.5)?.y ?? level;
+        };
+        return ends.reduce((sum, end) => sum + from(end), 0) / ends.length;
       };
       let ports = self.ports;
       for (const side of ['left', 'right'] as const) {
@@ -760,7 +768,13 @@ export function tidy(doc: Doc): Doc {
     const next = { ...drawing, nodes: doc.nodes.map((n) => (isUnderlay(n) ? n : moved.get(n.id)!)) };
     return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;
   }
-  let next = orderPorts(doc);
+  // Bends an earlier tidy laid are laid afresh; bends drawn by hand stay.
+  const unlaid = (e: Edge): Edge => {
+    const { route: _route, tidied: _tidied, ...rest } = e;
+    return rest;
+  };
+  const fresh = doc.edges.some((e) => e.tidied) ? { ...doc, edges: doc.edges.map((e) => (e.tidied ? unlaid(e) : e)) } : doc;
+  let next = orderPorts(fresh);
   // One pass can open up room for the next; a handful settles any board.
   for (let i = 0; i < 6; i++) {
     const after = pass(next);
