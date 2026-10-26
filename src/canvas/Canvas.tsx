@@ -188,6 +188,8 @@ export function spawnFrom(id: string, side: Dir): void {
   const edge = makeEdge(taken, { node: src.id }, { node: n.id }, 'flow');
   s.mutate((d) => ({ ...d, nodes: [...d.nodes, n], edges: [...d.edges, edge] }));
   s.select([n.id]);
+  // Its first text goes into the step that made it (and the line to it), as for a box put down.
+  fresh = n.id;
   s.setEditing(n.id);
 }
 
@@ -267,8 +269,39 @@ export function Canvas() {
         st().setView({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY });
       }
     };
+    // A trackpad pinch: Chrome sends it as a wheel with Ctrl held (above); Safari and the macOS
+    // app's webview send gesture events instead, with the scale since the pinch began.
+    type Gesture = UIEvent & { scale: number; clientX: number; clientY: number };
+    let start: { k: number; scale: number } | null = null;
+    const onGestureStart = (e: Event) => {
+      e.preventDefault();
+      start = { k: st().view.k, scale: (e as Gesture).scale || 1 };
+    };
+    const onGestureChange = (e: Event) => {
+      e.preventDefault();
+      if (!start) return;
+      const g = e as Gesture;
+      const v = st().view;
+      const r = el.getBoundingClientRect();
+      const px = g.clientX - r.left;
+      const py = g.clientY - r.top;
+      const k = Math.min(4, Math.max(0.1, (start.k * g.scale) / start.scale));
+      st().setView({ k, x: px - ((px - v.x) * k) / v.k, y: py - ((py - v.y) * k) / v.k });
+    };
+    const onGestureEnd = (e: Event) => {
+      e.preventDefault();
+      start = null;
+    };
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    el.addEventListener('gesturestart', onGestureStart);
+    el.addEventListener('gesturechange', onGestureChange);
+    el.addEventListener('gestureend', onGestureEnd);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      el.removeEventListener('gesturestart', onGestureStart);
+      el.removeEventListener('gesturechange', onGestureChange);
+      el.removeEventListener('gestureend', onGestureEnd);
+    };
   }, []);
 
   useEffect(() => {
@@ -716,6 +749,7 @@ export function Canvas() {
       // Dropping on empty canvas puts the next shape right there, ready to be named.
       s.setDoc(made.doc);
       s.select([made.made]);
+      fresh = made.made;
       s.setEditing(made.made);
     }
   };
@@ -767,7 +801,7 @@ export function Canvas() {
         void insertImages([...e.dataTransfer.files], world(e));
       }}
     >
-      <svg ref={svgRef} width="100%" height="100%" style={{ cursor }} onPointerDown={onBackgroundDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onCancel} onPointerLeave={() => setPointer(null)} onDoubleClick={onDoubleClick}>
+      <svg ref={svgRef} width="100%" height="100%" style={{ cursor }} onPointerDown={onBackgroundDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onCancel} onPointerLeave={() => setPointer(null)} onDoubleClick={onDoubleClick} onContextMenu={(e) => e.preventDefault()}>
         <defs>
           <pattern id="dots" width={20 * view.k} height={20 * view.k} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
             <circle cx={1} cy={1} r={1} fill="#cbd5e1" />

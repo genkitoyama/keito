@@ -1060,6 +1060,25 @@ export function duplicateInPlace(ids: string[]): Map<string, string> {
   return map;
 }
 
+/**
+ * ⌘D: copies of the selected nodes (and the lines between them) a little down and right, selected,
+ * as one step. The clipboard is left alone: what ⌘C copied is still what ⌘V pastes, and with no
+ * node selected nothing happens (rather than pasting whatever was copied before).
+ */
+export function duplicateSelection(offset = 30): void {
+  const s = useStore.getState();
+  const ids = s.selection.filter((id) => s.doc.nodes.some((n) => n.id === id));
+  if (!ids.length) return;
+  s.checkpoint();
+  const map = duplicateInPlace(ids);
+  const copies = new Set(map.values());
+  s.mutate((d) => ({
+    ...d,
+    nodes: d.nodes.map((n) => (copies.has(n.id) ? { ...n, x: n.x + offset, y: n.y + offset } : n)),
+    edges: d.edges.map((e) => (copies.has(e.id) && e.route ? { ...e, route: e.route.map((p) => ({ x: p.x + offset, y: p.y + offset })) } : e)),
+  }), false);
+}
+
 /** Paste (or duplicate) with fresh ids, keeping the cables between the copied nodes. */
 export function pasteClipboard(offset = 30): void {
   if (!clipboard) return;

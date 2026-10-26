@@ -7,7 +7,7 @@ import { Canvas, inGesture, insertImages, spawnFrom, zoomBy } from './canvas/Can
 import { onControl } from './ui/keys';
 import { hasText } from './model/types';
 import { copyText, getSetting, setSetting } from './platform/io';
-import { copySelection, pasteClipboard, useStore } from './model/store';
+import { copySelection, duplicateSelection, pasteClipboard, useStore } from './model/store';
 import { ExportPanel } from './ui/ExportPanel';
 import { BoardsPanel } from './ui/Boards';
 import { BoardTabs } from './ui/BoardTabs';
@@ -27,11 +27,25 @@ function copyOut() {
   if (useStore.getState().selection.length) copyText('').catch(() => {});
 }
 
+/** Arrow-key moves this close together (ms) are one step to undo. */
+const NUDGE_GAP = 700;
+let lastNudge = -Infinity;
+
 function useHotkeys() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target;
-      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) {
+        // Typing in a field keeps its keys, but saving, the project menu and search still answer
+        // (in a browser, ⌘S would otherwise save the web page).
+        const physical = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
+        if (!(e.metaKey || e.ctrlKey) || e.isComposing || !['s', 'k', 'f'].includes(physical) || document.querySelector('.modal-bg')) return;
+        e.preventDefault();
+        if (physical === 's') void saveBoardFile();
+        else if (physical === 'k') toggleProjectMenu();
+        else openSearch();
+        return;
+      }
       if (e.isComposing) return;
       // Mid-drag, keys would act on what is being dragged (a delete under the pointer, an undo of
       // the drag's own step): they wait until it is let go.
@@ -41,7 +55,9 @@ function useHotkeys() {
       const s = useStore.getState();
       // A window over the board (export, the boards list) takes the keys: only Escape, to close it.
       if (document.querySelector('.modal-bg')) {
-        if (e.key === 'Escape') s.setPanel(null);
+        // Only a window that is a panel closes that way: one of its own (comparing states) closes
+        // itself, and the lists or comments open behind it stay.
+        if (e.key === 'Escape' && (s.panel === 'export' || s.panel === 'boards' || s.panel === 'settings')) s.setPanel(null);
         return;
       }
       const mod = e.metaKey || e.ctrlKey;
@@ -67,10 +83,8 @@ function useHotkeys() {
         copyOut();
         s.removeIds(s.selection);
       } else if (mod && key === 'v') return; // handled by the paste event, which can see images
-      else if (mod && key === 'd') {
-        copySelection();
-        pasteClipboard();
-      } else if (mod && key === 'a') s.select(s.doc.nodes.filter((n) => !isUnderlay(n)).map((n) => n.id));
+      else if (mod && key === 'd') duplicateSelection();
+      else if (mod && key === 'a') s.select(s.doc.nodes.filter((n) => !isUnderlay(n)).map((n) => n.id));
       else if (mod && key === 's') void saveBoardFile();
       else if (mod && key === 'k') toggleProjectMenu();
       else if (mod && key === 'f') openSearch();
@@ -90,7 +104,10 @@ function useHotkeys() {
         const dx = key === 'arrowleft' ? -step : key === 'arrowright' ? step : 0;
         const dy = key === 'arrowup' ? -step : key === 'arrowdown' ? step : 0;
         const ids = new Set(nodeIds);
-        s.mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (ids.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n)) }));
+        // Presses in quick succession (or a key held down) are one move to undo, not one per press.
+        const fresh = e.timeStamp - lastNudge > NUDGE_GAP;
+        lastNudge = e.timeStamp;
+        s.mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (ids.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n)) }), fresh);
       } else if (e.shiftKey && e.code === 'Digit1') s.fit();
       // The library and the tools a board's kind offers; keys for others do nothing on it.
       else if (key === 'l' && kindOf(s.doc).library) s.setPanel(s.panel === 'library' ? null : 'library');
@@ -114,11 +131,19 @@ function useHotkeys() {
       else if (/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(text)) void insertImages([new File([text], 'pasted.svg', { type: 'image/svg+xml' })]);
       else pasteClipboard();
     };
+    // A button clicked with the mouse lets go of the focus Chrome gives it (WebKit gives none), so
+    // the next Space or Enter is the board's, not that button pressed again.
+    const onClick = (e: MouseEvent) => {
+      const b = e.target instanceof Element ? e.target.closest('button') : null;
+      if (b && e.detail > 0 && b === document.activeElement) b.blur();
+    };
     window.addEventListener('keydown', onKey);
     window.addEventListener('paste', onPaste);
+    window.addEventListener('click', onClick);
     return () => {
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('paste', onPaste);
+      window.removeEventListener('click', onClick);
     };
   }, []);
 }

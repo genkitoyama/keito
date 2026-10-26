@@ -848,7 +848,8 @@ td.empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 20;
+  /* Over everything on the board: panels, the search bar and the project menu. */
+  z-index: 60;
 }
 .modal {
   width: min(1180px, 94vw);

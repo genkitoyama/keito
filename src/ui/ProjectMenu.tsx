@@ -92,16 +92,19 @@ export function ProjectMenu() {
     // While the menu is open it takes the keys, before the board does.
     const key = (e: KeyboardEvent) => {
       if (e.isComposing) return;
-      const n = Number(e.key);
-      if (Number.isInteger(n) && n >= 1 && n <= Math.min(9, others.length)) go(others[n - 1].board);
+      // The digit as typed, or as the key under it with the IME on (which sends "Process").
+      const n = /^Digit[1-9]$/.test(e.code) ? Number(e.code.slice(5)) : Number(e.key);
+      if (!e.metaKey && !e.ctrlKey && Number.isInteger(n) && n >= 1 && n <= Math.min(9, others.length)) go(others[n - 1].board);
       else if (e.key === 'ArrowDown') setAt((i) => Math.min(i + 1, others.length));
       else if (e.key === 'ArrowUp') setAt((i) => Math.max(i - 1, 0));
       else if (e.key === 'Enter') {
         if (atRef.current < others.length) go(others[atRef.current].board);
         else all();
       }
-      else if (e.key === 'Escape' || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k')) setOpen(false);
-      else return;
+      else if (e.key === 'Escape' || ((e.metaKey || e.ctrlKey) && e.code === 'KeyK')) setOpen(false);
+      // Other shortcuts (⌘S …) still work; any other key stays with the menu, rather than reach the
+      // board behind it (Delete would remove what is selected there).
+      else if (e.metaKey || e.ctrlKey) return;
       e.preventDefault();
       e.stopPropagation();
     };
