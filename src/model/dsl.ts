@@ -97,6 +97,16 @@ type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v: unknown, d = ''): string => (v == null ? d : String(v));
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+/**
+ * A list the YAML must give as a list: left out, it is empty; written as anything else (a map, a
+ * single string, a mis-indented block) it is an error, never read as empty, which would remove
+ * every element of that kind from the board.
+ */
+const list = (v: unknown, where: string): unknown[] => {
+  if (v == null) return [];
+  if (Array.isArray(v)) return v;
+  throw new Error(`${where}: 一覧で書いてください（各要素を「- 」で始まる行に。例: ${where.split('.').pop()}: [ ... ] ）`);
+};
 const nums = (v: unknown, n: number): number[] | null =>
   Array.isArray(v) && v.length >= n && v.slice(0, n).every((x) => typeof x === 'number' && isFinite(x))
     ? (v.slice(0, n) as number[])
@@ -361,7 +371,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     return { x: 0, y: 0 };
   };
 
-  arr(root.devices).forEach((v, i) => {
+  list(root.devices, 'devices').forEach((v, i) => {
     if (!isObj(v)) throw new Error(`devices[${i}]: マップではありません`);
     const preset = presetOf(str(v.preset));
     const id = claim(v.id, preset?.key ?? 'dev', `devices[${i}]`);
@@ -370,8 +380,8 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
       v.in === undefined && v.out === undefined && preset
         ? presetPorts(preset)
         : [
-            ...arr(v.in).map((s) => parsePort(str(s), 'left', `p${++n}`)),
-            ...arr(v.out).map((s) => parsePort(str(s), 'right', `p${++n}`)),
+            ...list(v.in, `devices[${i}].in`).map((s) => parsePort(str(s), 'left', `p${++n}`)),
+            ...list(v.out, `devices[${i}].out`).map((s) => parsePort(str(s), 'right', `p${++n}`)),
           ];
     const old = prevById.get(id);
     nodes.push({
@@ -403,7 +413,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (v.area) areaHint.set(id, str(v.area));
   });
 
-  arr(root.shapes).forEach((v, i) => {
+  list(root.shapes, 'shapes').forEach((v, i) => {
     if (!isObj(v)) throw new Error(`shapes[${i}]: マップではありません`);
     const kind = str(v.shape, 'rect');
     const id = claim(v.id, kind === 'sticky' ? 'note' : 'n', `shapes[${i}]`);
@@ -426,28 +436,28 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (v.area) areaHint.set(id, str(v.area));
   });
 
-  arr(root.junctions).forEach((v, i) => {
+  list(root.junctions, 'junctions').forEach((v, i) => {
     if (!isObj(v)) throw new Error(`junctions[${i}]: マップではありません`);
     const id = claim(v.id, 'j', `junctions[${i}]`);
     const at = place(id, v.pos);
     nodes.push({ id, type: 'junction', x: at.x - JUNCTION / 2, y: at.y - JUNCTION / 2, w: JUNCTION, h: JUNCTION, text: '分岐' });
   });
 
-  arr(root.legends).forEach((v, i) => {
+  list(root.legends, 'legends').forEach((v, i) => {
     if (!isObj(v)) throw new Error(`legends[${i}]: マップではありません`);
     const id = claim(v.id, 'legend', `legends[${i}]`);
     const names = isObj(v.names) ? Object.fromEntries(Object.entries(v.names).map(([k, name]) => [k.toLowerCase(), str(name)]).filter(([, name]) => name)) : {};
     nodes.push({ id, type: 'legend', ...place(id, v.pos), w: typeof v.width === 'number' ? v.width : 200, h: 64, text: typeof v.title === 'string' ? v.title : '凡例', names: Object.keys(names).length ? names : undefined, hidden: arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean).length ? arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean) : undefined, devices: v.devices === true || undefined });
   });
 
-  arr(root.sequences).forEach((v, i) => {
+  list(root.sequences, 'sequences').forEach((v, i) => {
     if (!isObj(v)) throw new Error(`sequences[${i}]: マップではありません`);
     const id = claim(v.id, 'seq', `sequences[${i}]`);
     const size = nums(v.size, 2);
     nodes.push({ id, type: 'sequence', ...place(id, v.pos), w: size?.[0] ?? 0, h: size?.[1] ?? 0, text: str(v.text).trimEnd(), fontSize: typeof v.fontSize === 'number' ? v.fontSize : undefined });
   });
 
-  arr(root.images).forEach((v, i) => {
+  list(root.images, 'images').forEach((v, i) => {
     if (!isObj(v)) throw new Error(`images[${i}]: マップではありません`);
     const old = prevById.get(str(v.id));
     const src = str(v.src) || (old?.type === 'image' ? old.src : '');
@@ -498,7 +508,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   // Lines keep the ids they are given (once each, and never one a node has): reserved before any
   // line without one is numbered, so a new line never takes the id of one listed after it.
   const lineIds = new Map<string, boolean>();
-  for (const v of [...arr(root.cables), ...arr(root.flows)]) {
+  for (const v of [...list(root.cables, 'cables'), ...list(root.flows, 'flows')]) {
     const id = isObj(v) ? str(v.id).trim() : '';
     if (id && /^[\w-]+$/.test(id) && !taken.has(id) && !lineIds.has(id)) lineIds.set(id, false);
   }
@@ -510,7 +520,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
       e.id = id;
     }
   };
-  arr(root.cables).forEach((v, i) => {
+  list(root.cables, 'cables').forEach((v, i) => {
     if (!isObj(v)) throw new Error(`cables[${i}]: マップではありません`);
     const where = `cables[${i}]`;
     const typed = str(v.type).normalize('NFKC').trim().toLowerCase();
@@ -546,7 +556,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     holdSides(e, v);
     edges.push(e);
   });
-  arr(root.flows).forEach((v, i) => {
+  list(root.flows, 'flows').forEach((v, i) => {
     if (!isObj(v)) throw new Error(`flows[${i}]: マップではありません`);
     const where = `flows[${i}]`;
     const e = makeEdge(taken, resolve(v.from, where, 'right', 'other'), resolve(v.to, where, 'left', 'other'), 'flow');
@@ -579,7 +589,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   };
   const areaLook = new Map<string, { color?: ColorKey; fontSize?: number; bold?: boolean }>();
   const pendingAreas = new Set<string>();
-  arr(root.areas).forEach((v) => {
+  list(root.areas, 'areas').forEach((v) => {
     const name = isObj(v) ? str(v.name) : str(v);
     if (!name) return;
     areaLook.set(name, {
