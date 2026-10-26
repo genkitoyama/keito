@@ -758,7 +758,7 @@ export function EdgeLabels({ doc, theme }: { doc: Doc; theme: Theme }) {
 }
 
 /** Half the break in a line down where a line across crosses it, drawn without hops. */
-const GAP_HALF = 4.5;
+const GAP_HALF = 6;
 
 export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; theme: Theme; hideLabel?: boolean }) {
   const pts = routeEdges(doc).get(e.id);
@@ -782,8 +782,8 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
     const len = Math.hypot(q.x - pts[i].x, q.y - pts[i].y);
     return back && len > back + head ? { x: pts[i].x + ((q.x - pts[i].x) / len) * back, y: pts[i].y + ((q.y - pts[i].y) / len) * back } : pts[i];
   };
-  // Without hops, a line down breaks for a moment where a line across crosses it.
-  const gaps = doc.hops ? undefined : crossingGaps(doc).get(e.id);
+  // Where no hop is drawn, a line down breaks for a moment where a line across crosses it.
+  const gaps = crossingGaps(doc).get(e.id);
   const mask = gaps && `gap-${doc.id}-${e.id}`;
   const xs = pts.map((p) => p.x);
   const ys = pts.map((p) => p.y);

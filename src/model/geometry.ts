@@ -489,38 +489,47 @@ export function crossings(doc: Doc): Map<string, Map<number, number[]>> {
   const out = new Map<string, Map<number, number[]>>();
   const over = new Map<string, Set<string>>();
   const gaps = new Map<string, Pt[]>();
+  const unhopped = new Map<string, Pt[]>();
   for (const [id, pts] of routes) {
     if (tagged.has(id)) continue;
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1];
       const b = pts[i];
       if (Math.abs(a.y - b.y) > 0.5) continue;
-      const lo = Math.min(a.x, b.x) + 8;
-      const hi = Math.max(a.x, b.x) - 8;
-      const under = verticals.filter((v) => v.id !== id && v.x > lo && v.x < hi && a.y > v.y0 + 1 && a.y < v.y1 - 1);
+      // Every crossing; a hop only where there is room for it, clear of the corners either end.
+      const crossing = verticals.filter((v) => v.id !== id && v.x > Math.min(a.x, b.x) + 1 && v.x < Math.max(a.x, b.x) - 1 && a.y > v.y0 + 1 && a.y < v.y1 - 1);
+      const under = crossing.filter((v) => v.x > Math.min(a.x, b.x) + HOP_ROOM && v.x < Math.max(a.x, b.x) - HOP_ROOM);
+      for (const v of crossing) {
+        gaps.set(v.id, [...(gaps.get(v.id) ?? []), { x: v.x, y: a.y }]);
+        if (!under.includes(v)) unhopped.set(v.id, [...(unhopped.get(v.id) ?? []), { x: v.x, y: a.y }]);
+      }
       if (!under.length) continue;
       if (!out.has(id)) out.set(id, new Map());
       out.get(id)!.set(i - 1, [...new Set(under.map((v) => v.x))]);
       over.set(id, new Set([...(over.get(id) ?? []), ...under.map((v) => v.id)]));
-      for (const v of under) gaps.set(v.id, [...(gaps.get(v.id) ?? []), { x: v.x, y: a.y }]);
     }
   }
   hopCache.set(doc, out);
   overCache.set(doc, over);
-  gapCache.set(doc, gaps);
+  gapCache.set(doc, { gaps, unhopped });
   return out;
 }
 
 const overCache = new WeakMap<Doc, Map<string, Set<string>>>();
-const gapCache = new WeakMap<Doc, Map<string, Pt[]>>();
+const gapCache = new WeakMap<Doc, { gaps: Map<string, Pt[]>; unhopped: Map<string, Pt[]> }>();
+
+/** How far from either end of a run across a hop needs: its corner's rounding and the hop's own width. */
+export const HOP_ROOM = 13;
 
 /**
- * Where each line running down is crossed by one running across: drawn without hops, the line
- * down breaks there for a moment, so a crossing does not read as the two lines joining.
+ * Where each line running down is crossed by one running across and no hop is drawn (every
+ * crossing when hops are off; those too near a corner for one when on): the line down breaks
+ * there for a moment, so a crossing does not read as the two lines joining.
  */
 export function crossingGaps(doc: Doc): Map<string, Pt[]> {
   crossings(doc);
-  return gapCache.get(doc)!;
+  const cached = gapCache.get(doc)!;
+  return doc.hops ? cached.unhopped : cached.gaps;
 }
 
 /**
