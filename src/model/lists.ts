@@ -25,14 +25,18 @@ export function cableIds(doc: Doc): Map<string, string> {
   if (hit) return hit;
   const counters = new Map<string, number>();
   const out = new Map<string, string>();
+  // IDs typed by hand are never handed out again by the numbering.
+  const typed = new Set(doc.edges.filter((e) => signalOf(e.signal).cable && e.cableId?.trim()).map((e) => e.cableId!.trim()));
   for (const e of doc.edges) {
     const s = signalOf(e.signal);
     if (!s.cable) continue;
     // Video and audio cables are numbered by their kind (HDMI-01, XLR-01), VID / AUD when none is told.
     const prefix = cableKind(doc.nodes, e) ?? s.prefix;
-    const n = (counters.get(prefix) ?? 0) + 1;
+    let n = (counters.get(prefix) ?? 0) + 1;
+    // A hand-typed ID replaces the automatic one and keeps its place in the numbering, so the
+    // others' numbers do not move; a number it took is passed over.
+    if (!e.cableId?.trim()) while (typed.has(`${prefix}-${pad2(n)}`)) n++;
     counters.set(prefix, n);
-    // A hand-typed ID replaces the automatic one; the numbering of the others is unaffected.
     out.set(e.id, e.cableId?.trim() || `${prefix}-${pad2(n)}`);
   }
   idCache.set(doc, out);

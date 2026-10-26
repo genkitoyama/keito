@@ -153,3 +153,16 @@ describe('shaded rows', () => {
     expect([...bands(t)]).toEqual([3, 4]);
   });
 });
+
+describe('cable IDs typed by hand', () => {
+  it('are not handed out again by the numbering', () => {
+    const d: Doc = {
+      ...blank(),
+      nodes: [device('a', 'A', [{ id: 'o', name: 'HDMI', side: 'right', signal: 'video' }]), device('b', 'B', [{ id: 'i', name: 'HDMI', side: 'left', signal: 'video' }])],
+      edges: [0, 1, 2].map((i) => ({ id: `e${i}`, from: { node: 'a', port: 'o' }, to: { node: 'b', port: 'i' }, signal: 'video', label: '', arrow: 'none' as const, ...(i === 0 ? { cableId: 'HDMI-02' } : {}) })),
+    };
+    const ids = [...cableIds(d).values()];
+    expect(new Set(ids).size).toBe(3);
+    expect(ids[0]).toBe('HDMI-02');
+  });
+});

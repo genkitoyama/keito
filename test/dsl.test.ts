@@ -111,3 +111,18 @@ describe('YAML that does not give a list where one is needed', () => {
     expect(fromYaml('title: t\n', blank()).nodes).toEqual([]);
   });
 });
+
+describe('a cable written from an input to an output', () => {
+  it('is turned round, so power is counted from its source', async () => {
+    const { powerLoads } = await import('../src/model/lists');
+    const doc = fromYaml(`title: t
+devices:
+  - { id: pj, name: PJ, watts: 300, in: [AC:power] }
+  - { id: tap, name: タップ, capacity: 1500, in: [IN:power], out: [AC 1:power] }
+cables:
+  - { from: pj.AC, to: tap.AC 1, type: power }
+`, blank());
+    expect(doc.edges[0].from.node).toBe('tap');
+    expect(powerLoads(doc).get('tap')?.watts).toBe(300);
+  });
+});

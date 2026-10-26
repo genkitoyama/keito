@@ -504,6 +504,10 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     const n = byId.get(end.node);
     return n?.type === 'device' ? n.ports.find((p) => p.id === end.port)?.signal : undefined;
   };
+  const portSide = (end: EdgeEnd): 'left' | 'right' | undefined => {
+    const n = byId.get(end.node);
+    return n?.type === 'device' ? n.ports.find((p) => p.id === end.port)?.side : undefined;
+  };
 
   // Lines keep the ids they are given (once each, and never one a node has): reserved before any
   // line without one is numbered, so a new line never takes the id of one listed after it.
@@ -528,8 +532,12 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     // The old video types (type: sdi) are 映像, and the standard they named names any port added.
     const named = VIDEO_STANDARDS[typed] as string | undefined;
     const given = typed && currentSignal(typed);
-    const from = resolve(v.from, where, 'right', given || 'other', named, !!v.fromSide);
-    const to = resolve(v.to, where, 'left', given || portSignal(from) || 'other', named, !!v.toSide);
+    let from = resolve(v.from, where, 'right', given || 'other', named, !!v.fromSide);
+    let to = resolve(v.to, where, 'left', given || portSignal(from) || 'other', named, !!v.toSide);
+    // A cable runs output → input, as when drawn in the app: written from an input to an output,
+    // it is turned round (power is counted from its source).
+    const turned = portSide(from) === 'left' && portSide(to) === 'right';
+    if (turned) [from, to] = [to, from];
     const e = makeEdge(taken, from, to, given || portSignal(from) || portSignal(to) || 'other');
     keepId(e, v);
     e.length = typeof v.length === 'number' ? v.length : null;
@@ -553,6 +561,11 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     // Hand-placed bends only make sense while the layout they were drawn for is kept.
     const bends = relayout ? [] : arr(v.route).map((p) => nums(p, 2)).filter((p): p is number[] => !!p);
     if (bends.length >= 2) e.route = bends.map(([x, y]) => ({ x, y }));
+    // Turned round: its bends and its label's place run the other way too.
+    if (turned) {
+      if (e.route) e.route.reverse();
+      if (e.labelAt !== undefined) e.labelAt = 1 - e.labelAt;
+    }
     holdSides(e, v);
     edges.push(e);
   });
