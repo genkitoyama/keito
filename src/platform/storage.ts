@@ -133,10 +133,60 @@ function localTrash(): TrashedBoard[] {
     .sort((a, b) => b.deleted - a.deleted);
 }
 
+/** How many of a board's latest unnamed states are spared when room has to be made. */
+const SPARED = 3;
+
+/**
+ * Make room in this browser's storage, a little at a time, least missed first: the history of
+ * deleted boards, then the oldest unnamed states of every board (each board keeps its latest few,
+ * and its named ones), then the oldest deleted boards. False once there is nothing left to let go.
+ */
+function freeRoom(): boolean {
+  const revs = Object.keys(localStorage).filter((k) => k.startsWith('keito:rev:'));
+  const live = new Set(localList().map((b) => b.id));
+  // States of boards that are only in the trash.
+  const orphan = revs.find((k) => !live.has(k.slice('keito:rev:'.length).split(':')[0]));
+  if (orphan) {
+    localStorage.removeItem(orphan);
+    return true;
+  }
+  // The oldest unnamed state of any board, beyond its latest few; its entry leaves the board's list too.
+  let oldest: { board: Doc; id: string; at: string } | null = null;
+  for (const b of localList()) {
+    const doc = localLoad(b.id);
+    const auto = (doc?.revisions ?? []).filter((r) => !r.name).sort((x, y) => (x.at ?? '').localeCompare(y.at ?? ''));
+    const r = auto.length > SPARED ? auto[0] : null;
+    if (doc && r && (!oldest || (r.at ?? '') < oldest.at)) oldest = { board: doc, id: r.id, at: r.at ?? '' };
+  }
+  if (oldest) {
+    localStorage.removeItem(`keito:rev:${oldest.board.id}:${oldest.id}`);
+    const { board, id } = oldest;
+    localStorage.setItem(key(board.id), JSON.stringify({ ...board, revisions: (board.revisions ?? []).filter((r) => r.id !== id) }));
+    return true;
+  }
+  const trashed = localTrash().at(-1);
+  if (trashed) {
+    localStorage.removeItem(trashed.key);
+    return true;
+  }
+  return false;
+}
+
+/** Write to this browser's storage, making room as needed; throws only when nothing more can go. */
+function setRoomy(k: string, value: string): void {
+  for (;;) {
+    try {
+      return localStorage.setItem(k, value);
+    } catch (e) {
+      if (!(e instanceof DOMException) || !/quota/i.test(e.name + e.message) || !freeRoom()) throw e;
+    }
+  }
+}
+
 /** Boards kept in this browser — the fallback store, and what gets migrated to disk. */
 export const localBoards = (): Doc[] => localList().map((b) => localLoad(b.id)).filter((d): d is Doc => !!d);
 
-const local: Backend = {
+export const local: Backend = {
   mode: 'local',
   assets: false,
   assetUrl: (_boardId, src) => src,
@@ -151,11 +201,15 @@ const local: Backend = {
       return doc ? { ...b, project: doc.meta.project || undefined, kind: doc.kind } : b;
     }),
   load: async (id) => localLoad(id),
-  // Throws when the board no longer fits (localStorage holds roughly 5 MB per site).
+  // localStorage holds roughly 5 MB per site: history and deleted boards make way for the board
+  // itself (see freeRoom); it throws only when the board alone does not fit.
   save: async (doc) => {
-    localStorage.setItem(key(doc.id), JSON.stringify(doc));
+    setRoomy(key(doc.id), JSON.stringify(doc));
+    // States let go to make room leave the board's list too.
+    const gone = (doc.revisions ?? []).filter((r) => !r.name && localStorage.getItem(`keito:rev:${doc.id}:${r.id}`) === null);
+    if (gone.length) localStorage.setItem(key(doc.id), JSON.stringify({ ...doc, revisions: doc.revisions!.filter((r) => !gone.includes(r)) }));
     const info: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now(), project: doc.meta.project || undefined, kind: doc.kind };
-    localStorage.setItem(INDEX, JSON.stringify([info, ...localList().filter((b) => b.id !== doc.id)]));
+    setRoomy(INDEX, JSON.stringify([info, ...localList().filter((b) => b.id !== doc.id)]));
   },
   remove: async (id) => {
     const kept = localStorage.getItem(key(id));
@@ -185,6 +239,8 @@ const local: Backend = {
     return board.id;
   },
   putAsset: async (_boardId, dataUrl) => dataUrl,
+  // A state of the board is kept only while there is room to spare: it never makes way for itself
+  // by letting go of others, and a failed one is left out of the history (see snapshot).
   saveRevision: async (boardId, id, doc) => localStorage.setItem(`keito:rev:${boardId}:${id}`, JSON.stringify(doc)),
   loadRevision: async (boardId, id) => {
     try {

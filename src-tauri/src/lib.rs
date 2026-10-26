@@ -4,12 +4,40 @@ mod commands;
 mod store;
 
 use commands::Boards;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, RunEvent};
 
 /// Set once the page has written what it had: quitting may go ahead.
 static WRITTEN: AtomicBool = AtomicBool::new(false);
+
+/// When quitting was last asked for, in milliseconds since the app started.
+static ASKED: AtomicU64 = AtomicU64::new(0);
+/// Whether the page has heard the last request to quit (and is writing what it has).
+static HEARD: AtomicBool = AtomicBool::new(false);
+
+/// The page has heard the request to quit: it writes what it has, then calls `quit`.
+#[tauri::command]
+fn quit_heard() {
+    HEARD.store(true, Ordering::SeqCst);
+}
+
+/// Ask the page to write what it has and quit. Asked again within a few seconds and never heard,
+/// the app quits anyway: a page that cannot answer (it failed to load) must not keep it open.
+fn ask_to_quit(app: &AppHandle) -> bool {
+    let now = START.elapsed().as_millis() as u64 + 1;
+    let before = ASKED.swap(now, Ordering::SeqCst);
+    if before != 0 && now - before < 4_000 && !HEARD.load(Ordering::SeqCst) {
+        WRITTEN.store(true, Ordering::SeqCst);
+        app.exit(0);
+        return false;
+    }
+    HEARD.store(false, Ordering::SeqCst);
+    let _ = app.emit("quit-requested", ());
+    true
+}
+
+static START: std::sync::LazyLock<std::time::Instant> = std::sync::LazyLock::new(std::time::Instant::now);
 
 /// The page has written what it had (or the user let it go): quit now.
 #[tauri::command]
@@ -81,8 +109,12 @@ pub fn run() {
             commands::save_presets,
             commands::write_file,
             commands::read_file,
+            commands::pick_save,
+            commands::pick_open,
+            commands::pick_folder,
             commands::open_for_print,
             quit,
+            quit_heard,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -101,7 +133,7 @@ pub fn run() {
                     let _ = app.emit("open-settings", ());
                 }
                 "quit" => {
-                    let _ = app.emit("quit-requested", ());
+                    ask_to_quit(app);
                 }
                 "reload" => {
                     let _ = app.emit("reload-requested", ());
@@ -115,9 +147,8 @@ pub fn run() {
     app.run(|app, event| {
         // Quitting (⌘Q, the menu) waits for the page to write what it has; it then calls `quit`.
         if let RunEvent::ExitRequested { api, code: None, .. } = event {
-            if !WRITTEN.load(Ordering::SeqCst) {
+            if !WRITTEN.load(Ordering::SeqCst) && ask_to_quit(app) {
                 api.prevent_exit();
-                let _ = app.emit("quit-requested", ());
             }
         }
     });

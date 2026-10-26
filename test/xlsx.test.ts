@@ -75,3 +75,63 @@ describe('bringing a workbook up to date', () => {
     expect(wb.getWorksheet('打合せメモ')).toBeDefined();
   });
 });
+
+describe('a workbook sorted or renamed in Excel', () => {
+  const columns = (ws: ExcelJS.Worksheet) => {
+    const cols = new Map<string, number>();
+    ws.getRow(4).eachCell((c, j) => cols.set(String(c.value), j));
+    return cols;
+  };
+  /** The rows standing for devices (not the total): a key in the hidden column. */
+  const deviceRows = (ws: ExcelJS.Worksheet) => {
+    const key = columns(ws).get('keito ID')!;
+    const out: number[] = [];
+    for (let r = 5; r <= ws.rowCount; r++) {
+      const k = String(ws.getCell(r, key).value ?? '');
+      if (k && k !== '-') out.push(r);
+    }
+    return out;
+  };
+  /** The equipment sheet with a purchase status typed for every device: its name, as the status. */
+  async function withStatus(doc: Doc) {
+    const wb = await load(await workbook(doc));
+    const ws = wb.getWorksheet('機材リスト')!;
+    const cols = columns(ws);
+    for (const r of deviceRows(ws)) ws.getCell(r, cols.get('購入ステータス')!).value = `済:${ws.getCell(r, cols.get('名称')!).value}`;
+    return { wb, ws };
+  }
+  const statuses = async (blob: Blob, sheet = '機材リスト') => {
+    const ws = (await load(blob)).getWorksheet(sheet)!;
+    const cols = columns(ws);
+    return deviceRows(ws).map((r) => [String(ws.getCell(r, cols.get('名称')!).value), String(ws.getCell(r, cols.get('購入ステータス')!).value ?? '')]);
+  };
+
+  it('sorts the hidden key with the rows, so each status stays with its device', async () => {
+    const doc = sample();
+    const { wb, ws } = await withStatus(doc);
+    // The filter Excel sorts by reaches the hidden key.
+    const ref = String(ws.autoFilter);
+    const last = (ref.match(/:([A-Z]+)\d+$/) ?? ['', 'A'])[1];
+    const lastCol = [...last].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+    expect(lastCol).toBeGreaterThanOrEqual(columns(ws).get('keito ID')!);
+    // Sort as Excel's filter does: whole rows within the filter, here in reverse.
+    const rows = deviceRows(ws);
+    const values = rows.map((r) => Array.from({ length: lastCol }, (_, j) => ws.getCell(r, j + 1).value));
+    values.reverse().forEach((row, i) => row.forEach((v, j) => (ws.getCell(rows[i], j + 1).value = v)));
+    const { blob } = await updateWorkbook(doc, (await wb.xlsx.writeBuffer()) as ArrayBuffer);
+    const kept = await statuses(blob);
+    expect(kept.length).toBeGreaterThan(3);
+    for (const [name, status] of kept) expect(status).toBe(`済:${name}`);
+  });
+
+  it('finds a list sheet renamed by hand, and keeps its name and statuses', async () => {
+    const doc = sample();
+    const { wb, ws } = await withStatus(doc);
+    ws.name = '機材';
+    const { blob, report } = await updateWorkbook(doc, (await wb.xlsx.writeBuffer()) as ArrayBuffer);
+    expect(report.renamed).toEqual(['機材リスト → 機材']);
+    const kept = await statuses(blob, '機材');
+    expect(kept.length).toBeGreaterThan(3);
+    for (const [name, status] of kept) expect(status).toBe(`済:${name}`);
+  });
+});

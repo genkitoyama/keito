@@ -362,7 +362,10 @@ export const useStore = create<State>((set, get) => ({
         await b.save(mine, true);
         stored = mine;
         // Edits made while it was being written go out after it.
-        if (get().doc !== mine) return void persist(get().doc);
+        if (get().doc !== mine) {
+          set({ saving: 'saving' });
+          return void persist(get().doc);
+        }
         return set({ saving: 'saved' });
       }
       const fresh = await b.load(mine.id);
@@ -437,7 +440,7 @@ async function run(fn: (b: Backend) => Promise<void>): Promise<void> {
     await fn(backend);
   } catch (e) {
     // Written elsewhere since it was read here: the user settles it (see resolveConflict).
-    if (e instanceof Conflict) return void useStore.setState({ saving: 'conflict' });
+    if (e instanceof Conflict) return void enterConflict('conflict');
     console.error(e);
     useStore.setState({ saving: 'error' });
   }
@@ -564,13 +567,17 @@ async function setRevisions(b: Backend, board: string, change: (list: Revision[]
 function show(doc: Doc): void {
   stored = doc;
   live = null;
+  // Whatever was pending or wrong with the board before is not this one's: it starts saved.
+  clearTimeout(timer);
+  clearTimeout(retryTimer);
+  retries = 0;
   // The base is the board as shown (legends fitted), so fitting alone never reads as an edit.
   const shown = fitLegends(doc);
   snapBase = shown;
   baseKept = false;
   keeping = null;
   clearTimeout(settleTimer);
-  useStore.setState({ doc: shown, viewing: null, past: [], future: [], selection: [], editing: null, others: [], placing: null });
+  useStore.setState({ doc: shown, viewing: null, past: [], future: [], selection: [], editing: null, others: [], placing: null, saving: 'saved' });
   showInUrl(doc.id);
   requestAnimationFrame(useStore.getState().fit);
   void readProject();
@@ -624,10 +631,22 @@ function retryLater(): void {
   }, RETRY_MS[Math.min(retries++, RETRY_MS.length - 1)]);
 }
 
+/**
+ * The board was written or deleted elsewhere since it was read here: nothing more goes out until the
+ * user settles it (see resolveConflict), not even a save already waiting to fire.
+ */
+function enterConflict(kind: 'conflict' | 'gone'): void {
+  clearTimeout(timer);
+  useStore.setState({ saving: kind });
+}
+
 async function write(doc: Doc): Promise<void> {
   if (!backend) return;
   // A write left over from a board no longer on screen goes out, but says nothing about this one.
   const here = () => useStore.getState().doc.id === doc.id;
+  // Once the board is in conflict, only the user's choice writes it (a save queued before goes nowhere).
+  const held = useStore.getState().saving;
+  if (here() && (held === 'conflict' || held === 'gone')) return;
   if (here()) useStore.setState({ saving: 'saving' });
   try {
     await backend.save(doc);
@@ -639,8 +658,8 @@ async function write(doc: Doc): Promise<void> {
   } catch (e) {
     if (!here()) return console.error(e);
     // Written or deleted elsewhere since it was read here: the user settles it (see resolveConflict).
-    if (e instanceof Conflict) return void useStore.setState({ saving: 'conflict' });
-    if (e instanceof Gone) return void useStore.setState({ saving: 'gone' });
+    if (e instanceof Conflict) return void enterConflict('conflict');
+    if (e instanceof Gone) return void enterConflict('gone');
     console.error(e);
     useStore.setState({ saving: 'error' });
     retryLater();
@@ -915,13 +934,13 @@ async function pickUp(b: Backend): Promise<void> {
   const s = useStore.getState();
   if (!s.ready || s.viewing) return;
   // Unsaved edits here (or text being typed) and a change on disk: the user decides which stays.
-  if (s.editing || s.doc !== stored) return void useStore.setState({ saving: 'conflict' });
+  if (s.editing || s.doc !== stored) return void enterConflict('conflict');
   const fresh = await b.load(s.doc.id);
   if (!fresh) return;
   // Reading it took the version on disk as the one to write on next. Something changed here
   // meanwhile must not go out over a change made elsewhere: the user decides which stays. (When the
   // disk holds what this page last wrote, there is nothing to decide.)
-  if (useStore.getState().doc !== s.doc) return void (sameBoard(fresh, stored) ? undefined : useStore.setState({ saving: 'conflict' }));
+  if (useStore.getState().doc !== s.doc) return void (sameBoard(fresh, stored) ? undefined : enterConflict('conflict'));
   if (sameBoard(fresh, s.doc)) return;
   stored = fresh;
   const shown = fitLegends(fresh);

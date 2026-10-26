@@ -99,3 +99,15 @@ describe('YAML keeps what lines are', () => {
     expect(a.ports.map((p) => p.name)).toEqual(['AUD 1']);
   });
 });
+
+describe('YAML that does not give a list where one is needed', () => {
+  it('is refused, not read as an empty board', () => {
+    expect(() => fromYaml('title: t\ndevices: {pc: {name: X}}\n', blank())).toThrow(/devices: 一覧で/);
+    expect(() => fromYaml('title: t\ncables: "a.x -> b.y"\n', blank())).toThrow(/cables: 一覧で/);
+    expect(() => fromYaml('title: t\ndevices:\n  - { id: pc, name: PC, in: "HDMI:video" }\n', blank())).toThrow(/devices\[0\]\.in: 一覧で/);
+  });
+
+  it('still reads a section left out as empty', () => {
+    expect(fromYaml('title: t\n', blank()).nodes).toEqual([]);
+  });
+});

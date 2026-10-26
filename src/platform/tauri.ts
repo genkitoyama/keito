@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { ask as askDialog, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { ask as askDialog, message } from '@tauri-apps/plugin-dialog';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { boardKind, readBoard } from '../model/load';
 import { boot, flushBeforeClose, useStore } from '../model/store';
@@ -107,14 +107,15 @@ const MIME: Record<string, string> = { json: 'application/json', yaml: 'text/yam
 const system: Platform = {
   async saveFile(name, data, type) {
     const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : '';
-    const path = await saveDialog({ defaultPath: name, filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : [] });
+    // The app shows the dialog: only a place the user picks there can be written.
+    const path = await invoke<string | null>('pick_save', { name, extensions: ext ? [ext] : [] });
     if (!path) return false;
     const blob = typeof data === 'string' ? new Blob([data], { type }) : data;
     await invoke('write_file', new Uint8Array(await blob.arrayBuffer()), { headers: { path: encodeURIComponent(path) } });
     return true;
   },
   async pickFile(accept) {
-    const path = await openDialog({ multiple: false, directory: false, filters: filters(accept) });
+    const path = await invoke<string | null>('pick_open', { extensions: filters(accept).flatMap((f) => f.extensions) });
     if (typeof path !== 'string') return null;
     const bytes = await invoke<ArrayBuffer>('read_file', { path });
     const name = path.split(/[\\/]/).pop() ?? 'file';
@@ -155,7 +156,7 @@ interface Folder {
 
 /** Ask for another folder for boards and keep them there from now on; false when called off. */
 async function chooseFolder(): Promise<boolean> {
-  const picked = await openDialog({ directory: true, multiple: false, title: 'ボードを保存するフォルダ' });
+  const picked = await invoke<string | null>('pick_folder');
   if (typeof picked !== 'string') return false;
   await invoke('set_boards_folder', { path: picked });
   return true;
@@ -176,10 +177,8 @@ async function settleFolder(): Promise<void> {
 /** Start the desktop app: its ways in, its folder settled, its store connected, and its window closing only once all is written. */
 export async function startDesktop(): Promise<void> {
   usePlatform(system);
-  await settleFolder();
-  await boot(desktop);
-  // Closing the window and quitting (⌘Q) are one: what is unsaved is written first, and what
-  // cannot be is only let go when the user says so.
+  // The ways out come first: quitting, closing and reloading work while the folder is still being
+  // asked for on first launch, and when starting fails (there is then nothing unsaved to write).
   const leave = async () => {
     if ((await flushBeforeClose()) || (await system.ask('保存できていない変更があります。このまま終了しますか？'))) await invoke('quit');
   };
@@ -187,11 +186,22 @@ export async function startDesktop(): Promise<void> {
     e.preventDefault();
     void leave();
   });
-  void listen('quit-requested', () => void leave());
+  void listen('quit-requested', () => {
+    // Heard: a second ⌘Q while this writes does not cut it short.
+    void invoke('quit_heard');
+    void leave();
+  });
   // 表示 > 再読み込み (⌘R): the page starts afresh once what it has is written, as on quitting.
   void listen('reload-requested', async () => {
     if ((await flushBeforeClose()) || (await system.ask('保存できていない変更があります。このまま再読み込みしますか？'))) location.reload();
   });
   // keito > 設定… (⌘,)
   void listen('open-settings', () => useStore.getState().setPanel('settings'));
+  try {
+    await settleFolder();
+    await boot(desktop);
+  } catch (e) {
+    console.error(e);
+    await system.tell(`ボードのフォルダを開けませんでした。\n\n${e instanceof Error ? e.message : String(e)}\n\n表示 > 再読み込み（⌘R）でやり直せます。`);
+  }
 }
