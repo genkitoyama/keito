@@ -240,9 +240,15 @@ pub async fn read_file(boards: State<'_, Boards>, path: String) -> Result<tauri:
 }
 
 /// The system's save dialog, shown by the app (not the page) so that only what the user picks can be written.
+/// An export (`downloads`) starts in the downloads folder, where a browser would have put it.
 #[tauri::command]
-pub async fn pick_save(app: AppHandle, boards: State<'_, Boards>, name: String, extensions: Vec<String>) -> Result<Option<String>, String> {
+pub async fn pick_save(app: AppHandle, boards: State<'_, Boards>, name: String, extensions: Vec<String>, downloads: Option<bool>) -> Result<Option<String>, String> {
     let mut dialog = app.dialog().file().set_file_name(&name);
+    if downloads.unwrap_or(false) {
+        if let Ok(dir) = app.path().download_dir() {
+            dialog = dialog.set_directory(dir);
+        }
+    }
     if !extensions.is_empty() {
         let list: Vec<&str> = extensions.iter().map(String::as_str).collect();
         dialog = dialog.add_filter(extensions.join(", ").to_uppercase(), &list);

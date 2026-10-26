@@ -15,7 +15,7 @@ import { inlineImages, safeName } from '../platform/storage';
 import { copyPng, getSetting, pickFile, printPage, saveFile, setSetting } from '../platform/io';
 
 /** Save a file; what to say when the user called the save off (nothing when it was saved). */
-const download = async (name: string, data: Blob | string, type?: string): Promise<string | undefined> => ((await saveFile(name, data, type)) ? undefined : '保存をやめました。');
+const download = async (name: string, data: Blob | string, type?: string): Promise<string | undefined> => ((await saveFile(name, data, type, true)) ? undefined : '保存をやめました。');
 
 type Mode = 'pdf' | 'image' | 'table' | 'data';
 const MODES: { key: Mode; label: string }[] = [

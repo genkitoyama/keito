@@ -105,10 +105,10 @@ function filters(accept: string): { name: string; extensions: string[] }[] {
 const MIME: Record<string, string> = { json: 'application/json', yaml: 'text/yaml', yml: 'text/yaml', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', svg: 'image/svg+xml' };
 
 const system: Platform = {
-  async saveFile(name, data, type) {
+  async saveFile(name, data, type, exported) {
     const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : '';
     // The app shows the dialog: only a place the user picks there can be written.
-    const path = await invoke<string | null>('pick_save', { name, extensions: ext ? [ext] : [] });
+    const path = await invoke<string | null>('pick_save', { name, extensions: ext ? [ext] : [], downloads: !!exported });
     if (!path) return false;
     const blob = typeof data === 'string' ? new Blob([data], { type }) : data;
     await invoke('write_file', new Uint8Array(await blob.arrayBuffer()), { headers: { path: encodeURIComponent(path) } });
