@@ -351,6 +351,8 @@ function ordered(group: Run[]): Run[] {
   return base.sort((p, q) => wins(q) - wins(p));
 }
 
+const holds = (f: Rect, p: Pt) => p.x > f.x && p.x < f.x + f.w && p.y > f.y && p.y < f.y + f.h;
+
 /**
  * Where each jogging line should bend: lines that could sit on top of each other get bends side
  * by side, ordered so they do not cross, in the open corridor between areas when there is one.
@@ -407,10 +409,11 @@ export function lanes(runs: Run[], obstacles: Rect[], frames: Rect[]): Map<strin
     for (let c = Math.ceil((lo + width / 2) / 10) * 10; c <= hi - width / 2; c += 10) {
       const first = c - width / 2;
       const blocked = order.some((u, k) => collides(path(u, first + k * step), near));
-      // Bends read best in the open corridor between areas rather than inside one or on its border.
+      // Bends read best in the open corridor between areas rather than inside one or on its border:
+      // an area the line both starts and ends in (a network round several others) is no matter.
       const framed = order.reduce((sum, u, k) => {
         const p = { x: first + k * step, y: (u.l.y + u.r.y) / 2 };
-        return sum + frames.filter((f) => p.x > f.x - CLEAR && p.x < f.x + f.w + CLEAR && p.y > f.y && p.y < f.y + f.h).length;
+        return sum + frames.filter((f) => p.x > f.x - CLEAR && p.x < f.x + f.w + CLEAR && p.y > f.y && p.y < f.y + f.h && !(holds(f, u.l) && holds(f, u.r))).length;
       }, 0);
       const score = [blocked ? 1 : 0, framed, Math.abs(c - mid)];
       const at = best ? score.findIndex((v, i) => v !== best!.score[i]) : 0;

@@ -1,4 +1,4 @@
-import { UI_FONT, wrapText } from './text';
+import { UI_FONT, measure, wrapText } from './text';
 import { type Run, STUB, chip, collides, facing, isH, lanes, routeAround } from './router';
 import { seqLayout, seqScale } from './sequence';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node, Port, PortSide, Pt, Rect } from './types';
@@ -201,6 +201,18 @@ function meetingPoint(end: Anchor): Anchor {
  */
 export const obstaclesOf = (doc: Doc): Rect[] => doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'text' && n.type !== 'junction' && !isUnderlay(n)).map(nodeRect);
 
+/**
+ * The title in the top corner of each area frame, as drawn: lines go round it rather than through
+ * the words, as they would through a box.
+ */
+export const frameTitles = (doc: Doc): Rect[] =>
+  doc.nodes.flatMap((n) => {
+    if (n.type !== 'frame' || !n.text.trim()) return [];
+    const size = n.fontSize ?? 13;
+    const w = Math.max(...n.text.split('\n').map((line) => measure(line, `${n.bold === false ? 400 : 700} ${size}px ${UI_FONT}`)));
+    return [{ x: n.x + 4, y: n.y + 4, w: Math.min(n.w - 8, w + 16), h: size + 11 }];
+  });
+
 /** Routed polyline for every edge of the doc (memoised per doc snapshot). */
 export function routeEdges(doc: Doc): Map<string, Pt[]> {
   const hit = routeCache.get(doc);
@@ -212,7 +224,7 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
     if (list) list.push(e);
     else bySource.set(e.from.node, [e]);
   }
-  const obstacles = obstaclesOf(doc);
+  const obstacles = [...obstaclesOf(doc), ...frameTitles(doc)];
   const out = new Map<string, Pt[]>();
   // First the attachment points of every line, then one pass that hands jogging lines their bends.
   const drawn = doc.edges.flatMap((e, index) => {

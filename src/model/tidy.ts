@@ -1,5 +1,5 @@
 import { deviceTagRects } from './badges';
-import { anchorOf, captionBox, center, frameOf, isTagged, isUnderlay, nodeRect, obstaclesOf, routeEdges, simplify, tagChips } from './geometry';
+import { anchorOf, captionBox, center, frameOf, frameTitles, isTagged, isUnderlay, nodeRect, obstaclesOf, routeEdges, simplify, tagChips } from './geometry';
 import { placeLabels } from './labels';
 import { facing, isH, routeClear, segmentsOf } from './router';
 import type { Doc, Edge, Node, Rect } from './types';
@@ -147,6 +147,25 @@ function free(doc: Doc, members: Map<string, string[]>, frame: string): boolean 
   return !doc.edges.some((e) => ids.has(e.from.node) !== ids.has(e.to.node));
 }
 
+/** The frames inside each frame, directly: an area within an area (subnets in a network). */
+const nestedIn = (doc: Doc): Map<string, string[]> => {
+  const inner = new Map<string, string[]>();
+  for (const f of doc.nodes) {
+    if (f.type !== 'frame') continue;
+    const outer = frameOf(doc, f);
+    if (outer) inner.set(outer.id, [...(inner.get(outer.id) ?? []), f.id]);
+  }
+  return inner;
+};
+
+/** Every frame inside this one, however deep. */
+const within = (inner: Map<string, string[]>, id: string, seen = new Set<string>()): string[] => {
+  if (seen.has(id)) return [];
+  seen.add(id);
+  return (inner.get(id) ?? []).flatMap((f) => [f, ...within(inner, f, seen)]);
+};
+
+/** The nodes in each frame, directly. */
 const membersOf = (doc: Doc): Map<string, string[]> => {
   const members = new Map<string, string[]>();
   for (const n of doc.nodes) {
@@ -157,19 +176,36 @@ const membersOf = (doc: Doc): Map<string, string[]> => {
   return members;
 };
 
+/** What each frame holds, its own nodes and those of the frames within it alike. */
+const contentsOf = (doc: Doc): Map<string, string[]> => {
+  const own = membersOf(doc);
+  const inner = nestedIn(doc);
+  const contents = new Map<string, string[]>();
+  for (const f of doc.nodes) {
+    if (f.type !== 'frame') continue;
+    const ids = [f.id, ...within(inner, f.id)].flatMap((id) => own.get(id) ?? []);
+    if (ids.length) contents.set(f.id, ids);
+  }
+  return contents;
+};
+
 /**
- * Stretch every area frame around its members again. A frame that grew into another one pushes
+ * Stretch every area frame around its members again, the innermost first, so an area holding
+ * others keeps its margin round them. A frame that grew into another one pushes
  * it down, but only if nothing outside is wired into the pushed frame: moving a frame that
  * other nodes line up with would just make them chase it on the next run.
  */
 function refit(doc: Doc, nodes: Map<string, Node>): void {
-  const members = membersOf(doc);
+  const members = contentsOf(doc);
+  const own = membersOf(doc);
+  const inner = nestedIn(doc);
   const frames = doc.nodes.filter((n) => n.type === 'frame');
-  for (const f of frames) {
-    const ids = members.get(f.id);
-    if (!ids) continue;
-    const was = bounds(ids.map((id) => doc.nodes.find((n) => n.id === id)!));
-    const now = bounds(ids.map((id) => nodes.get(id)!));
+  for (const f of [...frames].sort((p, q) => p.w * p.h - q.w * q.h)) {
+    // What it holds directly, and the frames within it as they have just been fitted.
+    const held = [...(own.get(f.id) ?? []), ...(inner.get(f.id) ?? [])];
+    if (!members.has(f.id)) continue;
+    const was = bounds(held.map((id) => doc.nodes.find((n) => n.id === id)!));
+    const now = bounds(held.map((id) => nodes.get(id)!));
     const next = { ...f, x: f.x + now.x - was.x, y: f.y + now.y - was.y, w: f.w + now.w - was.w, h: f.h + now.h - was.h };
     if (next.x !== f.x || next.y !== f.y || next.w !== f.w || next.h !== f.h) nodes.set(f.id, next as Node);
   }
@@ -182,7 +218,8 @@ function refit(doc: Doc, nodes: Map<string, Node>): void {
       const dy = other.y + nodeRect(other).h + FRAME_GAP - now.y;
       now = { ...now, y: now.y + dy };
       nodes.set(f.id, now);
-      for (const id of members.get(f.id) ?? []) nodes.set(id, { ...nodes.get(id)!, y: nodes.get(id)!.y + dy });
+      // Everything it holds comes along, the frames within it too.
+      for (const id of [...(members.get(f.id) ?? []), ...within(inner, f.id)]) nodes.set(id, { ...nodes.get(id)!, y: nodes.get(id)!.y + dy });
     }
     placed.push(f);
   }
@@ -234,7 +271,8 @@ function tangles(doc: Doc): Map<string, number> {
   const routes = routeEdges(doc);
   const by = new Map<string, number>();
   const add = (id: string, v: number) => by.set(id, (by.get(id) ?? 0) + v);
-  const boxes = doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'junction' && !isUnderlay(n)).map((n) => ({ id: n.id, r: nodeRect(n) }));
+  // An area's title is in the way as much as a box is.
+  const boxes = [...doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'junction' && !isUnderlay(n)).map((n) => ({ id: n.id, r: nodeRect(n) })), ...frameTitles(doc).map((r) => ({ id: '', r }))];
   const runs: Run[] = [];
   for (const e of doc.edges) {
     const pts = routes.get(e.id);
@@ -426,8 +464,9 @@ function arrange(doc: Doc): Map<string, Node> {
   const whole = (f: Node) => [f.id, ...members.get(f.id)!];
   const right = (col: Node[]) => Math.max(...col.map((f) => nodes.get(f.id)!.x + nodeRect(nodes.get(f.id)!).w));
   const hangs = reach(doc);
+  const inner = nestedIn(doc);
   const fit = (f: Node) => {
-    const list = members.get(f.id)!.map((id) => nodes.get(id)!);
+    const list = [...(members.get(f.id) ?? []), ...(inner.get(f.id) ?? [])].map((id) => nodes.get(id)!);
     const b = bounds(list);
     const title = ((f as { fontSize?: number }).fontSize ?? 13) + 19;
     // The frame keeps its margin round the boxes, and at least a little more round their tags.
@@ -462,6 +501,11 @@ function arrange(doc: Doc): Map<string, Node> {
       attempt(doc, nodes, () => shift(nodes, rest, 0, above.y + above.h + FRAME_GAP - nodes.get(f.id)!.y));
     }
   }
+  // Areas within areas (subnets in a network) keep their place, but each is fitted too, the
+  // innermost first, round what it holds and the areas within it.
+  const contents = contentsOf(doc);
+  const nested = doc.nodes.filter((f) => f.type === 'frame' && contents.has(f.id) && !frames.includes(f) && (inner.has(f.id) || frameOf(doc, f)));
+  for (const f of nested.sort((p, q) => p.w * p.h - q.w * q.h)) attempt(doc, nodes, () => fit(nodes.get(f.id)!));
   return nodes;
 }
 
@@ -578,7 +622,7 @@ function comb(doc: Doc, nodes: Map<string, Node>): Edge[] {
 function untangle(doc: Doc): Doc {
   if (doc.edges.length >= WEIGH_UP_TO) return doc;
   const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
-  const obstacles = [...obstaclesOf(doc), ...tagChips(doc)];
+  const obstacles = [...obstaclesOf(doc), ...tagChips(doc), ...frameTitles(doc)];
   const own = tangles(doc);
   let best = [...own.values()].reduce((sum, v) => sum + v, 0);
   // A crossing is shared between its two lines; the worst few are tried, as each try weighs the board.

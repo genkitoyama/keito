@@ -1,9 +1,12 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { deviceTagRects } from '../src/model/badges';
-import { frameOf, isTagged, labelPoint, nodeRect, routeEdges, tagChips } from '../src/model/geometry';
+import { frameOf, frameTitles, isTagged, labelPoint, nodeRect, routeEdges, tagChips } from '../src/model/geometry';
+import { fromYaml } from '../src/model/dsl';
 import { sampleBoards } from '../src/model/sample';
 import { tangle, tidy } from '../src/model/tidy';
 import type { Doc, Rect } from '../src/model/types';
+import { blank } from './helpers';
 
 const system = () => sampleBoards()[0];
 
@@ -83,5 +86,41 @@ describe('a floor plan laid under the drawing', () => {
     expect(after.nodes.find((n) => n.id === 'plan')).toEqual(plan);
     const plain = tidy(doc);
     for (const n of plain.nodes) expect(after.nodes.find((m) => m.id === n.id)).toEqual(n);
+  });
+});
+
+describe('areas within areas', () => {
+  // A web system as drawn by hand: subnets inside a network, inside nothing else.
+  const nested = () => fromYaml(fs.readFileSync(new URL('./fixtures/web-nested.yaml', import.meta.url), 'utf8'), blank('nested'));
+  const frames = (doc: Doc) => doc.nodes.filter((n) => n.type === 'frame');
+
+  it('fits the outer area round the areas within it, with room for its title', () => {
+    const after = tidy(nested());
+    const vpc = frames(after).find((f) => f.text.startsWith('AWS'))!;
+    const subnets = frames(after).filter((f) => f.text.includes('サブネット'));
+    expect(subnets).toHaveLength(3);
+    for (const s of subnets) expect(inside({ x: s.x - 20, y: s.y - 40, w: s.w + 40, h: s.h + 60 }, nodeRect(vpc))).toBe(true);
+    // Snug: no more than a margin's worth of room past the subnets on any side.
+    const right = Math.max(...subnets.map((s) => s.x + s.w));
+    const bottom = Math.max(...subnets.map((s) => s.y + s.h));
+    expect(vpc.x + vpc.w - right).toBeLessThanOrEqual(60);
+    expect(vpc.y + vpc.h - bottom).toBeLessThanOrEqual(60);
+  });
+
+  it('keeps lines off the titles of the areas', () => {
+    for (const doc of [nested(), tidy(nested())]) {
+      const routes = routeEdges(doc);
+      for (const t of frameTitles(doc))
+        for (const e of doc.edges) {
+          if (isTagged(doc, e)) continue;
+          const pts = routes.get(e.id)!;
+          for (let i = 1; i < pts.length; i++) {
+            const [a, b] = [pts[i - 1], pts[i]];
+            const seg = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+            const through = seg.x < t.x + t.w && t.x < seg.x + seg.w && seg.y < t.y + t.h && t.y < seg.y + seg.h;
+            expect(through, `${e.id} through a title`).toBe(false);
+          }
+        }
+    }
   });
 });
