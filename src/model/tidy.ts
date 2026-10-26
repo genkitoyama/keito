@@ -709,12 +709,17 @@ function orderPorts(doc: Doc): Doc {
           const far = e.from.node === id && e.from.port === port.id ? e.to : e.to.node === id && e.to.port === port.id ? e.from : null;
           return far ? [{ e, far, out: e.from.node === id }] : [];
         });
-        if (!ends.length || ends.some(({ e, far }) => e.route || far.node === id || !nodes.has(far.node))) return null;
+        if (!ends.length || ends.some(({ e, far }) => (e.route && !e.tidied) || far.node === id || !nodes.has(far.node))) return null;
+        // Lines from one height: the one turning in nearest the box goes nearest that side (from above,
+        // on top), so the others turn in round it rather than across it.
         const from = ({ e, out }: (typeof ends)[number]): number => {
           const pts = routes.get(e.id) ?? [];
           const run = out ? pts : [...pts].reverse();
           const level = run[0]?.y ?? 0;
-          return run.find((p) => Math.abs(p.y - level) > 0.5)?.y ?? level;
+          const turn = run.find((p) => Math.abs(p.y - level) > 0.5);
+          if (!turn) return level;
+          const near = Math.abs(turn.x - run[0].x) / 10000;
+          return turn.y + (turn.y < level ? near : -near);
         };
         return ends.reduce((sum, end) => sum + from(end), 0) / ends.length;
       };
@@ -782,8 +787,10 @@ export function tidy(doc: Doc): Doc {
     next = after;
   }
   // Tidying must not leave the wiring worse than it found it: if it would, only the labels move.
-  if (tangle(next) > tangle(doc)) next = doc;
-  next = untangle(orderPorts(next));
+  // (Found without the bends an earlier tidy laid: those are laid afresh, not held up against.)
+  if (tangle(next) > tangle(fresh)) next = fresh;
+  // Lines routed afresh round the others can come in from another side: the ports follow them.
+  next = orderPorts(untangle(orderPorts(next)));
   // Last, with everything where it ends up: each label slid along its line to where it is clear.
   next = placeLabels(next);
   return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;

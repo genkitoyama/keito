@@ -155,3 +155,26 @@ cables:
     expect(crossingGaps(doc).get('down')).toHaveLength(1);
   });
 });
+
+describe('lines merging into one port', () => {
+  it('turn in at one place and join there together', () => {
+    const doc = fromYaml(
+      `kind: software
+devices:
+  - { id: a, name: A, out: [OUT:http], pos: [0, 0] }
+  - { id: b, name: B, out: [OUT:http], pos: [0, 200] }
+  - { id: c, name: C, out: [OUT:http], pos: [0, 400] }
+  - { id: db, name: DB, in: [IN:tcp], pos: [600, 260] }
+cables:
+  - { id: p, from: a.OUT, to: db.IN, type: tcp }
+  - { id: q, from: b.OUT, to: db.IN, type: tcp }
+  - { id: r, from: c.OUT, to: db.IN, type: tcp }
+`,
+      blank('merge'),
+    );
+    const routes = routeEdges(doc);
+    // Where each line goes down (or up) to the port's height: the same for all three.
+    const turn = (id: string) => routes.get(id)!.find((p, i, pts) => i > 0 && Math.abs(p.x - pts[i - 1].x) < 0.5 && Math.abs(p.y - pts[i - 1].y) > 0.5)?.x;
+    expect(new Set(['p', 'q', 'r'].map(turn)).size).toBe(1);
+  });
+});
