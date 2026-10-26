@@ -296,7 +296,7 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
     }
     // A line from a box back into the same place on it (a flow looping on itself) has no run of its
     // own: it goes out and comes back round the corner, onto the next side.
-    if (a === b && !e.from.port && !e.to.port && Math.hypot(ea.x - to.x, ea.y - to.y) < 1) {
+    if (a === b && (e.from.port ? e.from.port === e.to.port : !e.to.port) && Math.hypot(ea.x - to.x, ea.y - to.y) < 1) {
       out.set(e.id, selfLoop(ea));
       continue;
     }

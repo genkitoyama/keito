@@ -116,7 +116,8 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
   const head = `M${x},${y + top} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + top} Z`;
   // What the venue already has reads apart from what is brought in: a dashed outline and a striped
   // header, as drawings mark work by others, and a small "会場" in the corner. It keeps its colour.
-  const venue = n.venue ? `venue-${n.id}` : null;
+  // Ids unique to the board too: several boards may be drawn in one page (the project's PDF).
+  const venue = n.venue ? `venue-${doc?.id ?? ''}-${n.id}` : null;
   const edge = venue ? (tint?.stroke ?? VENUE_LINE) : line;
   const ground = tint?.fill ?? '#f1f5f9';
   const stripe = tint ? mix(tint.stroke, '#ffffff', 0.65) : '#cbd5e1';
@@ -456,7 +457,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
       const lay = legendLayout(doc, n);
       const anyLines = doc.edges.some((e) => e.signal !== 'flow');
       const empty = !lay.lines.rows.length && !lay.devices.rows.length;
-      const stripes = `legend-venue-${n.id}`;
+      const stripes = `legend-venue-${doc.id}-${n.id}`;
       const heading = (bx: number, by: number, bw: number, text: string) => <TextBlock x={x + bx} y={y + by + LEGEND.section / 2 - 2} w={bw} text={text} size={10.5} weight={700} fill="#64748b" anchor="start" theme={theme} />;
       const rowsTop = (part: { y: number; heading: boolean }) => y + part.y + (part.heading ? LEGEND.section : 0);
       // Stacked parts are set apart by a rule; side by side, the gap between the columns does it.

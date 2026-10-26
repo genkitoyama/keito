@@ -37,3 +37,18 @@ describe('lines leaving one box the same way round', () => {
     expect(far('e1')).not.toBe(far('e2'));
   });
 });
+
+describe('a line from a port back to the same port', () => {
+  it('loops out and back, rather than being drawn with no length', async () => {
+    const { routeEdges } = await import('../src/model/geometry');
+    const { blank } = await import('./helpers');
+    const doc = {
+      ...blank(),
+      nodes: [{ id: 'a', type: 'device' as const, x: 0, y: 0, w: 160, h: 0, text: 'A', maker: '', model: '', category: '', note: '', ports: [{ id: 'o', name: 'OUT', side: 'right' as const, signal: 'video' }] }],
+      edges: [{ id: 'e', from: { node: 'a', port: 'o' }, to: { node: 'a', port: 'o' }, signal: 'video', label: '', arrow: 'none' as const }],
+    };
+    const pts = routeEdges(doc).get('e')!;
+    const length = pts.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - pts[i].x, p.y - pts[i].y), 0);
+    expect(length).toBeGreaterThan(20);
+  });
+});
