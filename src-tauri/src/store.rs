@@ -52,7 +52,8 @@ pub fn slug(title: &str) -> String {
     let mut out = String::new();
     let mut gap = false;
     for c in title.chars() {
-        if c.is_whitespace() || matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '.') {
+        // Spaces as both sides count them: Unicode's, and the byte-order mark JavaScript also takes.
+        if c.is_whitespace() || matches!(c, '\u{feff}' | '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '.') {
             gap = true;
         } else {
             if gap && !out.is_empty() {
@@ -64,6 +65,14 @@ pub fn slug(title: &str) -> String {
     }
     let out: String = out.trim_matches('_').chars().take(60).collect();
     if out.is_empty() { "board".into() } else { out }
+}
+
+/// A few characters no other writer will pick at the same moment.
+fn rand_suffix() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+    h.write_u128(now_ms());
+    format!("{:x}", h.finish())
 }
 
 fn now_ms() -> u128 {
@@ -111,24 +120,40 @@ fn str_of(v: &Value, path: &[&str]) -> Option<String> {
     cur.as_str().filter(|s| !s.is_empty()).map(String::from)
 }
 
-fn serial_of(v: &Value) -> u64 {
-    v.get("serial").and_then(Value::as_u64).unwrap_or(0)
+/// A board's version number as written: a whole number, 0 and up, also when typed by hand as text
+/// ("5") or a decimal (5.0); anything else reads as 0. The page reads it the same way (load.ts, readSerial).
+pub fn serial_of(v: &Value) -> u64 {
+    let n = match v.get("serial") {
+        Some(Value::Number(n)) => n.as_f64(),
+        Some(Value::String(s)) if !s.trim().is_empty() => s.trim().parse::<f64>().ok(),
+        _ => None,
+    };
+    n.filter(|n| n.is_finite() && *n >= 0.0).map(|n| n.floor() as u64).unwrap_or(0)
 }
 
 fn read_json(p: &Path) -> Option<Value> {
     serde_json::from_str(&fs::read_to_string(p).ok()?).ok()
 }
 
-/// Write a file whole or not at all: to a temporary name no other writer uses, then into place.
-fn write_atomic(p: &Path, text: &str) -> std::io::Result<()> {
+/// Write a file whole or not at all: to a temporary name no other writer uses, onto the disk, then
+/// into place. A crash or a power cut leaves the old file or the new, never half of one; a failed
+/// write leaves nothing behind.
+fn write_atomic(p: &Path, data: impl AsRef<[u8]>) -> std::io::Result<()> {
+    use std::io::Write;
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("file");
     let tmp = p.with_file_name(format!("{name}.{}-{n}.tmp", std::process::id()));
-    fs::write(&tmp, text)?;
-    fs::rename(&tmp, p).inspect_err(|_| {
+    let written = (|| {
+        let mut f = fs::File::create(&tmp)?;
+        f.write_all(data.as_ref())?;
+        f.sync_all()?;
+        fs::rename(&tmp, p)
+    })();
+    if written.is_err() {
         let _ = fs::remove_file(&tmp);
-    })
+    }
+    written
 }
 
 /// The folder's write lock, the same file server/store.ts takes: the dev server, the command line
@@ -140,26 +165,38 @@ const STALE: Duration = Duration::from_secs(10);
 const WAIT: Duration = Duration::from_secs(3);
 pub const BUSY: &str = "ほかのアプリがこのフォルダーに書き込み中です。少し待ってからもう一度保存してください";
 
-/// Holding the lock; let go when dropped.
-struct Locked(PathBuf);
+/// Holding the lock, with the token written in it; let go when dropped, and only if it is still ours
+/// (a holder too slow may have had it taken over, and must not take away the next holder's).
+struct Locked(PathBuf, String);
 
 impl Drop for Locked {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.0);
+        if fs::read_to_string(&self.0).is_ok_and(|t| t == self.1) {
+            let _ = fs::remove_file(&self.0);
+        }
     }
 }
 
 fn lock(root: &Path, wait: Duration) -> Result<Locked, String> {
+    use std::io::Write;
     fs::create_dir_all(root).map_err(|e| e.to_string())?;
     let file = root.join(LOCK);
+    let token = format!("{}-{}-{}", std::process::id(), now_ms(), rand_suffix());
     let until = Instant::now() + wait;
     loop {
         match fs::OpenOptions::new().write(true).create_new(true).open(&file) {
-            Ok(_) => return Ok(Locked(file)),
+            Ok(mut f) => {
+                let _ = f.write_all(token.as_bytes());
+                return Ok(Locked(file, token));
+            }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
                 let stale = fs::metadata(&file).and_then(|m| m.modified()).ok().and_then(|t| t.elapsed().ok()).is_some_and(|age| age > STALE);
                 if stale {
-                    let _ = fs::remove_file(&file);
+                    // Moved aside first: of several writers finding it stale, only one can.
+                    let aside = root.join(format!("{LOCK}.{token}.stale"));
+                    if fs::rename(&file, &aside).is_ok() {
+                        let _ = fs::remove_file(&aside);
+                    }
                     continue;
                 }
                 if Instant::now() > until {
@@ -192,7 +229,12 @@ impl Store {
 
     pub fn dir_of(&self, id: &str) -> Option<PathBuf> {
         let tail = format!("__{id}");
-        self.dirs().into_iter().find(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n == id || n.ends_with(&tail)))
+        let hits: Vec<PathBuf> = self.dirs().into_iter().filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n == id || n.ends_with(&tail))).collect();
+        // Folders of "X" and of "_X" both end in "__X": the board inside says which is which.
+        if hits.len() < 2 {
+            return hits.into_iter().next();
+        }
+        hits.into_iter().find(|p| read_json(&p.join("board.json")).and_then(|v| v.get("id").and_then(Value::as_str).map(|s| s == id)).unwrap_or(false))
     }
 
     fn serial_at(&self, dir: Option<&PathBuf>) -> u64 {
@@ -317,10 +359,14 @@ impl Store {
         fs::read_to_string(self.revision_file(board, state)?).ok()
     }
 
+    /// Written holding the lock, into the board's folder as it is then (one renamed meanwhile, for a
+    /// new title, is followed rather than made again under its old name).
     pub fn write_revision(&self, board: &str, state: &str, doc: &Value) -> Result<(), String> {
+        let text = serde_json::to_string_pretty(doc).map_err(|e| e.to_string())?;
+        let _held = lock(&self.root, WAIT)?;
         let file = self.revision_file(board, state).ok_or("save the board first")?;
         fs::create_dir_all(file.parent().unwrap()).map_err(|e| e.to_string())?;
-        fs::write(file, serde_json::to_string_pretty(doc).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
+        write_atomic(&file, text).map_err(|e| e.to_string())
     }
 
     pub fn remove_revision(&self, board: &str, state: &str) {
@@ -336,10 +382,12 @@ impl Store {
         Some(self.dir_of(board)?.join("assets").join(name))
     }
 
+    /// Written as a state of the history is (see write_revision).
     pub fn write_asset(&self, board: &str, name: &str, bytes: &[u8]) -> Result<(), String> {
+        let _held = lock(&self.root, WAIT)?;
         let file = self.asset_file(board, name).ok_or("save the board first")?;
         fs::create_dir_all(file.parent().unwrap()).map_err(|e| e.to_string())?;
-        fs::write(file, bytes).map_err(|e| e.to_string())
+        write_atomic(&file, bytes).map_err(|e| e.to_string())
     }
 
     pub fn read_presets(&self) -> String {
@@ -370,6 +418,21 @@ mod tests {
     }
     fn board(id: &str, title: &str) -> Value {
         json!({ "version": 1, "id": id, "meta": { "title": title, "project": "P" }, "nodes": [], "edges": [] })
+    }
+
+    #[test]
+    fn makes_folder_names_as_the_page_and_the_command_line_do() {
+        let cases: Vec<(String, String)> = serde_json::from_str(include_str!("../../test/slug-cases.json")).unwrap();
+        for (title, folder) in cases {
+            assert_eq!(slug(&title), folder, "{title:?}");
+        }
+    }
+
+    #[test]
+    fn reads_a_version_number_as_the_page_does() {
+        for (v, n) in [(json!(5), 5), (json!("5"), 5), (json!(5.0), 5), (json!(-1), 0), (json!("x"), 0), (json!(null), 0)] {
+            assert_eq!(serial_of(&json!({ "serial": v })), n, "{v}");
+        }
     }
 
     #[test]

@@ -1,0 +1,46 @@
+[
+ [
+  "展示 ブース A",
+  "展示_ブース_A"
+ ],
+ [
+  "  lead and trail  ",
+  "lead_and_trail"
+ ],
+ [
+  "a/b\\c:d*e?f\"g<h>i|j.k",
+  "a_b_c_d_e_f_g_h_i_j_k"
+ ],
+ [
+  "__x__",
+  "x"
+ ],
+ [
+  "",
+  "board"
+ ],
+ [
+  "...",
+  "board"
+ ],
+ [
+  "tab\tand　ideographic",
+  "tab_and_ideographic"
+ ],
+ [
+  "nelnext",
+  "nel_next"
+ ],
+ [
+  "bom﻿mark",
+  "bom_mark"
+ ],
+ [
+  "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+  "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀"
+ ],
+ [
+  "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx yy",
+  "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_"
+ ]
+]

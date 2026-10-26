@@ -42,3 +42,11 @@ describe('marking what matched', () => {
     expect(matchRange(text, 'hdmi')).toBeNull();
   });
 });
+
+describe('marking half-width kana', () => {
+  it('marks a word written in half-width kana with voicing marks', () => {
+    const text = 'ｹﾞｰﾑPC';
+    expect(text.slice(...matchRange(text, 'ゲーム')!)).toBe('ｹﾞｰﾑ');
+    expect(text.slice(...matchRange(text, 'ｹﾞｰﾑ')!)).toBe('ｹﾞｰﾑ');
+  });
+});

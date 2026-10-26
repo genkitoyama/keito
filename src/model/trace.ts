@@ -1,4 +1,5 @@
 import { type Anchor, snap } from './geometry';
+import { CLEAR } from './router';
 import type { Pt } from './types';
 
 /**
@@ -24,8 +25,6 @@ export function straighten(pts: Pt[], tolerance: number): Pt[] {
   return [...straighten(pts.slice(0, at + 1), tolerance).slice(0, -1), ...straighten(pts.slice(at), tolerance)];
 }
 
-/** How far out from its box the first and last corners of a traced line stay. */
-const CLEAR = 20;
 
 type Axis = 'h' | 'v';
 /** A straight stretch: horizontal at height `at`, or vertical at `at` across. */

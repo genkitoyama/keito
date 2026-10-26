@@ -8,7 +8,7 @@ export function stubPage(): { listeners: Record<string, (e?: unknown) => void>; 
   const listeners: Record<string, (e?: unknown) => void> = {};
   const storage = new Map<string, string>();
   vi.useFakeTimers();
-  vi.stubGlobal('window', { setTimeout, clearTimeout, addEventListener: (k: string, f: () => void) => (listeners[k] = f) });
+  vi.stubGlobal('window', { setTimeout, clearTimeout, addEventListener: (k: string, f: () => void) => (listeners[k] = f), alert: () => {}, confirm: () => true });
   vi.stubGlobal('document', { getElementById: () => null, addEventListener: () => {}, visibilityState: 'visible' });
   vi.stubGlobal('localStorage', { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => void storage.set(k, v), removeItem: (k: string) => void storage.delete(k) });
   vi.stubGlobal('location', { hash: '', pathname: '/', search: '' });

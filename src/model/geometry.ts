@@ -1,5 +1,5 @@
 import { UI_FONT, wrapText } from './text';
-import { CLEAR, type Run, chip, collides, lanes, routeAround } from './router';
+import { type Run, STUB, chip, collides, facing, isH, lanes, routeAround } from './router';
 import { seqLayout, seqScale } from './sequence';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node, Port, PortSide, Pt, Rect } from './types';
 
@@ -26,7 +26,20 @@ export interface Anchor extends Pt {
 
 export const portsOn = (d: DeviceNode, side: PortSide): Port[] => d.ports.filter((p) => p.side === side);
 
+/** Sizes as worked out, per node: nodes are never changed in place, so a node keeps its size. */
+const sizes = new WeakMap<Node, { w: number; h: number }>();
+
 export function nodeSize(n: Node): { w: number; h: number } {
+  if (n.type !== 'device' && n.type !== 'sequence') return { w: n.w, h: n.h };
+  const hit = sizes.get(n);
+  if (hit) return hit;
+  const size = measuredSize(n);
+  sizes.set(n, size);
+  return size;
+}
+
+/** A device's height follows its name and ports, a sequence diagram's its messages. */
+function measuredSize(n: Node): { w: number; h: number } {
   if (n.type === 'device') {
     const rows = Math.max(1, portsOn(n, 'left').length, portsOn(n, 'right').length);
     return { w: n.w, h: deviceHead(n) + rows * DEV.row + DEV.pad };
@@ -82,8 +95,6 @@ export function anchorOf(node: Node, end: EdgeEnd, toward: Pt): Anchor {
   return { ...sidePoint(rect, dir), dir, rect };
 }
 
-const STUB = 18;
-const isH = (d: Dir): boolean => d === 'left' || d === 'right';
 const SWAP: Record<Dir, Dir> = { left: 'top', top: 'left', right: 'bottom', bottom: 'right' };
 const flipPt = (p: Pt): Pt => ({ x: p.y, y: p.x });
 const flip = (a: Anchor): Anchor => ({
@@ -116,12 +127,16 @@ export function simplify(pts: Pt[]): Pt[] {
   return out;
 }
 
-/** Orthogonal route between two anchors. `lane` shifts the shared middle segment so parallel cables don't overlap. */
-export function route(a: Anchor, b: Anchor, lane = 0): Pt[] {
+/**
+ * Orthogonal route between two anchors. `lane` shifts the shared middle segment so parallel cables
+ * don't overlap; `outward` is how much further out a line goes when it must go round (it runs past
+ * the ends, or loops below), distinct for lines leaving one box so they lie side by side.
+ */
+export function route(a: Anchor, b: Anchor, lane = 0, outward = Math.abs(lane)): Pt[] {
   const ha = isH(a.dir);
   const hb = isH(b.dir);
-  if (!ha && !hb) return route(flip(a), flip(b), lane).map(flipPt);
-  if (!ha && hb) return route(b, a, lane).reverse();
+  if (!ha && !hb) return route(flip(a), flip(b), lane, outward).map(flipPt);
+  if (!ha && hb) return route(b, a, lane, outward).reverse();
   const s1 = stub(a);
   const s2 = stub(b);
   const pts: Pt[] = [a];
@@ -138,11 +153,11 @@ export function route(a: Anchor, b: Anchor, lane = 0): Pt[] {
         let my: number;
         if (aB + 2 * GRID < b.rect.y) my = (aB + b.rect.y) / 2;
         else if (bB + 2 * GRID < a.rect.y) my = (bB + a.rect.y) / 2;
-        else my = Math.max(aB, bB) + 24 + Math.abs(lane);
+        else my = Math.max(aB, bB) + 24 + outward;
         pts.push(s1, { x: s1.x, y: my }, { x: s2.x, y: my }, s2);
       }
     } else {
-      const ex = a.dir === 'right' ? Math.max(s1.x, s2.x) + Math.abs(lane) : Math.min(s1.x, s2.x) - Math.abs(lane);
+      const ex = a.dir === 'right' ? Math.max(s1.x, s2.x) + outward : Math.min(s1.x, s2.x) - outward;
       pts.push({ x: ex, y: a.y }, { x: ex, y: b.y });
     }
   } else {
@@ -179,6 +194,13 @@ function meetingPoint(end: Anchor): Anchor {
   return { x, y, dir: end.dir, rect: { x: x0, y: y0, w: Math.max(r.x + r.w, x) - x0, h: Math.max(r.y + r.h, y) - y0 } };
 }
 
+/**
+ * What a line must not run through: every node except area frames (lines belong inside those),
+ * free text (captions are meant to sit next to lines), junctions (lines meet there) and pictures
+ * laid under the drawing (a floor plan is under everything, not in the way).
+ */
+export const obstaclesOf = (doc: Doc): Rect[] => doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'text' && n.type !== 'junction' && !isUnderlay(n)).map(nodeRect);
+
 /** Routed polyline for every edge of the doc (memoised per doc snapshot). */
 export function routeEdges(doc: Doc): Map<string, Pt[]> {
   const hit = routeCache.get(doc);
@@ -190,9 +212,7 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
     if (list) list.push(e);
     else bySource.set(e.from.node, [e]);
   }
-  // What a line must not run through: every node except area frames (lines belong inside those)
-  // and free text (captions are meant to sit next to lines).
-  const obstacles = doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'text' && n.type !== 'junction').map(nodeRect);
+  const obstacles = obstaclesOf(doc);
   const out = new Map<string, Pt[]>();
   // First the attachment points of every line, then one pass that hands jogging lines their bends.
   const drawn = doc.edges.flatMap((e, index) => {
@@ -230,7 +250,6 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
   }
   const meets = new Map<string, Anchor>();
   for (const list of into.values()) if (list.length > 1) for (const d of list) meets.set(d.e.id, meetingPoint(d.eb));
-  const facing = (l: Anchor, r: Anchor) => l.dir === 'right' && r.dir === 'left' && r.x - l.x >= CLEAR * 2;
   const runs: Run[] = [];
   // A line drawn as tags leaves a chip beside each port; bends keep off those too.
   const chips: Rect[] = [];
@@ -246,6 +265,7 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
   for (const { e, index, a, b, pa, pb, ea, eb, tagged } of drawn) {
     const siblings = bySource.get(e.from.node)!;
     const lane = (siblings.indexOf(e) - (siblings.length - 1) / 2) * 8;
+    const outward = siblings.indexOf(e) * 8;
     if (manual(e) && !tagged) {
       // Hand-placed bends: the first and last follow their end so the outer segments stay square.
       const mid = e.route!.map((p) => ({ x: p.x, y: p.y }));
@@ -273,11 +293,11 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
     }
     // A line from a box back into the same place on it (a flow looping on itself) has no run of its
     // own: it goes out and comes back round the corner, onto the next side.
-    if (a === b && !e.from.port && !e.to.port && Math.hypot(ea.x - to.x, ea.y - to.y) < 1) {
+    if (a === b && (e.from.port ? e.from.port === e.to.port : !e.to.port) && Math.hypot(ea.x - to.x, ea.y - to.y) < 1) {
       out.set(e.id, selfLoop(ea));
       continue;
     }
-    let pts = route(ea, to, lane);
+    let pts = route(ea, to, lane, outward);
     // The plain elbow would cut through a node: find a way around. Lines drawn as tags have no run to fix.
     if (a !== b && !tagged && collides(pts, obstacles)) {
       // Neighbouring lines keep slightly different clearances so they don't sit on top of each other.

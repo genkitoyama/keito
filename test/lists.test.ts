@@ -153,3 +153,41 @@ describe('shaded rows', () => {
     expect([...bands(t)]).toEqual([3, 4]);
   });
 });
+
+describe('cable IDs typed by hand', () => {
+  it('are not handed out again by the numbering', () => {
+    const d: Doc = {
+      ...blank(),
+      nodes: [device('a', 'A', [{ id: 'o', name: 'HDMI', side: 'right', signal: 'video' }]), device('b', 'B', [{ id: 'i', name: 'HDMI', side: 'left', signal: 'video' }])],
+      edges: [0, 1, 2].map((i) => ({ id: `e${i}`, from: { node: 'a', port: 'o' }, to: { node: 'b', port: 'i' }, signal: 'video', label: '', arrow: 'none' as const, ...(i === 0 ? { cableId: 'HDMI-02' } : {}) })),
+    };
+    const ids = [...cableIds(d).values()];
+    expect(new Set(ids).size).toBe(3);
+    expect(ids[0]).toBe('HDMI-02');
+  });
+});
+
+describe('power and addresses in less usual drawings', () => {
+  it('follows power through a junction dot', () => {
+    const d: Doc = {
+      ...blank(),
+      nodes: [
+        device('ups', 'UPS', [{ id: 'o', name: 'AC', side: 'right', signal: 'power' }], { capacity: 100 }),
+        { id: 'j', type: 'junction', x: 0, y: 0, w: 10, h: 10, text: '' },
+        device('a', 'A', [{ id: 'i', name: 'AC', side: 'left', signal: 'power' }], { watts: 80 }),
+        device('b', 'B', [{ id: 'i', name: 'AC', side: 'left', signal: 'power' }], { watts: 80 }),
+      ],
+      edges: [
+        { id: 'e1', from: { node: 'ups', port: 'o' }, to: { node: 'j' }, signal: 'power', label: '', arrow: 'none' },
+        { id: 'e2', from: { node: 'j' }, to: { node: 'a', port: 'i' }, signal: 'power', label: '', arrow: 'none' },
+        { id: 'e3', from: { node: 'j' }, to: { node: 'b', port: 'i' }, signal: 'power', label: '', arrow: 'none' },
+      ],
+    };
+    expect(powerLoads(d).get('ups')).toMatchObject({ watts: 160, over: true });
+  });
+
+  it('does not call two devices set to DHCP a clash of addresses', () => {
+    const d: Doc = { ...blank(), nodes: [device('a', 'A', [], { ip: 'DHCP' }), device('b', 'B', [], { ip: 'DHCP' })] };
+    expect(checkTable(d).rows.some((r) => r.join(' ').includes('重複'))).toBe(false);
+  });
+});

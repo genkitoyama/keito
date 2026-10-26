@@ -118,25 +118,29 @@ pub fn set_boards_folder(app: AppHandle, boards: State<Boards>, path: String) ->
     std::fs::write(&file, serde_json::to_string_pretty(&serde_json::json!({ "boards": path })).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     *boards.store.write().unwrap_or_else(|e| e.into_inner()) = Store::new(root);
     *boards.source.write().unwrap_or_else(|e| e.into_inner()) = Source::Chosen;
+    // Who wrote what last was about the old folder.
+    boards.ours.lock().unwrap_or_else(|e| e.into_inner()).clear();
     watch(app.clone());
     Ok(())
 }
 
+// The commands that read and write the folder are async: Tauri runs them off the main thread, so
+// a wait for another writer's lock (or a large file) never freezes the window and its menus.
 #[tauri::command]
-pub fn list_boards(boards: State<Boards>) -> Vec<BoardInfo> {
-    boards.store().list()
+pub async fn list_boards(boards: State<'_, Boards>) -> Result<Vec<BoardInfo>, String> {
+    Ok(boards.store().list())
 }
 
 /// The board's file as it is (the page reads it the way it reads any stored board).
 #[tauri::command]
-pub fn load_board(boards: State<Boards>, id: String) -> Result<Option<String>, String> {
+pub async fn load_board(boards: State<'_, Boards>, id: String) -> Result<Option<String>, String> {
     boards.store().read(&id)
 }
 
 /// Write a board made on version `base` (none: write regardless). Refusals come back as
 /// "conflict:<serial>" or "gone", which the page turns into its own errors.
 #[tauri::command]
-pub fn save_board(boards: State<Boards>, doc: Value, base: Option<u64>, writer: String) -> Result<Written, String> {
+pub async fn save_board(boards: State<'_, Boards>, doc: Value, base: Option<u64>, writer: String) -> Result<Written, String> {
     let _held = boards.lock.lock().map_err(|e| e.to_string())?;
     let id = doc.get("id").and_then(Value::as_str).unwrap_or_default().to_string();
     match boards.store().write(doc, base) {
@@ -151,40 +155,41 @@ pub fn save_board(boards: State<Boards>, doc: Value, base: Option<u64>, writer: 
 }
 
 #[tauri::command]
-pub fn remove_board(boards: State<Boards>, id: String) -> Result<(), String> {
+pub async fn remove_board(boards: State<'_, Boards>, id: String) -> Result<(), String> {
     let _held = boards.lock.lock().map_err(|e| e.to_string())?;
     boards.store().remove(&id)
 }
 
 #[tauri::command]
-pub fn trashed_boards(boards: State<Boards>) -> Vec<Trashed> {
-    boards.store().trashed()
+pub async fn trashed_boards(boards: State<'_, Boards>) -> Result<Vec<Trashed>, String> {
+    Ok(boards.store().trashed())
 }
 
 #[tauri::command]
-pub fn restore_board(boards: State<Boards>, key: String) -> Result<String, String> {
+pub async fn restore_board(boards: State<'_, Boards>, key: String) -> Result<String, String> {
     let _held = boards.lock.lock().map_err(|e| e.to_string())?;
     boards.store().restore(&key)
 }
 
 #[tauri::command]
-pub fn load_revision(boards: State<Boards>, board: String, id: String) -> Option<String> {
-    boards.store().read_revision(&board, &id)
+pub async fn load_revision(boards: State<'_, Boards>, board: String, id: String) -> Result<Option<String>, String> {
+    Ok(boards.store().read_revision(&board, &id))
 }
 
 #[tauri::command]
-pub fn save_revision(boards: State<Boards>, board: String, id: String, doc: Value) -> Result<(), String> {
+pub async fn save_revision(boards: State<'_, Boards>, board: String, id: String, doc: Value) -> Result<(), String> {
     boards.store().write_revision(&board, &id, &doc)
 }
 
 #[tauri::command]
-pub fn remove_revision(boards: State<Boards>, board: String, id: String) {
-    boards.store().remove_revision(&board, &id)
+pub async fn remove_revision(boards: State<'_, Boards>, board: String, id: String) -> Result<(), String> {
+    boards.store().remove_revision(&board, &id);
+    Ok(())
 }
 
 /// A picture for a board's folder: its bytes as the request body, the board and name in headers.
 #[tauri::command]
-pub fn put_asset(boards: State<Boards>, request: tauri::ipc::Request<'_>) -> Result<(), String> {
+pub async fn put_asset(boards: State<'_, Boards>, request: tauri::ipc::Request<'_>) -> Result<(), String> {
     let header = |k: &str| request.headers().get(k).and_then(|v| v.to_str().ok()).map(String::from).ok_or_else(|| format!("missing {k}"));
     let (board, name) = (header("board")?, header("name")?);
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("expected the picture's bytes".into()) };
@@ -192,18 +197,18 @@ pub fn put_asset(boards: State<Boards>, request: tauri::ipc::Request<'_>) -> Res
 }
 
 #[tauri::command]
-pub fn load_presets(boards: State<Boards>) -> String {
-    boards.store().read_presets()
+pub async fn load_presets(boards: State<'_, Boards>) -> Result<String, String> {
+    Ok(boards.store().read_presets())
 }
 
 #[tauri::command]
-pub fn save_presets(boards: State<Boards>, list: Value) -> Result<(), String> {
+pub async fn save_presets(boards: State<'_, Boards>, list: Value) -> Result<(), String> {
     boards.store().write_presets(&list)
 }
 
 /// Write a file where the user chose in a save dialog: its bytes as the body, the place in a header.
 #[tauri::command]
-pub fn write_file(boards: State<Boards>, request: tauri::ipc::Request<'_>) -> Result<(), String> {
+pub async fn write_file(boards: State<'_, Boards>, request: tauri::ipc::Request<'_>) -> Result<(), String> {
     let path = request.headers().get("path").and_then(|v| v.to_str().ok()).ok_or("missing path")?;
     let path = boards.take(&percent_decode(path))?;
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("expected the file's bytes".into()) };
@@ -230,7 +235,7 @@ pub fn open_for_print(app: AppHandle, html: String) -> Result<(), String> {
 
 /// Read a file the user picked in an open dialog.
 #[tauri::command]
-pub fn read_file(boards: State<Boards>, path: String) -> Result<tauri::ipc::Response, String> {
+pub async fn read_file(boards: State<'_, Boards>, path: String) -> Result<tauri::ipc::Response, String> {
     std::fs::read(boards.take(&path)?).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
 }
 
@@ -319,8 +324,10 @@ struct BoardNews {
 pub fn watch(app: AppHandle) {
     use notify::{RecursiveMode, Watcher};
     let boards = app.state::<Boards>();
-    let root = boards.store().root.clone();
     let mine = boards.watching.fetch_add(1, Ordering::SeqCst) + 1;
+    // The system reports changes by real path: a folder reached through a link (or named in another
+    // letter case) is watched and matched as what it really is, or no change would ever be heard.
+    let Ok(root) = boards.store().root.canonicalize() else { return };
     if !root.is_dir() {
         return;
     }
@@ -354,7 +361,7 @@ pub fn watch(app: AppHandle) {
             for folder in folders {
                 let Some(v) = std::fs::read_to_string(folder.join("board.json")).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) else { continue };
                 let Some(id) = v.get("id").and_then(Value::as_str).map(String::from) else { continue };
-                let serial = v.get("serial").and_then(Value::as_u64).unwrap_or(0);
+                let serial = crate::store::serial_of(&v);
                 let writer = boards.ours.lock().ok().and_then(|o| o.get(&id).filter(|(s, _)| *s == serial).map(|(_, w)| w.clone()));
                 let _ = app.emit("board-changed", BoardNews { id, serial, writer });
             }

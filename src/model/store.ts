@@ -74,8 +74,11 @@ interface State {
   ready: boolean;
   /** Where boards are kept: a folder on disk (server) or this browser (local). */
   mode: 'server' | 'local';
-  /** `conflict`: the board on disk changed elsewhere (the command line …) while it had unsaved edits here. */
-  /** 'gone': deleted elsewhere while open here; written again only when asked. */
+  /**
+   * How the board on screen stands with its storage. `conflict`: changed elsewhere (the command line
+   * …) while it had unsaved edits here; `gone`: deleted elsewhere while open here. Either is written
+   * again only when the user says.
+   */
   saving: 'saved' | 'saving' | 'error' | 'conflict' | 'gone';
   /** Set while an old revision is on screen in place of the live board (which is not touched). */
   viewing: { entry: Revision; all: Revision[] } | null;
@@ -217,12 +220,9 @@ export const useStore = create<State>((set, get) => ({
   },
   openBoard: (id) => void run(async (b) => {
     if (id === get().doc.id) return;
-    const ticket = ++opening;
-    await quietly(() => settle(b));
-    if (!(await mayLeave())) return showInUrl(get().doc.id);
-    const doc = await tryLoad(b, id);
-    // Another board was asked for meanwhile: that one is shown, not this.
-    if (ticket !== opening) return;
+    const doc = await switchTo(b, id);
+    if (doc === 'stayed') return showInUrl(get().doc.id);
+    if (doc === 'superseded') return;
     if (doc) return show(doc);
     // Deleted elsewhere (another tab, the command line), or its file broken: the list follows.
     set({ boards: await b.list() });
@@ -230,13 +230,15 @@ export const useStore = create<State>((set, get) => ({
     void tell('そのボードを開けませんでした（ほかの場所で削除されたか、ファイルが読めない状態です）。');
   }),
   newBoard: (doc = emptyDoc()) => void run(async (b) => {
-    await quietly(() => settle(b));
-    if (!(await mayLeave())) return;
+    if (!(await leave(b))) return;
     // A file opened from elsewhere may carry its pictures inline; give them a home in the board's folder.
     // History belongs to the board it was recorded on; a copy or an opened file starts without one.
     // An opened file may be of an older form: it is read the way a stored board is.
     // An id the storage cannot take (a file written by hand or another tool) is given a new one.
-    const id = BOARD_ID.test(doc.id) ? doc.id : randomId();
+    // An id already taken in the storage (a board made meanwhile elsewhere, not yet in the list) is
+    // never written over: the new board takes another.
+    const taken = BOARD_ID.test(doc.id) && !!(await b.load(doc.id).catch(() => null));
+    const id = BOARD_ID.test(doc.id) && !taken ? doc.id : randomId();
     const next = await externalize(readBoard({ ...doc, id, revisions: undefined }) ?? { ...doc, id, revisions: undefined }, b);
     show(next);
     await persist(next);
@@ -255,10 +257,7 @@ export const useStore = create<State>((set, get) => ({
   }),
   viewRevision: (id) => void run(async (b) => {
     // The board as it is goes into the history before an older state takes its place on screen.
-    if (!get().viewing) {
-      await quietly(() => settle(b));
-      if (!(await mayLeave())) return;
-    }
+    if (!get().viewing && !(await leave(b))) return;
     const base = live ?? get().doc;
     const all = base.revisions ?? [];
     const i = all.findIndex((r) => r.id === id);
@@ -396,10 +395,8 @@ export const useStore = create<State>((set, get) => ({
   openAt: (boardId, nodeId) =>
     void run(async (b) => {
       if (boardId !== get().doc.id) {
-        await quietly(() => settle(b));
-        if (!(await mayLeave())) return;
-        const doc = await tryLoad(b, boardId);
-        if (!doc) return;
+        const doc = await switchTo(b, boardId);
+        if (!doc || doc === 'stayed' || doc === 'superseded') return;
         show(doc);
       }
       set({ selection: [nodeId] });
@@ -422,7 +419,6 @@ export const useStore = create<State>((set, get) => ({
   }),
 }));
 
-/** Run a storage action; a failure surfaces as the "save failed" state instead of an unhandled rejection. */
 /** Deleted boards that can be put back (none before storage is connected). */
 export const deletedBoards = async (): Promise<TrashedBoard[]> => (backend ? backend.trash() : []);
 
@@ -434,6 +430,7 @@ export async function restoreBoard(key: string): Promise<void> {
   useStore.getState().openBoard(id);
 }
 
+/** Run a storage action; a failure is said, and marks the board unsaved only if it is. */
 async function run(fn: (b: Backend) => Promise<void>): Promise<void> {
   if (!backend) return;
   try {
@@ -442,7 +439,10 @@ async function run(fn: (b: Backend) => Promise<void>): Promise<void> {
     // Written elsewhere since it was read here: the user settles it (see resolveConflict).
     if (e instanceof Conflict) return void enterConflict('conflict');
     console.error(e);
-    useStore.setState({ saving: 'error' });
+    // Something done alongside the board (a preset, a state of its history, opening another)
+    // failed: said so, without calling a board that is saved unsaved.
+    if (useStore.getState().doc !== stored) useStore.setState({ saving: 'error' });
+    void tell(`うまくいきませんでした: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -523,7 +523,13 @@ function keepBase(b: Backend): Promise<void> {
     // Described against the last state kept, which may be from long before (or from elsewhere).
     const previous = last ? await b.loadRevision(base.id, last.id).catch(() => null) : null;
     await snapshot(b, base, {}, previous);
-  })().finally(() => (keeping = null));
+  })()
+    // Not kept after all (the board not yet written, storage full …): tried again at the next edit.
+    .catch((e) => {
+      if (snapBase === base) baseKept = false;
+      throw e;
+    })
+    .finally(() => (keeping = null));
   return keeping;
 }
 
@@ -548,7 +554,6 @@ export async function loadState(id: string): Promise<Doc | null> {
 /** The open board as it is now (not an older state shown in its place). */
 export const currentBoard = (): Doc => live ?? useStore.getState().doc;
 
-/** Put a freshly loaded (or created) board on screen. */
 /**
  * Update a board's list of revisions once the files are written. The writes take a moment, and
  * by then another board may be open: the list then goes to the board it belongs to, on disk.
@@ -564,19 +569,28 @@ async function setRevisions(b: Backend, board: string, change: (list: Revision[]
   if (saved) await b.save({ ...saved, revisions: change(saved.revisions ?? []) });
 }
 
-function show(doc: Doc): void {
+/**
+ * Start the open board's session afresh: what was last written, the base of its history, and no
+ * save, retry or keeping pending from the board before (whatever was wrong with that one is not
+ * this one's). Every module-level piece of the session is reset here, and only here.
+ */
+function resetSession(doc: Doc, shown: Doc): void {
   stored = doc;
   live = null;
-  // Whatever was pending or wrong with the board before is not this one's: it starts saved.
   clearTimeout(timer);
   clearTimeout(retryTimer);
   retries = 0;
-  // The base is the board as shown (legends fitted), so fitting alone never reads as an edit.
-  const shown = fitLegends(doc);
   snapBase = shown;
   baseKept = false;
   keeping = null;
   clearTimeout(settleTimer);
+}
+
+/** Put a freshly loaded (or created) board on screen. */
+function show(doc: Doc): void {
+  // The base is the board as shown (legends fitted), so fitting alone never reads as an edit.
+  const shown = fitLegends(doc);
+  resetSession(doc, shown);
   useStore.setState({ doc: shown, viewing: null, past: [], future: [], selection: [], editing: null, others: [], placing: null, saving: 'saved' });
   showInUrl(doc.id);
   requestAnimationFrame(useStore.getState().fit);
@@ -609,8 +623,11 @@ export function centerOn(nodeId: string): void {
  * board, and the second be refused as if the board had been changed elsewhere.
  */
 let writing: Promise<void> = Promise.resolve();
+/** Writes sent and not yet answered. */
+let inFlight = 0;
 function persist(doc: Doc): Promise<void> {
-  const next = writing.then(() => write(doc));
+  inFlight++;
+  const next = writing.then(() => write(doc)).finally(() => inFlight--);
   writing = next.catch(() => {});
   return next;
 }
@@ -680,6 +697,24 @@ async function flush(): Promise<boolean> {
 
 /** The latest request to open a board: an earlier one that finishes later is dropped. */
 let opening = 0;
+
+/** Leave the board on screen: its state kept in the history, its changes written (or let go). */
+async function leave(b: Backend): Promise<boolean> {
+  await quietly(() => settle(b));
+  return mayLeave();
+}
+
+/**
+ * Leave the board on screen for another and read that one in: the board, or null when it cannot
+ * be read; 'stayed' when the user kept the one on screen, 'superseded' when another board was
+ * asked for meanwhile (that one is shown, not this).
+ */
+async function switchTo(b: Backend, id: string): Promise<Doc | null | 'stayed' | 'superseded'> {
+  const ticket = ++opening;
+  if (!(await leave(b))) return 'stayed';
+  const doc = await tryLoad(b, id);
+  return ticket === opening ? doc : 'superseded';
+}
 
 /**
  * Whether the board on screen may be left: its changes written, or the user choosing to let go of
@@ -903,6 +938,9 @@ export async function boot(given?: Backend): Promise<void> {
       if (doc) break;
       doc = await tryLoad(backend, info.id);
     }
+    // Boards there, and none of them could be read: never taken for a first run (the sample project
+    // would be written in among them). The page says so and stays empty until reloaded.
+    if (!doc && boards.length) throw new Error(`ボードを ${boards.length} 枚見つけましたが、どれも読み込めませんでした`);
     // A first run: the sample project, opened on its system diagram.
     if (!doc) {
       const docs = sampleBoards();
@@ -916,6 +954,7 @@ export async function boot(given?: Backend): Promise<void> {
   } catch (e) {
     console.error(e);
     useStore.setState({ ready: true, saving: 'error' });
+    void tell(`ボードを開けませんでした: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -925,11 +964,10 @@ window.addEventListener('hashchange', () => {
   if (id && useStore.getState().ready) useStore.getState().openBoard(id);
 });
 
-// Coming back to the tab: pick up what another tab (or an edit to the file) saved meanwhile.
-/** Take in the board as another writer left it, if nothing here is waiting to be saved. */
 /** Whether two copies of a board say the same, whatever version number each was written at. */
 const sameBoard = (a: Doc | null, b: Doc | null): boolean => !!a && !!b && JSON.stringify({ ...a, serial: undefined }) === JSON.stringify({ ...b, serial: undefined });
 
+/** Take in the board as another writer left it, if nothing here is waiting to be saved. */
 async function pickUp(b: Backend): Promise<void> {
   const s = useStore.getState();
   if (!s.ready || s.viewing) return;
@@ -954,6 +992,7 @@ async function pickUp(b: Backend): Promise<void> {
   pullIn();
 }
 
+// Coming back to the tab: pick up what another tab (or an edit to the file) saved meanwhile.
 window.addEventListener('focus', () => {
   const s = useStore.getState();
   // Coming back with nothing unsaved: just look. A conflict is only claimed when something changed.
@@ -1007,7 +1046,9 @@ window.addEventListener('beforeunload', (e) => {
   const doc = unsaved();
   if (!doc || !backend) return;
   const stuck = ['conflict', 'gone', 'error'].includes(useStore.getState().saving);
-  if (!stuck && backend.fitsExitSave(doc)) return;
+  // A write still under way: the one sent on leaving would be made on the version before it and be
+  // refused, the last edits lost. The page asks, and finishes writing meanwhile.
+  if (!stuck && !inFlight && backend.fitsExitSave(doc)) return;
   if (!stuck) void flush();
   e.preventDefault();
   e.returnValue = '';
@@ -1058,6 +1099,25 @@ export function duplicateInPlace(ids: string[]): Map<string, string> {
   s.mutate((d) => ({ ...d, nodes: [...d.nodes, ...nodes], edges: [...d.edges, ...edges] }), false);
   s.select(nodes.map((n) => n.id));
   return map;
+}
+
+/**
+ * ⌘D: copies of the selected nodes (and the lines between them) a little down and right, selected,
+ * as one step. The clipboard is left alone: what ⌘C copied is still what ⌘V pastes, and with no
+ * node selected nothing happens (rather than pasting whatever was copied before).
+ */
+export function duplicateSelection(offset = 30): void {
+  const s = useStore.getState();
+  const ids = s.selection.filter((id) => s.doc.nodes.some((n) => n.id === id));
+  if (!ids.length) return;
+  s.checkpoint();
+  const map = duplicateInPlace(ids);
+  const copies = new Set(map.values());
+  s.mutate((d) => ({
+    ...d,
+    nodes: d.nodes.map((n) => (copies.has(n.id) ? { ...n, x: n.x + offset, y: n.y + offset } : n)),
+    edges: d.edges.map((e) => (copies.has(e.id) && e.route ? { ...e, route: e.route.map((p) => ({ x: p.x + offset, y: p.y + offset })) } : e)),
+  }), false);
 }
 
 /** Paste (or duplicate) with fresh ids, keeping the cables between the copied nodes. */

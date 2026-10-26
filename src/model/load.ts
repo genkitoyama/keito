@@ -96,3 +96,13 @@ export function readBoard(v: unknown): Doc | null {
   });
   return upgradeOrder(upgradeDoc(d));
 }
+
+/**
+ * A board's version number as written in board.json: a whole number, 0 and up, also when typed
+ * by hand as text ("5") or a decimal (5.0); anything else reads as 0. The desktop app reads it the
+ * same way (store.rs, serial_of).
+ */
+export function readSerial(v: unknown): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+}

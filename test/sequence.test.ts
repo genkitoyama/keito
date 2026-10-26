@@ -78,3 +78,29 @@ describe('reading messages', () => {
     expect(d.items.map((it) => it.kind)).toEqual(['note', 'msg', 'note']);
   });
 });
+
+describe('Mermaid and PlantUML written less often', () => {
+  const names = (src: string) => parseSequence(src).participants.map((p) => p.id);
+  it('reads two-way, long and circled arrows without making up participants', () => {
+    expect(names('Alice<<->>John: hi\nAlice<<-->>John: hi')).toEqual(['Alice', 'John']);
+    expect(names('A ---> B: x\nA --->> B: y')).toEqual(['A', 'B']);
+    expect(names('A ->o B: x\nA o-> B: y')).toEqual(['A', 'B']);
+  });
+
+  it('keeps an arrow typed in what is said', () => {
+    const d = parseSequence('A -> B: x→y');
+    expect(d.items[0]).toMatchObject({ kind: 'msg', text: 'x→y' });
+  });
+
+  it('takes a participant called Title as one, and skips block comments', () => {
+    const d = parseSequence("/' a comment\nA -> B: not this '/\nTitle -> Server: fetch");
+    expect(d.title).toBe('');
+    expect(d.participants.map((p) => p.id)).toEqual(['Title', 'Server']);
+    expect(d.items).toHaveLength(1);
+  });
+
+  it('puts a PlantUML note with no target beside the last message', () => {
+    const d = parseSequence('A -> B: x\nnote right: received');
+    expect(d.items[1]).toMatchObject({ kind: 'note', over: 1, text: 'received' });
+  });
+});

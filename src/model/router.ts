@@ -7,7 +7,12 @@ import type { Pt, Rect } from './types';
  * line is re-routed here around every node with A* over the grid formed by the
  * nodes' (inflated) edges, paying for each bend so the result stays tidy.
  */
-const STUB = 18;
+/** How far a line runs straight out of a port before it may turn. */
+export const STUB = 18;
+/** Whether a side faces left or right (a line leaves it across, not up or down). */
+export const isH = (d: Dir): boolean => d === 'left' || d === 'right';
+/** Two ends facing each other across a gap wide enough for a line to jog between them. */
+export const facing = (l: Anchor, r: Anchor): boolean => l.dir === 'right' && r.dir === 'left' && r.x - l.x >= CLEAR * 2;
 const BEND = 36;
 /** Size of the cells obstacles are filed under for quick look-up (px). */
 const CELL = 160;
@@ -144,6 +149,18 @@ export interface Seg {
   lo: number;
   hi: number;
 }
+/** The straight pieces of a polyline, across or down (a slanted piece, never drawn, is left out). */
+export function segmentsOf(pts: Pt[]): Seg[] {
+  const out: Seg[] = [];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    if (Math.abs(a.y - b.y) < 0.5) out.push({ flat: true, at: a.y, lo: Math.min(a.x, b.x), hi: Math.max(a.x, b.x) });
+    else if (Math.abs(a.x - b.x) < 0.5) out.push({ flat: false, at: a.x, lo: Math.min(a.y, b.y), hi: Math.max(a.y, b.y) });
+  }
+  return out;
+}
+
 /** What crossing another line costs a search that is told to keep clear of lines, against a bend's. */
 const CROSS = 400;
 
@@ -164,7 +181,7 @@ function overLines(segs: Seg[], flat: boolean, at: number, lo: number, hi: numbe
   return cost;
 }
 
-function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: Seg[] = []): Pt[] | null {
+function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: Seg[] = [], reach = Infinity): Pt[] | null {
   const out = (p: Anchor): Pt => ({ x: p.x + STEP[INDEX[p.dir]][0] * STUB, y: p.y + STEP[INDEX[p.dir]][1] * STUB });
   const s = out(a);
   const t = out(b);
@@ -172,11 +189,13 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
   // An end hemmed in by a neighbour leaves no room at this margin.
   if (inside(s.x, s.y) || inside(t.x, t.y)) return null;
 
-  // Grid lines: every inflated node edge, the two ends, and a lane around the outside.
-  // Kept clear of other lines, it may also run halfway between two box edges, out of their way.
+  // Grid lines: every inflated node edge within `reach` of the two ends, the ends themselves, and a
+  // lane around the outside. Kept clear of other lines, it may also run halfway between two box
+  // edges, out of their way. (Boxes beyond the reach still block: only fewer lines are tried.)
+  const near = (v: number[], p: number, q: number) => (reach === Infinity ? v : v.filter((x) => x >= Math.min(p, q) - reach && x <= Math.max(p, q) + reach));
   const halves = (v: number[]) => (segs.length ? [...v, ...v.slice(1).map((x, i) => (x + v[i]) / 2)].sort((p, q) => p - q) : v);
-  const xs = withLines(halves(xb), s.x, t.x);
-  const ys = withLines(halves(yb), s.y, t.y);
+  const xs = withLines(halves(near(xb, s.x, t.x)), s.x, t.x);
+  const ys = withLines(halves(near(yb, s.y, t.y)), s.y, t.y);
   const W = xs.length;
   const H = ys.length;
   if (W * H > 40000) return null;
@@ -269,17 +288,27 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
  */
 export function routeAround(a: Anchor, b: Anchor, obstacles: Rect[], margin: number): Pt[] | null {
   for (const m of [margin, 6, 2]) {
-    const pts = search(a, b, obstacles, m);
-    if (pts) return pts;
+    for (const reach of REACHES) {
+      const pts = search(a, b, obstacles, m, [], reach);
+      if (pts) return pts;
+    }
   }
   return null;
 }
 
+/**
+ * How far round the two ends a search looks, widening when nothing is found: on a large board the
+ * whole grid is too big to search (and would be refused), while a way round is nearly always close.
+ */
+const REACHES = [400, 1500, Infinity];
+
 /** The way round the obstacles that crosses and runs over the lines in `segs` least, or null. */
 export function routeClear(a: Anchor, b: Anchor, obstacles: Rect[], segs: Seg[]): Pt[] | null {
   for (const m of [12, 6]) {
-    const pts = search(a, b, obstacles, m, segs);
-    if (pts) return pts;
+    for (const reach of REACHES) {
+      const pts = search(a, b, obstacles, m, segs, reach);
+      if (pts) return pts;
+    }
   }
   return null;
 }
@@ -368,10 +397,16 @@ export function lanes(runs: Run[], obstacles: Rect[], frames: Rect[]): Map<strin
     const width = step * (list.length - 1);
     const mid = (lo + hi) / 2;
     const path = (u: Run, x: number): Pt[] => [u.l, { x, y: u.l.y }, { x, y: u.r.y }, u.r];
+    // Only the boxes these lines could pass are looked at, however large the board.
+    const x0 = Math.min(...list.map((u) => u.l.x));
+    const x1 = Math.max(...list.map((u) => u.r.x));
+    const y0 = Math.min(...list.flatMap((u) => [u.l.y, u.r.y]));
+    const y1 = Math.max(...list.flatMap((u) => [u.l.y, u.r.y]));
+    const near = obstacles.filter((r) => r.x <= x1 && r.x + r.w >= x0 && r.y <= y1 && r.y + r.h >= y0);
     let best: { score: number[]; first: number } | null = null;
     for (let c = Math.ceil((lo + width / 2) / 10) * 10; c <= hi - width / 2; c += 10) {
       const first = c - width / 2;
-      const blocked = order.some((u, k) => collides(path(u, first + k * step), obstacles));
+      const blocked = order.some((u, k) => collides(path(u, first + k * step), near));
       // Bends read best in the open corridor between areas rather than inside one or on its border.
       const framed = order.reduce((sum, u, k) => {
         const p = { x: first + k * step, y: (u.l.y + u.r.y) / 2 };

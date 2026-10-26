@@ -38,19 +38,23 @@ export function matchRange(text: string, query: string): [number, number] | null
   // The folded text, and for each of its characters the original one it came from.
   let folded = '';
   const from: number[] = [];
-  const chars = [...text];
+  // Half-width kana take their voicing mark with them (ｹﾞ is ゲ), so the two are folded together.
+  const chars = [...text].reduce<string[]>((out, ch) => (/[\uff9e\uff9f]/.test(ch) && out.length ? [...out.slice(0, -1), out.at(-1)! + ch] : [...out, ch]), []);
+  const starts: number[] = [];
   let at = 0;
-  for (const ch of chars) {
+  for (const [k, ch] of chars.entries()) {
+    starts.push(at);
     for (const f of fold(ch)) {
       folded += f;
-      from.push(at);
+      from.push(k);
     }
     at += ch.length;
   }
   const i = folded.indexOf(q);
   if (i < 0) return null;
-  const end = from[i + q.length - 1];
-  return [from[i], end + (text.codePointAt(end)! > 0xffff ? 2 : 1)];
+  // From the first character matched to the end of the last, voicing mark and all.
+  const last = from[i + q.length - 1];
+  return [starts[from[i]], starts[last] + chars[last].length];
 }
 
 /**

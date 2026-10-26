@@ -1,7 +1,7 @@
 import { deviceTagRects } from './badges';
-import { anchorOf, captionBox, center, frameOf, isTagged, isUnderlay, nodeRect, routeEdges, simplify, tagChips } from './geometry';
+import { anchorOf, captionBox, center, frameOf, isTagged, isUnderlay, nodeRect, obstaclesOf, routeEdges, simplify, tagChips } from './geometry';
 import { placeLabels } from './labels';
-import { CLEAR, type Seg, routeClear } from './router';
+import { facing, isH, routeClear, segmentsOf } from './router';
 import type { Doc, Edge, Node, Rect } from './types';
 
 const COLUMN = 60; // nodes whose centres are this close in x share a column
@@ -11,8 +11,6 @@ const EDGE = 120; // frame edges in neighbouring columns this close are made to 
 const ROW_REACH = 200; // loose items further apart than this are not a row
 const ROW_EVEN = 40; // gaps this close to each other are made equal
 const TRIM = 16; // least space between an area frame and the tags hanging off what it holds
-
-const isH = (dir: string) => dir === 'left' || dir === 'right';
 
 /** Both ends of a line as they attach right now, or null when an end is missing. */
 function ends(nodes: Map<string, Node>, e: Edge) {
@@ -194,12 +192,22 @@ const overlap = (a: Rect, b: Rect) => a.x < b.x + b.w - 1 && b.x < a.x + a.w - 1
 
 /** The first pair of things that overlap now but did not before, or null when the layout is clean. */
 function collision(doc: Doc, nodes: Map<string, Node>): [Node, Node] | null {
-  for (const [i, a] of doc.nodes.entries()) {
-    for (const b of doc.nodes.slice(i + 1)) {
-      if (overlap(nodeRect(nodes.get(a.id)!), nodeRect(nodes.get(b.id)!)) && !overlap(nodeRect(a), nodeRect(b))) return [a, b];
+  const now = doc.nodes.map((n) => nodeRect(nodes.get(n.id)!));
+  // Swept left to right, so only boxes that reach each other across are compared; the pair given
+  // is the first in board order, as a plain loop over every pair would give.
+  const order = now.map((_, i) => i).sort((p, q) => now[p].x - now[q].x);
+  let first: [number, number] | null = null;
+  for (let k = 0; k < order.length; k++) {
+    const i = order[k];
+    for (let m = k + 1; m < order.length && now[order[m]].x < now[i].x + now[i].w - 1; m++) {
+      const j = order[m];
+      if (!overlap(now[i], now[j])) continue;
+      const [a, b] = i < j ? [i, j] : [j, i];
+      if (first && (a > first[0] || (a === first[0] && b >= first[1]))) continue;
+      if (!overlap(nodeRect(doc.nodes[a]), nodeRect(doc.nodes[b]))) first = [a, b];
     }
   }
-  return null;
+  return first && [doc.nodes[first[0]], doc.nodes[first[1]]];
 }
 
 /**
@@ -212,13 +220,22 @@ export function tangle(doc: Doc): number {
   return score;
 }
 
+/** A straight piece of a line: across (`flat`) at y = `at`, or down at x = `at`, from `lo` to `hi`. */
+interface Run {
+  id: string;
+  flat: boolean;
+  at: number;
+  lo: number;
+  hi: number;
+}
+
 /** The tangle laid at each line's door: its own bends and boxes, and half of every crossing or overlap it is in. */
 function tangles(doc: Doc): Map<string, number> {
   const routes = routeEdges(doc);
   const by = new Map<string, number>();
   const add = (id: string, v: number) => by.set(id, (by.get(id) ?? 0) + v);
   const boxes = doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'junction' && !isUnderlay(n)).map((n) => ({ id: n.id, r: nodeRect(n) }));
-  const runs: { id: string; flat: boolean; at: number; lo: number; hi: number }[] = [];
+  const runs: Run[] = [];
   for (const e of doc.edges) {
     const pts = routes.get(e.id);
     if (!pts || isTagged(doc, e)) continue;
@@ -228,25 +245,44 @@ function tangles(doc: Doc): Map<string, number> {
       const b = pts[i];
       const seg = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
       for (const { id, r } of boxes) if (id !== e.from.node && id !== e.to.node && seg.x < r.x + r.w - 2 && r.x + 2 < seg.x + seg.w && seg.y < r.y + r.h - 2 && r.y + 2 < seg.y + seg.h) add(e.id, 150);
-      if (Math.abs(a.y - b.y) < 0.5) runs.push({ id: e.id, flat: true, at: a.y, lo: seg.x, hi: seg.x + seg.w });
-      else if (Math.abs(a.x - b.x) < 0.5) runs.push({ id: e.id, flat: false, at: a.x, lo: seg.y, hi: seg.y + seg.h });
+    }
+    for (const seg of segmentsOf(pts)) runs.push({ id: e.id, ...seg });
+  }
+  const pair = (p: Run, q: Run, v: number) => {
+    add(p.id, v / 2);
+    add(q.id, v / 2);
+  };
+  // Runs across and runs down, each in order of where they lie, so only the ones that can meet are
+  // compared (a board of a few hundred lines has thousands of runs).
+  const flat = runs.filter((r) => r.flat).sort((p, q) => p.at - q.at);
+  const tall = runs.filter((r) => !r.flat).sort((p, q) => p.at - q.at);
+  const from = (list: Run[], at: number) => {
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const m = (lo + hi) >> 1;
+      if (list[m].at < at) lo = m + 1;
+      else hi = m;
+    }
+    return lo;
+  };
+  // A crossing anywhere along both, short of where either line ends or turns.
+  for (const w of tall) {
+    for (let k = from(flat, w.lo + 1); k < flat.length && flat[k].at < w.hi - 1; k++) {
+      const h = flat[k];
+      if (h.id !== w.id && h.at > w.lo + 1 && w.at > h.lo + 1 && w.at < h.hi - 1) pair(h, w, 100);
     }
   }
-  for (const [i, p] of runs.entries()) {
-    for (const q of runs.slice(i + 1)) {
-      if (p.id === q.id) continue;
-      let v = 0;
-      if (p.flat !== q.flat) {
-        // A crossing anywhere along both, short of where either line ends or turns.
-        const [h, w] = p.flat ? [p, q] : [q, p];
-        if (w.at > h.lo + 1 && w.at < h.hi - 1 && h.at > w.lo + 1 && h.at < w.hi - 1) v = 100;
-      } else if (Math.abs(p.at - q.at) < 3) {
+  // Two lines on top of each other for a stretch.
+  for (const list of [flat, tall]) {
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length && list[j].at - list[i].at < 3; j++) {
+        const p = list[i];
+        const q = list[j];
+        if (p.id === q.id) continue;
         const shared = Math.min(p.hi, q.hi) - Math.max(p.lo, q.lo);
-        if (shared > 4) v = shared / 4;
+        if (shared > 4) pair(p, q, shared / 4);
       }
-      if (!v) continue;
-      add(p.id, v / 2);
-      add(q.id, v / 2);
     }
   }
   return by;
@@ -518,7 +554,6 @@ function comb(doc: Doc, nodes: Map<string, Node>): Edge[] {
     const at = ends(nodes, e);
     if (!at) return e;
     const { pa, pb } = at;
-    const facing = (l: typeof pa, r: typeof pa) => l.dir === 'right' && r.dir === 'left' && r.x - l.x >= CLEAR * 2;
     const { route, labelAt, ...rest } = e;
     const was = (id: string) => doc.nodes.find((n) => n.id === id)!;
     const da = { x: at.a.x - was(at.a.id).x, y: at.a.y - was(at.a.id).y };
@@ -534,17 +569,6 @@ function comb(doc: Doc, nodes: Map<string, Node>): Edge[] {
   });
 }
 
-/** The straight pieces of a line's route, as a search kept clear of lines takes them. */
-function segments(pts: { x: number; y: number }[]): Seg[] {
-  const out: Seg[] = [];
-  for (let i = 1; i < pts.length; i++) {
-    const a = pts[i - 1];
-    const b = pts[i];
-    if (Math.abs(a.y - b.y) < 0.5) out.push({ flat: true, at: a.y, lo: Math.min(a.x, b.x), hi: Math.max(a.x, b.x) });
-    else if (Math.abs(a.x - b.x) < 0.5) out.push({ flat: false, at: a.x, lo: Math.min(a.y, b.y), hi: Math.max(a.y, b.y) });
-  }
-  return out;
-}
 
 /**
  * Give automatic lines that cross others a way round them: each is routed afresh keeping clear of
@@ -554,7 +578,7 @@ function segments(pts: { x: number; y: number }[]): Seg[] {
 function untangle(doc: Doc): Doc {
   if (doc.edges.length >= WEIGH_UP_TO) return doc;
   const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
-  const obstacles = [...doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'text' && n.type !== 'junction').map(nodeRect), ...tagChips(doc)];
+  const obstacles = [...obstaclesOf(doc), ...tagChips(doc)];
   const own = tangles(doc);
   let best = [...own.values()].reduce((sum, v) => sum + v, 0);
   // A crossing is shared between its two lines; the worst few are tried, as each try weighs the board.
@@ -568,7 +592,7 @@ function untangle(doc: Doc): Doc {
     const at = ends(nodes, e);
     if (!at) continue;
     const routes = routeEdges(doc);
-    const segs = doc.edges.filter((x) => x.id !== e.id && !isTagged(doc, x)).flatMap((x) => segments(routes.get(x.id) ?? []));
+    const segs = doc.edges.filter((x) => x.id !== e.id && !isTagged(doc, x)).flatMap((x) => segmentsOf(routes.get(x.id) ?? []));
     const pts = routeClear(at.pa, at.pb, obstacles, segs);
     if (!pts) continue;
     const route = simplify(pts).slice(1, -1);
@@ -604,6 +628,16 @@ function pass(doc: Doc): Doc {
  * lines' labels clear of each other.
  */
 export function tidy(doc: Doc): Doc {
+  // Pictures laid under the drawing (floor plans) are not part of it: no area holds them and
+  // nothing lines up with them. They are set aside, and come back where they were.
+  if (doc.nodes.some(isUnderlay)) {
+    const without = { ...doc, nodes: doc.nodes.filter((n) => !isUnderlay(n)) };
+    const drawing = tidy(without);
+    if (drawing === without) return doc;
+    const moved = new Map(drawing.nodes.map((n) => [n.id, n]));
+    const next = { ...drawing, nodes: doc.nodes.map((n) => (isUnderlay(n) ? n : moved.get(n.id)!)) };
+    return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;
+  }
   let next = doc;
   // One pass can open up room for the next; a handful settles any board.
   for (let i = 0; i < 6; i++) {

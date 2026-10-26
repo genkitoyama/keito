@@ -5,7 +5,7 @@ import { docBounds, isTagged, labelPoint, routeEdges } from '../model/geometry';
 import { LABEL_SIZE, LABEL_SIZES } from '../model/labels';
 import { LINE_COLORS, lineColor, lineDashed, paintLine } from '../model/lineColor';
 import { COLOR_KEYS, PALETTE, STICKY, STRONG, signalOf } from '../model/signals';
-import { copySelection, pasteClipboard, useStore } from '../model/store';
+import { duplicateSelection, useStore } from '../model/store';
 import { type ColorKey, type Edge, type Node, hasText } from '../model/types';
 import { safeUrl } from '../model/url';
 import { COLOR_NAME, FILLS, FillPreview, ICON, SHAPES, shapeIcon, sizesFor } from './icons';
@@ -328,13 +328,7 @@ export function QuickBar() {
         </Btn>
       )}
       {nodes.length > 0 && (
-        <Btn
-          tip="複製 (⌘D)"
-          onClick={() => {
-            copySelection();
-            pasteClipboard();
-          }}
-        >
+        <Btn tip="複製 (⌘D)" onClick={() => duplicateSelection()}>
           {ICON.duplicate}
         </Btn>
       )}

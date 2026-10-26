@@ -358,9 +358,17 @@ export async function updateWorkbook(doc: Doc, previous: ArrayBuffer): Promise<{
     }
 
     for (let r = after.row + 1; r <= now.rowCount; r++) {
-      const ids = shown(now.getCell(r, keyCol).value).split(/\s+/).filter(Boolean);
+      const key = shown(now.getCell(r, keyCol).value).trim();
+      // keito's own rows (totals) stand for nothing: never "added".
+      if (key === OWN_ROW || key === MANUAL_HEAD) continue;
+      const ids = key.split(/\s+/).filter(Boolean);
       if (!ids.length) continue;
       const match = ids.map((id) => byId.get(id)).find((x) => x && !x.used) ?? ids.map((id) => byId.get(id)).find(Boolean);
+      // Rows now made one (two devices given the same name) are all in this row: none has left the board.
+      for (const id of ids) {
+        const merged = byId.get(id);
+        if (merged) merged.used = true;
+      }
       if (!match) {
         report.added++;
         for (let j = 1; j < keyCol; j++) now.getCell(r, j).fill = fill('FFDCFCE7');

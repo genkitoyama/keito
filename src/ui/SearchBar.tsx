@@ -61,8 +61,12 @@ export function SearchBar() {
     window.addEventListener('keito:search', show);
     return () => window.removeEventListener('keito:search', show);
   }, []);
-  // A search belongs to the board it was made on.
+  // A search belongs to the board it was made on, and gives way to a window over the board.
   useEffect(() => close(), [doc.id]);
+  const panel = useStore((s) => s.panel);
+  useEffect(() => {
+    if (panel === 'export' || panel === 'boards' || panel === 'settings') close();
+  }, [panel]);
   // While open, what is found stands out and the rest of the board fades.
   useEffect(() => useStore.setState({ found: open && typed.trim() ? hits.map((h) => h.id) : null }), [open, typed, hits]);
   useEffect(() => setAt(0), [typed]);

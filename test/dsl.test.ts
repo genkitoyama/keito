@@ -111,3 +111,37 @@ describe('YAML that does not give a list where one is needed', () => {
     expect(fromYaml('title: t\n', blank()).nodes).toEqual([]);
   });
 });
+
+describe('a cable written from an input to an output', () => {
+  it('is turned round, so power is counted from its source', async () => {
+    const { powerLoads } = await import('../src/model/lists');
+    const doc = fromYaml(`title: t
+devices:
+  - { id: pj, name: PJ, watts: 300, in: [AC:power] }
+  - { id: tap, name: タップ, capacity: 1500, in: [IN:power], out: [AC 1:power] }
+cables:
+  - { from: pj.AC, to: tap.AC 1, type: power }
+`, blank());
+    expect(doc.edges[0].from.node).toBe('tap');
+    expect(powerLoads(doc).get('tap')?.watts).toBe(300);
+  });
+});
+
+describe('YAML keeps what is less often written', () => {
+  it('keeps the order things are drawn in, a flow note and an area with no name', () => {
+    const d = sample();
+    const sticky = { id: 'memo', type: 'sticky' as const, x: 0, y: 0, w: 100, h: 60, text: 'メモ', color: 'yellow' as const };
+    const area = { id: 'a0', type: 'frame' as const, x: -500, y: -500, w: 200, h: 100, text: '' };
+    const [x, y] = d.nodes.filter((n) => n.type === 'device');
+    const flow = { id: 'f1', from: { node: x.id }, to: { node: y.id }, signal: 'flow', label: '', note: '確認する', arrow: 'end' as const };
+    // The note over everything, drawn last.
+    const doc = { ...d, nodes: [area, ...d.nodes, sticky], edges: [...d.edges, flow] };
+    const back = fromYaml(toYaml(doc), doc);
+    expect(back.nodes.map((n) => n.id)).toEqual(doc.nodes.map((n) => n.id));
+    expect(back.edges.find((e) => e.id === 'f1')?.note).toBe('確認する');
+  });
+
+  it('refuses a flow arrow written among the cables', () => {
+    expect(() => fromYaml('title: t\nshapes:\n  - { id: a, text: A }\n  - { id: b, text: B }\ncables:\n  - { from: a, to: b, type: flow }\n', blank())).toThrow(/flows に/);
+  });
+});
