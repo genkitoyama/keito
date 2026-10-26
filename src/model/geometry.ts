@@ -280,7 +280,14 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
     into.set(k, [...(into.get(k) ?? []), d]);
   }
   const meets = new Map<string, Anchor>();
-  for (const list of into.values()) if (list.length > 1) for (const d of list) meets.set(d.e.id, meetingPoint(d.eb));
+  // Lines joining one that comes straight in: they bend near the meeting point, rather than run on
+  // top of the straight line from midway and seem to join it at its other end.
+  const joining = new Set<string>();
+  for (const list of into.values()) {
+    if (list.length < 2) continue;
+    for (const d of list) meets.set(d.e.id, meetingPoint(d.eb));
+    if (list.some((d) => Math.abs(d.ea.y - meets.get(d.e.id)!.y) < 0.5)) for (const d of list) joining.add(d.e.id);
+  }
   const runs: Run[] = [];
   // A line drawn as tags leaves a chip beside each port; bends keep off those too.
   const chips: Rect[] = [];
@@ -288,8 +295,9 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
     const eb = meets.get(e.id) ?? end;
     if (tagged) chips.push(chip(ea, `XXX-00 → ${b.text}`), chip(end, `⚡ ${a.text} ${e.label}`));
     else if (a !== b && !manual(e) && Math.abs(ea.y - eb.y) >= 0.5) {
-      if (facing(ea, eb)) runs.push({ id: e.id, l: ea, r: eb });
-      else if (facing(eb, ea)) runs.push({ id: e.id, l: eb, r: ea });
+      const merging = joining.has(e.id);
+      if (facing(ea, eb)) runs.push({ id: e.id, l: ea, r: eb, ...(merging ? { joins: 'r' as const } : {}) });
+      else if (facing(eb, ea)) runs.push({ id: e.id, l: eb, r: ea, ...(merging ? { joins: 'l' as const } : {}) });
     }
   }
   const frames = doc.nodes.filter((n) => n.type === 'frame').map(nodeRect);

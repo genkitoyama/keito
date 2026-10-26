@@ -491,6 +491,8 @@ export interface Run {
   r: Pt & { rect?: Rect };
   /** For lines merging at one end, bent together as one: the lines themselves. */
   members?: Run[];
+  /** The end where the line merges into one coming straight in ('l' or 'r'): it bends near there, so it plainly joins it at its target. */
+  joins?: 'l' | 'r';
 }
 
 /**
@@ -514,7 +516,7 @@ function bundled(runs: Run[]): Run[] {
     const far = (u: Run) => (k[0] === 'r' ? u.l : u.r);
     const reach = free.reduce((p, q) => (Math.abs(far(q).y - (k[0] === 'r' ? q.r.y : q.l.y)) > Math.abs(far(p).y - (k[0] === 'r' ? p.r.y : p.l.y)) ? q : p));
     const x = k[0] === 'r' ? Math.max(...free.map((u) => u.l.x)) : Math.min(...free.map((u) => u.r.x));
-    out.push(k[0] === 'r' ? { id: `+${k}`, l: { x, y: reach.l.y }, r: free[0].r, members: free } : { id: `+${k}`, l: free[0].l, r: { x, y: reach.r.y }, members: free });
+    out.push(k[0] === 'r' ? { id: `+${k}`, l: { x, y: reach.l.y }, r: free[0].r, members: free, ...(free.some((u) => u.joins) ? { joins: 'r' as const } : {}) } : { id: `+${k}`, l: free[0].l, r: { x, y: reach.r.y }, members: free, ...(free.some((u) => u.joins) ? { joins: 'l' as const } : {}) });
   }
   return [...runs.filter((u) => !taken.has(u)), ...out];
 }
@@ -601,6 +603,10 @@ export function lanes(given: Run[], obstacles: Rect[], frames: Rect[], fronts: S
     const order = ordered(list);
     const width = step * (list.length - 1);
     const mid = (lo + hi) / 2;
+    // Lines merging at one end bend as near it as they may: bent midway, a line would run on top of
+    // the one it joins from there on, and seem to join it at the other end.
+    const joins = list.every((u) => u.joins === 'r') ? 'r' : list.every((u) => u.joins === 'l') ? 'l' : null;
+    const aim = joins === 'r' ? hi - width / 2 : joins === 'l' ? lo + width / 2 : mid;
     const path = (u: Run, x: number): Pt[] => [u.l, { x, y: u.l.y }, { x, y: u.r.y }, u.r];
     // Only the boxes these lines could pass are looked at, however large the board.
     const x0 = Math.min(...list.map((u) => u.l.x));
@@ -629,7 +635,7 @@ export function lanes(given: Run[], obstacles: Rect[], frames: Rect[], fronts: S
       const blocking = order.reduce((sum, u, k) => sum + each(u).reduce((t, m) => t + acrossFronts(fronts, m, first + k * step), 0), 0);
       // Nor crowded in against the lines laid already.
       const crowd = order.reduce((sum, u, k) => sum + each(u).reduce((t, m) => t + cramped(laid, m, first + k * step), 0), 0);
-      const score = [blocked ? 1 : 0, onTop, blocking, crowd, hugging, framed, Math.abs(c - mid)];
+      const score = [blocked ? 1 : 0, onTop, blocking, crowd, hugging, framed, Math.abs(c - aim)];
       const at = best ? score.findIndex((v, i) => v !== best!.score[i]) : 0;
       if (!best || (at >= 0 && score[at] < best.score[at])) best = { score, first };
     }

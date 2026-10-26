@@ -94,6 +94,30 @@ describe('lines kept off the edges of boxes and areas', () => {
   });
 });
 
+describe('a line joining one that comes straight in', () => {
+  it('turns in near where they meet, not midway along the straight one', () => {
+    // A browser straight across to the CDN, and an app below joining it at the same port.
+    const doc = fromYaml(
+      `kind: software
+devices:
+  - { id: web, name: Web, out: [WSS:websocket], pos: [0, 100] }
+  - { id: app, name: App, out: [WSS:websocket], pos: [0, 260] }
+  - { id: cdn, name: CDN, in: [WSS:websocket], pos: [400, 100] }
+cables:
+  - { id: straight, from: web.WSS, to: cdn.WSS, type: websocket }
+  - { id: joining, from: app.WSS, to: cdn.WSS, type: websocket }
+`,
+      blank('joining'),
+    );
+    const routes = routeEdges(doc);
+    const across = routes.get('straight')!;
+    const [from, to] = [across[0].x, across[across.length - 1].x];
+    const up = routes.get('joining')!.find((p, i, all) => i > 0 && Math.abs(p.x - all[i - 1].x) < 0.5)!;
+    // It runs up in the half nearer the CDN, so most of the way the straight line is on its own.
+    expect(up.x).toBeGreaterThan((from + to) / 2);
+  });
+});
+
 describe('crossings drawn without hops', () => {
   it('break the line running down where a line across crosses it', () => {
     const doc = fromYaml(
