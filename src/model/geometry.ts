@@ -1,5 +1,5 @@
 import { UI_FONT, wrapText } from './text';
-import { CLEAR, type Run, chip, collides, lanes, routeAround } from './router';
+import { type Run, STUB, chip, collides, facing, isH, lanes, routeAround } from './router';
 import { seqLayout, seqScale } from './sequence';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node, Port, PortSide, Pt, Rect } from './types';
 
@@ -95,8 +95,6 @@ export function anchorOf(node: Node, end: EdgeEnd, toward: Pt): Anchor {
   return { ...sidePoint(rect, dir), dir, rect };
 }
 
-const STUB = 18;
-const isH = (d: Dir): boolean => d === 'left' || d === 'right';
 const SWAP: Record<Dir, Dir> = { left: 'top', top: 'left', right: 'bottom', bottom: 'right' };
 const flipPt = (p: Pt): Pt => ({ x: p.y, y: p.x });
 const flip = (a: Anchor): Anchor => ({
@@ -252,7 +250,6 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
   }
   const meets = new Map<string, Anchor>();
   for (const list of into.values()) if (list.length > 1) for (const d of list) meets.set(d.e.id, meetingPoint(d.eb));
-  const facing = (l: Anchor, r: Anchor) => l.dir === 'right' && r.dir === 'left' && r.x - l.x >= CLEAR * 2;
   const runs: Run[] = [];
   // A line drawn as tags leaves a chip beside each port; bends keep off those too.
   const chips: Rect[] = [];

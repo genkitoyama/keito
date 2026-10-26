@@ -7,7 +7,12 @@ import type { Pt, Rect } from './types';
  * line is re-routed here around every node with A* over the grid formed by the
  * nodes' (inflated) edges, paying for each bend so the result stays tidy.
  */
-const STUB = 18;
+/** How far a line runs straight out of a port before it may turn. */
+export const STUB = 18;
+/** Whether a side faces left or right (a line leaves it across, not up or down). */
+export const isH = (d: Dir): boolean => d === 'left' || d === 'right';
+/** Two ends facing each other across a gap wide enough for a line to jog between them. */
+export const facing = (l: Anchor, r: Anchor): boolean => l.dir === 'right' && r.dir === 'left' && r.x - l.x >= CLEAR * 2;
 const BEND = 36;
 /** Size of the cells obstacles are filed under for quick look-up (px). */
 const CELL = 160;
@@ -144,6 +149,18 @@ export interface Seg {
   lo: number;
   hi: number;
 }
+/** The straight pieces of a polyline, across or down (a slanted piece, never drawn, is left out). */
+export function segmentsOf(pts: Pt[]): Seg[] {
+  const out: Seg[] = [];
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1];
+    const b = pts[i];
+    if (Math.abs(a.y - b.y) < 0.5) out.push({ flat: true, at: a.y, lo: Math.min(a.x, b.x), hi: Math.max(a.x, b.x) });
+    else if (Math.abs(a.x - b.x) < 0.5) out.push({ flat: false, at: a.x, lo: Math.min(a.y, b.y), hi: Math.max(a.y, b.y) });
+  }
+  return out;
+}
+
 /** What crossing another line costs a search that is told to keep clear of lines, against a bend's. */
 const CROSS = 400;
 

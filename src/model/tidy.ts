@@ -1,7 +1,7 @@
 import { deviceTagRects } from './badges';
 import { anchorOf, captionBox, center, frameOf, isTagged, isUnderlay, nodeRect, obstaclesOf, routeEdges, simplify, tagChips } from './geometry';
 import { placeLabels } from './labels';
-import { CLEAR, type Seg, routeClear } from './router';
+import { facing, isH, routeClear, segmentsOf } from './router';
 import type { Doc, Edge, Node, Rect } from './types';
 
 const COLUMN = 60; // nodes whose centres are this close in x share a column
@@ -11,8 +11,6 @@ const EDGE = 120; // frame edges in neighbouring columns this close are made to 
 const ROW_REACH = 200; // loose items further apart than this are not a row
 const ROW_EVEN = 40; // gaps this close to each other are made equal
 const TRIM = 16; // least space between an area frame and the tags hanging off what it holds
-
-const isH = (dir: string) => dir === 'left' || dir === 'right';
 
 /** Both ends of a line as they attach right now, or null when an end is missing. */
 function ends(nodes: Map<string, Node>, e: Edge) {
@@ -247,9 +245,8 @@ function tangles(doc: Doc): Map<string, number> {
       const b = pts[i];
       const seg = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
       for (const { id, r } of boxes) if (id !== e.from.node && id !== e.to.node && seg.x < r.x + r.w - 2 && r.x + 2 < seg.x + seg.w && seg.y < r.y + r.h - 2 && r.y + 2 < seg.y + seg.h) add(e.id, 150);
-      if (Math.abs(a.y - b.y) < 0.5) runs.push({ id: e.id, flat: true, at: a.y, lo: seg.x, hi: seg.x + seg.w });
-      else if (Math.abs(a.x - b.x) < 0.5) runs.push({ id: e.id, flat: false, at: a.x, lo: seg.y, hi: seg.y + seg.h });
     }
+    for (const seg of segmentsOf(pts)) runs.push({ id: e.id, ...seg });
   }
   const pair = (p: Run, q: Run, v: number) => {
     add(p.id, v / 2);
@@ -557,7 +554,6 @@ function comb(doc: Doc, nodes: Map<string, Node>): Edge[] {
     const at = ends(nodes, e);
     if (!at) return e;
     const { pa, pb } = at;
-    const facing = (l: typeof pa, r: typeof pa) => l.dir === 'right' && r.dir === 'left' && r.x - l.x >= CLEAR * 2;
     const { route, labelAt, ...rest } = e;
     const was = (id: string) => doc.nodes.find((n) => n.id === id)!;
     const da = { x: at.a.x - was(at.a.id).x, y: at.a.y - was(at.a.id).y };
@@ -573,17 +569,6 @@ function comb(doc: Doc, nodes: Map<string, Node>): Edge[] {
   });
 }
 
-/** The straight pieces of a line's route, as a search kept clear of lines takes them. */
-function segments(pts: { x: number; y: number }[]): Seg[] {
-  const out: Seg[] = [];
-  for (let i = 1; i < pts.length; i++) {
-    const a = pts[i - 1];
-    const b = pts[i];
-    if (Math.abs(a.y - b.y) < 0.5) out.push({ flat: true, at: a.y, lo: Math.min(a.x, b.x), hi: Math.max(a.x, b.x) });
-    else if (Math.abs(a.x - b.x) < 0.5) out.push({ flat: false, at: a.x, lo: Math.min(a.y, b.y), hi: Math.max(a.y, b.y) });
-  }
-  return out;
-}
 
 /**
  * Give automatic lines that cross others a way round them: each is routed afresh keeping clear of
@@ -607,7 +592,7 @@ function untangle(doc: Doc): Doc {
     const at = ends(nodes, e);
     if (!at) continue;
     const routes = routeEdges(doc);
-    const segs = doc.edges.filter((x) => x.id !== e.id && !isTagged(doc, x)).flatMap((x) => segments(routes.get(x.id) ?? []));
+    const segs = doc.edges.filter((x) => x.id !== e.id && !isTagged(doc, x)).flatMap((x) => segmentsOf(routes.get(x.id) ?? []));
     const pts = routeClear(at.pa, at.pb, obstacles, segs);
     if (!pts) continue;
     const route = simplify(pts).slice(1, -1);
