@@ -1,7 +1,7 @@
 import { deviceTagRects } from './badges';
 import { anchorOf, captionBox, center, frameOf, frameTitles, isTagged, isUnderlay, nodeRect, obstaclesOf, routeEdges, simplify, tagChips } from './geometry';
 import { placeLabels } from './labels';
-import { facing, isH, routeClear, segmentsOf } from './router';
+import { bordersOf, facing, isH, routeClear, segmentsOf } from './router';
 import { kindOf } from './kinds';
 import type { Doc, Edge, Node, Port, Rect } from './types';
 
@@ -624,6 +624,7 @@ function untangle(doc: Doc): Doc {
   if (doc.edges.length >= WEIGH_UP_TO) return doc;
   const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
   const obstacles = [...obstaclesOf(doc), ...tagChips(doc), ...frameTitles(doc)];
+  const borders = bordersOf(doc.nodes.filter((n) => n.type === 'frame').map(nodeRect));
   const own = tangles(doc);
   let best = [...own.values()].reduce((sum, v) => sum + v, 0);
   // A crossing is shared between its two lines; the worst few are tried, as each try weighs the board.
@@ -638,7 +639,7 @@ function untangle(doc: Doc): Doc {
     if (!at) continue;
     const routes = routeEdges(doc);
     const segs = doc.edges.filter((x) => x.id !== e.id && !isTagged(doc, x)).flatMap((x) => segmentsOf(routes.get(x.id) ?? []));
-    const pts = routeClear(at.pa, at.pb, obstacles, segs);
+    const pts = routeClear(at.pa, at.pb, obstacles, segs, borders);
     if (!pts) continue;
     const route = simplify(pts).slice(1, -1);
     if (route.length < 2) continue;

@@ -1,6 +1,12 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { fromYaml } from '../src/model/dsl';
+import { isTagged, nodeRect, routeEdges } from '../src/model/geometry';
 import { collides, routeAround } from '../src/model/router';
-import type { Rect } from '../src/model/types';
+import { sampleBoards } from '../src/model/sample';
+import { tidy } from '../src/model/tidy';
+import type { Doc, Rect } from '../src/model/types';
+import { blank } from './helpers';
 
 describe('the way round boxes', () => {
   it('is still found on a large board, between ends close together', () => {
@@ -50,5 +56,39 @@ describe('a line from a port back to the same port', () => {
     const pts = routeEdges(doc).get('e')!;
     const length = pts.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - pts[i].x, p.y - pts[i].y), 0);
     expect(length).toBeGreaterThan(20);
+  });
+});
+
+describe('lines kept off the edges of boxes and areas', () => {
+  // How long each line runs right along the side of a box or an area's border, closer than `near`.
+  const along = (doc: Doc, near: number, kinds: string[]): string[] => {
+    const routes = routeEdges(doc);
+    const out: string[] = [];
+    for (const e of doc.edges) {
+      if (isTagged(doc, e)) continue;
+      const pts = routes.get(e.id) ?? [];
+      for (let i = 1; i < pts.length; i++) {
+        const [a, b] = [pts[i - 1], pts[i]];
+        const flat = Math.abs(a.y - b.y) < 0.5;
+        const [lo, hi] = flat ? [Math.min(a.x, b.x), Math.max(a.x, b.x)] : [Math.min(a.y, b.y), Math.max(a.y, b.y)];
+        for (const n of doc.nodes) {
+          if (!kinds.includes(n.type)) continue;
+          const r = nodeRect(n);
+          const [s0, s1] = flat ? [r.x, r.x + r.w] : [r.y, r.y + r.h];
+          if (Math.min(hi, s1) - Math.max(lo, s0) < 12) continue;
+          for (const side of flat ? [r.y, r.y + r.h] : [r.x, r.x + r.w]) if (Math.abs((flat ? a.y : a.x) - side) < near) out.push(`${e.id} along ${n.text}`);
+        }
+      }
+    }
+    return out;
+  };
+  const nested = () => fromYaml(fs.readFileSync(new URL('./fixtures/web-nested.yaml', import.meta.url), 'utf8'), blank('nested'));
+
+  it('never runs a line down the side of a box', () => {
+    for (const doc of [nested(), tidy(nested()), ...sampleBoards()]) expect(along(doc, 6, ['device', 'shape'])).toEqual([]);
+  });
+
+  it('keeps tidied lines off the borders of the areas', () => {
+    expect(along(tidy(nested()), 6, ['frame'])).toEqual([]);
   });
 });
