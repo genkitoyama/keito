@@ -2,7 +2,8 @@ import { deviceTagRects } from './badges';
 import { anchorOf, captionBox, center, frameOf, frameTitles, isTagged, isUnderlay, nodeRect, obstaclesOf, routeEdges, simplify, tagChips } from './geometry';
 import { placeLabels } from './labels';
 import { facing, isH, routeClear, segmentsOf } from './router';
-import type { Doc, Edge, Node, Rect } from './types';
+import { kindOf } from './kinds';
+import type { Doc, Edge, Node, Port, Rect } from './types';
 
 const COLUMN = 60; // nodes whose centres are this close in x share a column
 const FRAME_GAP = 60; // space between area frames stacked in a column
@@ -657,6 +658,57 @@ function untangle(doc: Doc): Doc {
   return doc;
 }
 
+/**
+ * On a board whose ports may move (software), each box's ports on a side are put in the order of
+ * where what they lead to stands, top to bottom, so the lines between two columns run side by side
+ * rather than across each other. A box's new order is kept only when it leaves the wiring less
+ * tangled; ports with nothing on them, or with bends drawn by hand, keep their places.
+ */
+function orderPorts(doc: Doc): Doc {
+  if (!kindOf(doc).freePorts || doc.edges.length >= WEIGH_UP_TO) return doc;
+  let best = tangle(doc);
+  // A box moved can change the order best for the boxes it leads to: a second sweep sees to those.
+  for (let sweep = 0; sweep < 2; sweep++) {
+    let changed = false;
+    for (const { id } of doc.nodes) {
+      const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
+      const self = nodes.get(id)!;
+      if (self.type !== 'device') continue;
+      const toward = center(nodeRect(self));
+      // Where the far ends of a port's lines stand, on average; null for a port left as it is.
+      const where = (port: Port): number | null => {
+        const ends = doc.edges.flatMap((e) => {
+          const far = e.from.node === id && e.from.port === port.id ? e.to : e.to.node === id && e.to.port === port.id ? e.from : null;
+          return far ? [{ e, far }] : [];
+        });
+        if (!ends.length || ends.some(({ e, far }) => e.route || far.node === id || !nodes.has(far.node))) return null;
+        return ends.reduce((sum, { far }) => sum + anchorOf(nodes.get(far.node)!, far, toward).y, 0) / ends.length;
+      };
+      let ports = self.ports;
+      for (const side of ['left', 'right'] as const) {
+        const slots = ports.flatMap((p, i) => {
+          const y = p.side === side ? where(p) : null;
+          return y === null ? [] : [{ p, i, y }];
+        });
+        const sorted = [...slots].sort((a, b) => a.y - b.y || a.i - b.i);
+        if (sorted.every((s, k) => s === slots[k])) continue;
+        const next = [...ports];
+        for (const [k, s] of slots.entries()) next[s.i] = sorted[k].p;
+        ports = next;
+      }
+      if (ports === self.ports) continue;
+      const trial = { ...doc, nodes: doc.nodes.map((n) => (n.id === id ? { ...self, ports } : n)) };
+      const score = tangle(trial);
+      if (score >= best) continue;
+      best = score;
+      doc = trial;
+      changed = true;
+    }
+    if (!changed) break;
+  }
+  return doc;
+}
+
 function pass(doc: Doc): Doc {
   const arranged = arrange(doc);
   const balanced = { ...doc, nodes: doc.nodes.map((n) => arranged.get(n.id)!), edges: comb(doc, arranged) };
@@ -682,7 +734,7 @@ export function tidy(doc: Doc): Doc {
     const next = { ...drawing, nodes: doc.nodes.map((n) => (isUnderlay(n) ? n : moved.get(n.id)!)) };
     return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;
   }
-  let next = doc;
+  let next = orderPorts(doc);
   // One pass can open up room for the next; a handful settles any board.
   for (let i = 0; i < 6; i++) {
     const after = pass(next);
@@ -691,7 +743,7 @@ export function tidy(doc: Doc): Doc {
   }
   // Tidying must not leave the wiring worse than it found it: if it would, only the labels move.
   if (tangle(next) > tangle(doc)) next = doc;
-  next = untangle(next);
+  next = untangle(orderPorts(next));
   // Last, with everything where it ends up: each label slid along its line to where it is clear.
   next = placeLabels(next);
   return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;

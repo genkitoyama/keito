@@ -44,3 +44,25 @@ describe('auto layout', () => {
     expect(x('db')).toBe(x('queue'));
   });
 });
+
+describe('room between areas', () => {
+  it('widens the gap many lines pass through', () => {
+    const many = (n: number) => `kind: software
+areas:
+  - { name: 左 }
+  - { name: 右 }
+devices:
+  - { id: a, name: A, area: 左, out: [${Array.from({ length: n }, (_, i) => `P${i}:http`).join(', ')}] }
+  - { id: b, name: B, area: 右, in: [${Array.from({ length: n }, (_, i) => `P${i}:http`).join(', ')}] }
+cables:
+${Array.from({ length: n }, (_, i) => `  - { from: a.P${i}, to: b.P${i}, type: http }`).join('\n')}
+`;
+    const gap = (n: number) => {
+      const doc = fromYaml(many(n), blank('many'), true);
+      const [l, r] = doc.nodes.filter((f) => f.type === 'frame').sort((p, q) => p.x - q.x);
+      return r.x - (l.x + l.w);
+    };
+    expect(gap(2)).toBe(80);
+    expect(gap(20)).toBeGreaterThanOrEqual(20 * 12 - 40);
+  });
+});

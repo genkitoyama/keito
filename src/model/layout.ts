@@ -5,8 +5,10 @@ const COL_GAP = 180;
 const LOOSE = '\u0000loose';
 const GAP_Y = 36;
 const BAND_GAP = 90;
-/** Space between one area's block and the next. */
+/** Space between one area's block and the next, at the least. */
 const AREA_GAP = 80;
+/** Room for each line passing between two areas, so many of them run side by side rather than crowd. */
+const LINE_ROOM = 12;
 const FRAME_PAD = { x: 40, top: 60, bottom: 40 };
 
 /** Longest-path rank per node, ignoring back edges so cycles can't blow up. */
@@ -105,9 +107,16 @@ export function autoLayout(
     return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : Infinity;
   };
 
+  // How many lines pass the gap after each block: the busier gaps are made wider.
+  const slot = new Map(order.map((b, i) => [b, i]));
+  const through = order.map((_, i) => edges.filter((e) => {
+    const [a, b] = [slot.get(blockOf(e.from.node)), slot.get(blockOf(e.to.node))];
+    return a !== undefined && b !== undefined && Math.min(a, b) <= i && i < Math.max(a, b);
+  }).length);
+
   let left = origin.x;
   let bottom = origin.y;
-  for (const block of order) {
+  for (const [index, block] of order.entries()) {
     const members = blocks.get(block)!;
     // The block's own columns: what follows what within it, so parts that only meet across areas
     // stand in one column rather than spread out.
@@ -132,7 +141,7 @@ export function autoLayout(
     const right = x - COL_GAP + pad.x;
     if (block) areas.set(block, { x: left, y: origin.y, w: right - left, h: pad.top + tallest + pad.bottom });
     bottom = Math.max(bottom, origin.y + pad.top + tallest + pad.bottom);
-    left = right + AREA_GAP;
+    left = right + Math.max(AREA_GAP, through[index] * LINE_ROOM - FRAME_PAD.x);
   }
 
   let x = origin.x;

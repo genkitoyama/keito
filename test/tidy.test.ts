@@ -124,3 +124,33 @@ describe('areas within areas', () => {
     }
   });
 });
+
+describe('ports in the order of what they lead to', () => {
+  // A server whose first port leads to the lower of two services, its second to the upper: the two
+  // lines cross between them.
+  const crossed = (kind: string) =>
+    fromYaml(
+      `kind: ${kind}
+devices:
+  - { id: api, name: API, out: [A:http, B:http], pos: [0, 100] }
+  - { id: up, name: 上, in: [IN:http], pos: [400, 0] }
+  - { id: down, name: 下, in: [IN:http], pos: [400, 300] }
+cables:
+  - { from: api.A, to: down.IN, type: http }
+  - { from: api.B, to: up.IN, type: http }
+`,
+      blank(kind),
+    );
+  const names = (doc: Doc) => (doc.nodes.find((n) => n.id === 'api') as { ports: { name: string }[] }).ports.map((p) => p.name);
+
+  it('puts them so the lines no longer cross, on a software board', () => {
+    const doc = crossed('software');
+    const after = tidy(doc);
+    expect(names(after)).toEqual(['B', 'A']);
+    expect(tangle(after)).toBeLessThan(tangle(doc));
+  });
+
+  it('leaves them as they are on the back of the device, on a system board', () => {
+    expect(names(tidy(crossed('system')))).toEqual(['A', 'B']);
+  });
+});
