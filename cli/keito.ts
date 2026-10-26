@@ -238,21 +238,26 @@ async function main(): Promise<void> {
 
     case 'show': {
       const json = flag('--json');
-      const { doc } = load(args[0]);
+      // As the app shows it: shared things as the project has them now.
+      const { doc: kept } = load(args[0]);
+      const doc = pull(kept, catalog(projectBoards(kept)));
       return void process.stdout.write(json ? `${JSON.stringify(doc, null, 2)}\n` : toYaml(doc));
     }
 
     case 'apply': {
       const relayout = flag('--relayout');
       const { doc, serial } = load(args[0]);
+      // Shared things as the project has them now, as the app takes them in on opening: the edit
+      // goes on top of those, so a value only this board still had stale is not pushed back out.
+      const current = pull(doc, catalog(projectBoards(doc)));
       let next: Doc;
       try {
-        next = fitLegends(fromYaml(await input(args[1]), doc, relayout));
+        next = fitLegends(fromYaml(await input(args[1]), current, relayout));
       } catch (e) {
         fail(`YAML を反映できませんでした: ${e instanceof Error ? e.message : e}`);
       }
       // Shared things edited in the YAML are the newest of them now, and go to the project's other boards.
-      next = stamp(doc, next, Date.now());
+      next = stamp(current, next, Date.now());
       save(doc, next, serial);
       shareOut(next);
       return;
