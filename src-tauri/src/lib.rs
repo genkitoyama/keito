@@ -81,6 +81,9 @@ pub fn run() {
             commands::save_presets,
             commands::write_file,
             commands::read_file,
+            commands::pick_save,
+            commands::pick_open,
+            commands::pick_folder,
             commands::open_for_print,
             quit,
         ])

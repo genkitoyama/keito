@@ -1,15 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "What the keito window may use: its own commands, dialogs, opening links.",
+  "description": "What the keito window may use: its own commands, asking and telling dialogs (files are picked through the app's own commands), opening links.",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
-    "dialog:default",
-    "dialog:allow-save",
-    "dialog:allow-open",
     "dialog:allow-ask",
     "dialog:allow-message",
     {

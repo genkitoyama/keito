@@ -4,13 +4,14 @@
 use crate::store::{BoardInfo, Store, Trashed, WriteError, Written};
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, RwLock, RwLockReadGuard, mpsc};
 use std::time::Duration;
 use tauri::http::{Request, Response, StatusCode};
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 /// The folder, and who wrote each board last from this app (so a page knows its own writes).
 pub struct Boards {
@@ -23,6 +24,9 @@ pub struct Boards {
     ours: Mutex<HashMap<String, (u64, String)>>,
     /// Which watcher is the current one: a folder chosen anew starts another, and the old one stops.
     watching: AtomicUsize,
+    /// Files and folders the user picked in this app's own dialogs: the only places outside the
+    /// boards folder the page may read or write (each taken once, when used).
+    picked: Mutex<HashSet<PathBuf>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Serialize)]
@@ -36,11 +40,24 @@ pub enum Source {
 
 impl Boards {
     pub fn new(root: PathBuf, source: Source) -> Self {
-        Boards { store: RwLock::new(Store::new(root)), source: RwLock::new(source), lock: Mutex::new(()), ours: Mutex::new(HashMap::new()), watching: AtomicUsize::new(0) }
+        Boards { store: RwLock::new(Store::new(root)), source: RwLock::new(source), lock: Mutex::new(()), ours: Mutex::new(HashMap::new()), watching: AtomicUsize::new(0), picked: Mutex::new(HashSet::new()) }
     }
 
     fn store(&self) -> RwLockReadGuard<'_, Store> {
         self.store.read().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Remember a place the user picked, and give it to the page.
+    fn pick(&self, path: PathBuf) -> String {
+        let shown = path.to_string_lossy().into_owned();
+        self.picked.lock().unwrap_or_else(|e| e.into_inner()).insert(path);
+        shown
+    }
+
+    /// Whether the page may use this place: the user picked it here, and it has not been used yet.
+    fn take(&self, path: &str) -> Result<PathBuf, String> {
+        let path = PathBuf::from(path);
+        if self.picked.lock().unwrap_or_else(|e| e.into_inner()).remove(&path) { Ok(path) } else { Err("このファイルは選ばれていません".into()) }
     }
 }
 
@@ -93,7 +110,8 @@ pub fn set_boards_folder(app: AppHandle, boards: State<Boards>, path: String) ->
     if matches!(source, Source::Env | Source::Config) {
         return Err("保存場所は KEITO_BOARDS か ~/.config/keito/config.json で決められています".into());
     }
-    let root = PathBuf::from(&path);
+    // A folder the user picked in the folder dialog, or the one offered on first launch.
+    let root = if path == boards.store().root.to_string_lossy() { PathBuf::from(&path) } else { boards.take(&path)? };
     std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     let file = settings_file(&app).ok_or("no settings folder")?;
     std::fs::create_dir_all(file.parent().unwrap()).map_err(|e| e.to_string())?;
@@ -185,9 +203,9 @@ pub fn save_presets(boards: State<Boards>, list: Value) -> Result<(), String> {
 
 /// Write a file where the user chose in a save dialog: its bytes as the body, the place in a header.
 #[tauri::command]
-pub fn write_file(request: tauri::ipc::Request<'_>) -> Result<(), String> {
+pub fn write_file(boards: State<Boards>, request: tauri::ipc::Request<'_>) -> Result<(), String> {
     let path = request.headers().get("path").and_then(|v| v.to_str().ok()).ok_or("missing path")?;
-    let path = percent_decode(path);
+    let path = boards.take(&percent_decode(path))?;
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("expected the file's bytes".into()) };
     std::fs::write(path, bytes).map_err(|e| e.to_string())
 }
@@ -212,8 +230,36 @@ pub fn open_for_print(app: AppHandle, html: String) -> Result<(), String> {
 
 /// Read a file the user picked in an open dialog.
 #[tauri::command]
-pub fn read_file(path: String) -> Result<tauri::ipc::Response, String> {
-    std::fs::read(path).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
+pub fn read_file(boards: State<Boards>, path: String) -> Result<tauri::ipc::Response, String> {
+    std::fs::read(boards.take(&path)?).map(tauri::ipc::Response::new).map_err(|e| e.to_string())
+}
+
+/// The system's save dialog, shown by the app (not the page) so that only what the user picks can be written.
+#[tauri::command]
+pub async fn pick_save(app: AppHandle, boards: State<'_, Boards>, name: String, extensions: Vec<String>) -> Result<Option<String>, String> {
+    let mut dialog = app.dialog().file().set_file_name(&name);
+    if !extensions.is_empty() {
+        let list: Vec<&str> = extensions.iter().map(String::as_str).collect();
+        dialog = dialog.add_filter(extensions.join(", ").to_uppercase(), &list);
+    }
+    Ok(dialog.blocking_save_file().and_then(|p| p.into_path().ok()).map(|p| boards.pick(p)))
+}
+
+/// The system's open dialog, shown by the app: only what the user picks can be read.
+#[tauri::command]
+pub async fn pick_open(app: AppHandle, boards: State<'_, Boards>, extensions: Vec<String>) -> Result<Option<String>, String> {
+    let mut dialog = app.dialog().file();
+    if !extensions.is_empty() {
+        let list: Vec<&str> = extensions.iter().map(String::as_str).collect();
+        dialog = dialog.add_filter(extensions.join(", "), &list);
+    }
+    Ok(dialog.blocking_pick_file().and_then(|p| p.into_path().ok()).map(|p| boards.pick(p)))
+}
+
+/// The system's folder dialog, for where boards are kept.
+#[tauri::command]
+pub async fn pick_folder(app: AppHandle, boards: State<'_, Boards>) -> Result<Option<String>, String> {
+    Ok(app.dialog().file().set_title("ボードを保存するフォルダ").blocking_pick_folder().and_then(|p| p.into_path().ok()).map(|p| boards.pick(p)))
 }
 
 /// A header carries a path percent-encoded (it may hold any character a file name can).
@@ -328,12 +374,23 @@ fn board_folder(root: &Path, p: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::percent_decode;
+    use super::*;
 
     #[test]
     fn decodes_a_path_sent_in_a_header() {
         assert_eq!(percent_decode("%2FUsers%2F%E5%B1%95%E7%A4%BA.xlsx"), "/Users/展示.xlsx");
         assert_eq!(percent_decode("plain"), "plain");
         assert_eq!(percent_decode("50%"), "50%");
+    }
+
+    #[test]
+    fn only_places_picked_in_a_dialog_are_given_once() {
+        let boards = Boards::new(PathBuf::from("/tmp/keito-test-boards"), Source::Chosen);
+        // Never picked: refused.
+        assert!(boards.take("/Users/someone/.zshrc").is_err());
+        let path = boards.pick(PathBuf::from("/tmp/keito-export.xlsx"));
+        assert_eq!(boards.take(&path).unwrap(), PathBuf::from("/tmp/keito-export.xlsx"));
+        // Used once: picked again before the next write.
+        assert!(boards.take(&path).is_err());
     }
 }

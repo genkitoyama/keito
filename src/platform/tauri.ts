@@ -1,7 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { ask as askDialog, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { ask as askDialog, message } from '@tauri-apps/plugin-dialog';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { boardKind, readBoard } from '../model/load';
 import { boot, flushBeforeClose, useStore } from '../model/store';
@@ -107,14 +107,15 @@ const MIME: Record<string, string> = { json: 'application/json', yaml: 'text/yam
 const system: Platform = {
   async saveFile(name, data, type) {
     const ext = name.includes('.') ? name.slice(name.lastIndexOf('.') + 1) : '';
-    const path = await saveDialog({ defaultPath: name, filters: ext ? [{ name: ext.toUpperCase(), extensions: [ext] }] : [] });
+    // The app shows the dialog: only a place the user picks there can be written.
+    const path = await invoke<string | null>('pick_save', { name, extensions: ext ? [ext] : [] });
     if (!path) return false;
     const blob = typeof data === 'string' ? new Blob([data], { type }) : data;
     await invoke('write_file', new Uint8Array(await blob.arrayBuffer()), { headers: { path: encodeURIComponent(path) } });
     return true;
   },
   async pickFile(accept) {
-    const path = await openDialog({ multiple: false, directory: false, filters: filters(accept) });
+    const path = await invoke<string | null>('pick_open', { extensions: filters(accept).flatMap((f) => f.extensions) });
     if (typeof path !== 'string') return null;
     const bytes = await invoke<ArrayBuffer>('read_file', { path });
     const name = path.split(/[\\/]/).pop() ?? 'file';
@@ -155,7 +156,7 @@ interface Folder {
 
 /** Ask for another folder for boards and keep them there from now on; false when called off. */
 async function chooseFolder(): Promise<boolean> {
-  const picked = await openDialog({ directory: true, multiple: false, title: 'ボードを保存するフォルダ' });
+  const picked = await invoke<string | null>('pick_folder');
   if (typeof picked !== 'string') return false;
   await invoke('set_boards_folder', { path: picked });
   return true;
