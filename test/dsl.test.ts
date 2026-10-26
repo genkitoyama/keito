@@ -145,3 +145,24 @@ describe('YAML keeps what is less often written', () => {
     expect(() => fromYaml('title: t\nshapes:\n  - { id: a, text: A }\n  - { id: b, text: B }\ncables:\n  - { from: a, to: b, type: flow }\n', blank())).toThrow(/flows に/);
   });
 });
+
+describe('a port name on both sides of a box', () => {
+  it('is the output where the line comes from the box, the input where it goes in', () => {
+    const doc = fromYaml(`kind: software
+devices:
+  - { id: cdn, name: CDN, out: [HTTPS:http] }
+  - { id: waf, name: WAF, in: [HTTPS:http], out: [HTTPS:http] }
+  - { id: lb, name: LB, in: [HTTPS:http] }
+cables:
+  - { from: cdn.HTTPS, to: waf.HTTPS, type: http }
+  - { from: waf.HTTPS, to: lb.HTTPS, type: http }
+`, blank());
+    const waf = doc.nodes.find((n) => n.id === 'waf') as DeviceNode;
+    const side = (port?: string) => waf.ports.find((p) => p.id === port)?.side;
+    expect(side(doc.edges[0].to.port)).toBe('left');
+    expect(side(doc.edges[1].from.port)).toBe('right');
+    // Written back, each end says which of the two it is, and reads back the same.
+    const back = fromYaml(toYaml(doc), blank());
+    expect(back.edges.map((e) => [e.from.port, e.to.port])).toEqual(doc.edges.map((e) => [e.from.port, e.to.port]));
+  });
+});

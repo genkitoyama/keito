@@ -50,7 +50,7 @@ devices:
     pos: [x, y]            # 省略すると自動レイアウト
 cables:
   - id: e1                # 任意。線の id（書き出すと付く。消さずに残すと、表の並び順などがそのまま保たれる）
-    from: pc1.HDMI 1       # 機材ID.ポート名（無いポートは自動追加。同じ名前のポートが複数あるときは IN#2 のように何番目かを付ける）
+    from: pc1.HDMI 1       # 機材ID.ポート名（無いポートは自動追加。同じ名前のポートが複数あるときは IN#2 のように何番目かを付ける。左右に同じ名前があれば from は右、to は左のポート）
     to: pj1.HDMI
     type: video            # video(映像) lan usb audio power dmx serial sync(同期) rf(アンテナ) fiber(光) wireless other、または signals で足した種別。
                            # 両端の端子で選ぶ（光 HDMI は video、光の端子どうしは fiber、Dante は lan）。
@@ -494,7 +494,10 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
       return { node: nodeId, port: free.id };
     }
     if (node.type !== 'device' || !portName) return { node: nodeId };
-    let port = node.ports.find((p) => portKey(p.name) === portKey(portName));
+    // A name on both sides of a box (HTTPS in and HTTPS out) is the one on the side the line uses
+    // that end: its output when it comes from the box, its input when it goes into it.
+    const named = node.ports.filter((p) => portKey(p.name) === portKey(portName));
+    let port = named.find((p) => p.side === side) ?? named[0];
     // `IN#2`: the second port called IN, unless a port is really called "IN#2".
     const nth = /^(.*?)#(\d+)$/.exec(portName);
     if (nth && !port) port = node.ports.filter((p) => portKey(p.name) === portKey(nth[1]))[Number(nth[2]) - 1];
