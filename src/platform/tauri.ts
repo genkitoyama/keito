@@ -188,6 +188,10 @@ export async function startDesktop(): Promise<void> {
     void leave();
   });
   void listen('quit-requested', () => void leave());
+  // 表示 > 再読み込み (⌘R): the page starts afresh once what it has is written, as on quitting.
+  void listen('reload-requested', async () => {
+    if ((await flushBeforeClose()) || (await system.ask('保存できていない変更があります。このまま再読み込みしますか？'))) location.reload();
+  });
   // keito > 設定… (⌘,)
   void listen('open-settings', () => useStore.getState().setPanel('settings'));
 }
