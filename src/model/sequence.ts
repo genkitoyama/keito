@@ -282,7 +282,7 @@ export function seqBlocks(d: SeqDiagram): SeqBlock[] {
 }
 /** A message: who, the arrow (keito and Mermaid "->>", "-x", "-)"; PlantUML "<-", "->x"), who, and its text. */
 /** Arrows that point (they have < or >), and those that only end in a cross or a half head. */
-const ARROWS = [/<->|<-->|-->>|->>|-->x|->x|-->|->|<--|<-/g, /--x|-x|--\)|-\)/g];
+const ARROWS = [/<<-->>|<<->>|<-->|<->|--->>|-->>|->>|-->x|->x|-->o|->o|--->|-->|->|<---|<--|<-/g, /--x|-x|--\)|-\)/g];
 
 /**
  * A message line split into its sender, arrow, receiver and text, or null when it is not one. A
@@ -305,7 +305,8 @@ function splitMessage(line: string): RegExpExecArray | null {
         .replace(/\s*(?:\+\+|--)$/, '')
         .trim();
       if (!from || !to) continue;
-      return [line, from, m[0], to, text] as unknown as RegExpExecArray;
+      // PlantUML's "A o-> B" puts a circle at the start: the o belongs to the arrow.
+      return [line, from.replace(/\s+o$/, ''), m[0], to, text] as unknown as RegExpExecArray;
     }
   }
   return null;
@@ -334,15 +335,25 @@ export function parseSequence(src: string): SeqDiagram {
   let boxes = 0;
   const lines = src.split('\n');
   for (let at = 0; at < lines.length; at++) {
-    // Accept what a Japanese IME tends to produce: ： → ⇢ and full-width spaces.
-    const line = lines[at].replace(/　/g, ' ').replace(/⇢/g, '-->').replace(/→/g, '->').trim();
+    // Accept what a Japanese IME tends to produce: ⇢ and → for arrows (before the text only: an
+    // arrow in what is said stays as typed) and full-width spaces.
+    const raw = lines[at].replace(/　/g, ' ');
+    const said = raw.search(/[:：]/);
+    const arrows = (s: string) => s.replace(/⇢/g, '-->').replace(/→/g, '->');
+    const line = (said < 0 ? arrows(raw) : arrows(raw.slice(0, said)) + raw.slice(said)).trim();
+    // A PlantUML block comment, /' … '/: skipped whole.
+    if (line.startsWith("/'")) {
+      while (at < lines.length && !lines[at].includes("'/")) at++;
+      continue;
+    }
     if (!line || line.startsWith('#') || line.startsWith('%%') || line.startsWith("'")) continue;
     // PlantUML colours an arrow ("-[#red]>"): dropped before the text, which keeps its brackets.
     const colon = line.search(/[:：]/);
     const head = colon < 0 ? line : line.slice(0, colon);
     const plainLine = head.replace(/-\[[^\]]*\]/g, '-') + (colon < 0 ? '' : line.slice(colon));
     let m: RegExpExecArray | null;
-    if ((m = /^title(?:\s*[:：]\s*|\s+)(.*)$/i.exec(line))) {
+    // A participant called Title sends messages ("Title -> Server: fetch"): that is no title.
+    if (!/^title\s*(?:-|<|o-)/i.test(line) && (m = /^title(?:\s*[:：]\s*|\s+)(.*)$/i.exec(line))) {
       title = m[1];
     } else if (/^autonumber\b/i.test(line)) {
       numbered = true;
@@ -373,6 +384,11 @@ export function parseSequence(src: string): SeqDiagram {
       const [a, b] = m[1].split(',').map((x) => x.trim()).filter(Boolean);
       if (!a) continue;
       items.push({ kind: 'note', over: index(a), ...(b ? { to: index(b) } : {}), text });
+    } else if ((m = /^note\s+(left|right|over)\s*[:：]\s*(.*)$/i.exec(line))) {
+      // PlantUML's note on the last message, beside its sender (left) or its receiver (right).
+      const side = m[1].toLowerCase();
+      const by = last ? (side === 'right' ? last.to : last.from) : participants.length ? 0 : index('?');
+      items.push({ kind: 'note', over: by, text: m[2] });
     } else if ((m = splitMessage(plainLine)) && !/^(?:note|participant|actor)\s/i.test(line)) {
       // "<-" (PlantUML) points the other way; "x" ends lost; activation marks are dropped.
       const back = m[2].startsWith('<') && !m[2].endsWith('>');
