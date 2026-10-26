@@ -139,7 +139,8 @@ function writeSheet(ws: Worksheet, t: Table, doc: Doc, lists: Map<string, string
   t.refs.forEach((ids, r) => (ws.getCell(HEAD_ROW + 1 + r, cols + 1).value = ids.length ? ids.join(' ') : OWN_ROW));
   if (!t.rows.length) ws.getCell(HEAD_ROW + 1, cols + 1).value = OWN_ROW;
   ws.views = [{ state: 'frozen', ySplit: HEAD_ROW, showGridLines: false }];
-  if (body > 0) ws.autoFilter = { from: { row: HEAD_ROW, column: 1 }, to: { row: HEAD_ROW + body, column: cols } };
+  // The filter takes in the hidden key: sorting from it moves each row's key with the row.
+  if (body > 0) ws.autoFilter = { from: { row: HEAD_ROW, column: 1 }, to: { row: HEAD_ROW + body, column: cols + 1 } };
   ws.pageSetup = { orientation: 'landscape', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: `${HEAD_ROW}:${HEAD_ROW}`, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } };
 }
 
@@ -190,6 +191,8 @@ export interface UpdateReport {
   manual: number;
   /** Sheets added to the workbook by hand, carried over. */
   sheets: string[];
+  /** Lists whose sheets were renamed by hand, matched by their columns: the name they keep. */
+  renamed: string[];
 }
 
 /** Columns that only say where a row stands: a new place is no change to report. */
@@ -270,17 +273,42 @@ export async function updateWorkbook(doc: Doc, previous: ArrayBuffer): Promise<{
   const { ExcelJS, wb } = await build(doc);
   const old = new ExcelJS.Workbook();
   await old.xlsx.load(previous);
-  const report: UpdateReport = { added: 0, changed: 0, removed: 0, extra: [], manual: 0, sheets: [] };
+  const report: UpdateReport = { added: 0, changed: 0, removed: 0, extra: [], manual: 0, sheets: [], renamed: [] };
   const leftover: OldRow[] = [];
   let found = false;
 
+  // Each list's sheet in the earlier workbook: by its name, or, renamed by hand, by its columns.
+  const claimed = new Set<string>();
+  const earlier = (name: string): Worksheet | undefined => {
+    const named = old.getWorksheet(name);
+    if (named && layout(named)) return named;
+    const now = wb.getWorksheet(name);
+    const after = now && layout(now);
+    if (!after) return undefined;
+    const heads = [...after.cols.keys()].filter((h) => h !== KEY);
+    let best: { ws: Worksheet; shared: number } | undefined;
+    for (const ws of old.worksheets) {
+      const l = ws.name !== REMOVED && !KEPT.includes(ws.name) && !claimed.has(ws.name) ? layout(ws) : null;
+      if (!l) continue;
+      const shared = heads.filter((h) => l.cols.has(h)).length;
+      if (shared > heads.length / 2 && (!best || shared > best.shared)) best = { ws, shared };
+    }
+    return best?.ws;
+  };
+
   for (const name of KEPT) {
-    const was = old.getWorksheet(name);
+    const was = earlier(name);
     const now = wb.getWorksheet(name);
     const before = was && layout(was);
     const after = now && layout(now);
     if (!was || !before) continue;
     found = true;
+    claimed.add(was.name);
+    // A sheet renamed by hand keeps the name it was given.
+    if (now && was.name !== name) {
+      now.name = was.name;
+      report.renamed.push(`${name} → ${was.name}`);
+    }
     // Rows of the earlier sheet, by every id they stand for.
     const rows: OldRow[] = [];
     const byId = new Map<string, OldRow>();
@@ -323,6 +351,11 @@ export async function updateWorkbook(doc: Doc, previous: ArrayBuffer): Promise<{
       now.getColumn(keyCol + 1 + k).width = Math.min(40, Math.max(10, textWidth(h) + 4));
       if (!report.extra.includes(h)) report.extra.push(h);
     });
+    // The filter takes in those columns too, so sorting keeps them with their rows.
+    if (extra.length && now.autoFilter && typeof now.autoFilter === 'object' && 'from' in now.autoFilter) {
+      const f = now.autoFilter as { from: { row: number; column: number }; to: { row: number; column: number } };
+      now.autoFilter = { from: f.from, to: { row: f.to.row, column: keyCol + extra.length } };
+    }
 
     for (let r = after.row + 1; r <= now.rowCount; r++) {
       const ids = shown(now.getCell(r, keyCol).value).split(/\s+/).filter(Boolean);
@@ -372,7 +405,9 @@ export async function updateWorkbook(doc: Doc, previous: ArrayBuffer): Promise<{
   // sheets are written afresh (a list the board no longer has is kept aside above).
   const ours = new Set(wb.worksheets.map((ws) => ws.name));
   for (const ws of old.worksheets) {
-    if (ours.has(ws.name) || ws.name === REMOVED || ws.name === CHOICES || layout(ws)) continue;
+    // A list's sheet taken up above is written afresh; one of keito's not matched to any list now
+    // (renamed past recognition) comes along as it was rather than be lost.
+    if (ours.has(ws.name) || claimed.has(ws.name) || ws.name === REMOVED || ws.name === CHOICES) continue;
     copySheet(ws, wb.addWorksheet(ws.name, { state: ws.state, properties: { tabColor: ws.properties?.tabColor } }));
     report.sheets.push(ws.name);
   }

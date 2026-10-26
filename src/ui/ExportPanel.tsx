@@ -303,7 +303,7 @@ export function ExportPanel() {
                     const off = await download(file.name, blob);
                     if (off) return off;
                     const parts = [`追加 ${report.added} 行`, `変更 ${report.changed} 行`, `削除 ${report.removed} 行`];
-                    const kept = [report.extra.length && `Excel で足した列（${report.extra.join('・')}）`, report.manual && `手入力の行 ${report.manual} 行`, report.sheets.length && `足したシート（${report.sheets.join('・')}）`].filter(Boolean);
+                    const kept = [report.extra.length && `Excel で足した列（${report.extra.join('・')}）`, report.manual && `手入力の行 ${report.manual} 行`, report.sheets.length && `足したシート（${report.sheets.join('・')}）`, report.renamed.length && `名前を変えたシート（${report.renamed.join('・')}）`].filter(Boolean);
                     return `「${file.name}」を更新して保存しました（${parts.join('・')}）。${kept.length ? `${kept.join('、')}と` : ''}購入ステータスはそのまま引き継いでいます。`;
                   }, '')}
                 >

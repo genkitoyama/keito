@@ -315,7 +315,7 @@ async function main(): Promise<void> {
         const backup = file === path.resolve(previous) ? `${file.replace(/\.xlsx$/i, '')}.bak.xlsx` : null;
         if (backup) fs.copyFileSync(file, backup);
         fs.writeFileSync(file, Buffer.from(await blob.arrayBuffer()));
-        const kept = [report.extra.length && `引き継いだ列: ${report.extra.join('・')}`, report.manual && `手入力の行 ${report.manual}`, report.sheets.length && `残したシート: ${report.sheets.join('・')}`].filter(Boolean);
+        const kept = [report.extra.length && `引き継いだ列: ${report.extra.join('・')}`, report.manual && `手入力の行 ${report.manual}`, report.sheets.length && `残したシート: ${report.sheets.join('・')}`, report.renamed.length && `名前を変えたシート: ${report.renamed.join('・')}`].filter(Boolean);
         return void console.log(`更新しました: ${file}（追加 ${report.added}・変更 ${report.changed}・削除 ${report.removed} 行${kept.length ? `、${kept.join('、')}` : ''}）${backup ? `\n元のファイルは ${backup} に残しました` : ''}`);
       }
       const file = path.resolve(out ?? `${safeName(doc.meta.title)}_${kindOf(doc).listsLabel}.xlsx`);
