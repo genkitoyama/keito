@@ -54,10 +54,11 @@ function useHotkeys() {
       const only = s.selection.length === 1 ? s.selection[0] : '';
       const onlyNode = s.doc.nodes.find((n) => n.id === only);
       const editable = !!only && (!onlyNode || hasText(onlyNode));
-      // Typing with the IME on a selected shape starts editing: mount and focus the
-      // editor synchronously and let this very keystroke flow into it.
+      // Typing on a selected shape starts editing: mount and focus the editor synchronously and
+      // let this very keystroke flow into it. With the IME on, keys arrive as "Process": the
+      // shortcuts below are still matched by the physical key first, as with it off, and Space
+      // stays the hand for panning.
       const typeToEdit = () => flushSync(() => s.setEditing(only));
-      if (ime && !mod && editable) return typeToEdit();
       let handled = true;
       if (mod && key === 'z') e.shiftKey ? s.redo() : s.undo();
       else if (mod && key === 'y') s.redo();
@@ -94,7 +95,7 @@ function useHotkeys() {
       // The library and the tools a board's kind offers; keys for others do nothing on it.
       else if (key === 'l' && kindOf(s.doc).library) s.setPanel(s.panel === 'library' ? null : 'library');
       else if (TOOL_KEYS[key] && !e.shiftKey && !e.altKey && kindOf(s.doc).tools.includes(TOOL_KEYS[key])) s.setTool(TOOL_KEYS[key]);
-      else if (editable && e.key.length === 1 && e.key !== ' ' && !e.altKey) return typeToEdit();
+      else if (editable && !e.altKey && (ime ? !mod && e.code !== 'Space' : e.key.length === 1 && e.key !== ' ')) return typeToEdit();
       else handled = false;
       if (handled) e.preventDefault();
     };
@@ -103,6 +104,9 @@ function useHotkeys() {
     const onPaste = (e: ClipboardEvent) => {
       const t = e.target;
       if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      // A window over the board (export, the boards list) or the project menu: the board is out of
+      // reach, and nothing lands on it unseen.
+      if (document.querySelector('.modal-bg, .project-menu')) return;
       const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
       const text = e.clipboardData?.getData('text/plain') ?? '';
       e.preventDefault();
