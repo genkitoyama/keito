@@ -201,3 +201,13 @@ describe('small steps in a line', () => {
     expect(steps).toEqual([]);
   });
 });
+
+describe('crossings after tidying', () => {
+  const nested = () => fromYaml(fs.readFileSync(new URL('./fixtures/web-nested.yaml', import.meta.url), 'utf8'), blank('nested'));
+
+  it('nearly all have room for a hop, not just by a corner', () => {
+    // Before lines were kept off corners, sixteen crossings here had no room for a hop.
+    const doc = { ...tidy(nested()), hops: true };
+    expect([...crossingGaps(doc).values()].flat().length).toBeLessThanOrEqual(1);
+  });
+});

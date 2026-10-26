@@ -195,6 +195,42 @@ export function hugCost(pts: Pt[], borders: Seg[]): number {
   return segmentsOf(pts).reduce((sum, q) => sum + alongBorders(borders, q.flat, q.at, q.lo, q.hi), 0);
 }
 
+/** Bends laid side by side closer than this read as one thick line. */
+const APART = 16;
+/** A crossing this near a corner leaves no room for a hop: it reads as the lines joining. */
+const CORNER = 14;
+
+/**
+ * How cramped `u`'s line with its bend at `x` is among the lines laid already: the length it runs
+ * close beside one of them, and a heavy count of crossings too near a corner of either.
+ */
+function cramped(laid: Laid[], u: Run, x: number): number {
+  const same = (a: Pt, b: Pt) => Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
+  const lo = Math.min(u.l.y, u.r.y);
+  const hi = Math.max(u.l.y, u.r.y);
+  let cost = 0;
+  for (const w of laid) {
+    if (w.ends.some((p) => same(p, u.l) || same(p, u.r))) continue;
+    if (!w.flat) {
+      // Down beside another line going down.
+      const d = Math.abs(w.at - x);
+      if (d >= 3 && d < APART) cost += Math.max(0, Math.min(hi, w.hi) - Math.max(lo, w.lo));
+    } else if (w.at > lo + 0.5 && w.at < hi - 0.5 && x > w.lo && x < w.hi && (x - w.lo < CORNER || w.hi - x < CORNER)) {
+      // Across another line just by its corner.
+      cost += 200;
+    }
+  }
+  // Its own runs across, out of its ends to the bend, crossed by lines down just by the bend.
+  for (const w of laid) {
+    if (w.flat || w.ends.some((p) => same(p, u.l) || same(p, u.r))) continue;
+    for (const end of [u.l, u.r]) {
+      const [a, b] = [Math.min(end.x, x), Math.max(end.x, x)];
+      if (w.at > a && w.at < b && end.y > w.lo + 0.5 && end.y < w.hi - 0.5 && Math.abs(w.at - x) < CORNER) cost += 200;
+    }
+  }
+  return cost;
+}
+
 /** How many ways into ports (other than its own two) run `u`'s bend at `x` runs across. */
 function acrossFronts(fronts: Seg[], u: Run, x: number): number {
   const lo = Math.min(u.l.y, u.r.y);
@@ -234,12 +270,15 @@ function overLines(segs: Seg[], flat: boolean, at: number, lo: number, hi: numbe
   for (const q of segs) {
     if (q.flat !== flat) {
       // A line through the grid point at the near end counts on this edge, so none slips between two.
-      if (q.at > lo - 0.5 && q.at < hi - 0.5 && at > q.lo + 1 && at < q.hi - 1) cost += CROSS;
-    } else if (Math.abs(q.at - at) < 14) {
+      // Across it just by its corner, where no hop fits, reads as the two joining: worse still.
+      if (q.at > lo - 0.5 && q.at < hi - 0.5 && at > q.lo + 1 && at < q.hi - 1) cost += at - q.lo < CORNER || q.hi - at < CORNER ? CROSS * 2 : CROSS;
+    } else if (Math.abs(q.at - at) < APART) {
       // Running on top of another line, or so close beside it that the two read as one.
       const shared = Math.min(hi, q.hi) - Math.max(lo, q.lo);
       // On top of it is worse than a crossing even for a short way: it reads as the same line.
-      if (shared > 0) cost += shared * (Math.abs(q.at - at) < 3 ? 40 : 4);
+      if (shared > 0) cost += shared * (Math.abs(q.at - at) < 3 ? 40 : 6);
+      // Carrying straight on from where another line ends, a hair apart: the two read as one line.
+      else if (Math.abs(q.at - at) < 3 && shared > -CORNER) cost += CROSS;
     }
   }
   return cost;
@@ -354,7 +393,7 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
 }
 
 /** A step this short between two turns reads as a kink in the line, not a way round anything. */
-const JOG = 14;
+const JOG = 20;
 
 /**
  * Take out the small steps a search leaves where a line edges a few pixels aside (to keep off
@@ -588,7 +627,9 @@ export function lanes(given: Run[], obstacles: Rect[], frames: Rect[], fronts: S
       const onTop = order.reduce((sum, u, k) => sum + each(u).reduce((t, m) => t + segmentsOf(path(m, first + k * step)).reduce((v, q) => v + overLaid(laid, m, q), 0), 0), 0);
       // Nor across the way into another port, leaving that port's line to step round it.
       const blocking = order.reduce((sum, u, k) => sum + each(u).reduce((t, m) => t + acrossFronts(fronts, m, first + k * step), 0), 0);
-      const score = [blocked ? 1 : 0, onTop, blocking, hugging, framed, Math.abs(c - mid)];
+      // Nor crowded in against the lines laid already.
+      const crowd = order.reduce((sum, u, k) => sum + each(u).reduce((t, m) => t + cramped(laid, m, first + k * step), 0), 0);
+      const score = [blocked ? 1 : 0, onTop, blocking, crowd, hugging, framed, Math.abs(c - mid)];
       const at = best ? score.findIndex((v, i) => v !== best!.score[i]) : 0;
       if (!best || (at >= 0 && score[at] < best.score[at])) best = { score, first };
     }
