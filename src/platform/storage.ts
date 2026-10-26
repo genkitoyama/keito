@@ -1,5 +1,5 @@
 import type { Doc, UserPreset } from '../model/types';
-import { boardKind, readBoard } from '../model/load';
+import { boardKind, readBoard, readSerial } from '../model/load';
 import { upgradePreset } from '../model/video';
 
 /**
@@ -317,7 +317,7 @@ const server: Backend = {
     const res = await fetch(`${API}/${id}`);
     if (res.status === 404) return null;
     const raw = await (await ok(res)).json();
-    serials.set(id, Number(raw?.serial) || 0);
+    serials.set(id, readSerial(raw?.serial));
     return clean(raw);
   },
   save: async (doc, force) => {
@@ -328,7 +328,7 @@ const server: Backend = {
       headers: { 'Content-Type': 'application/json', 'X-Keito-Writer': WRITER, ...(force || known === undefined ? { 'If-Match': '*' } : { 'If-Match': String(known) }) },
       body: JSON.stringify(doc),
     });
-    if (res.status === 409) throw new Conflict(Number((await res.json()).serial) || 0);
+    if (res.status === 409) throw new Conflict(readSerial((await res.json()).serial));
     if (res.status === 410) throw new Gone();
     const done = await (await ok(res)).json();
     if (typeof done?.serial === 'number') serials.set(doc.id, done.serial);

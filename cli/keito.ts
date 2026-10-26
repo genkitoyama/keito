@@ -18,7 +18,7 @@ import { TABLES, type Table, checkTable, toCsv } from '../src/model/lists';
 import { safeName } from '../src/model/names';
 import { drawingOf, entryFor, fingerprint, labelOf, thin } from '../src/model/history';
 import { kindOf } from '../src/model/kinds';
-import { boardKind, readBoard } from '../src/model/load';
+import { boardKind, readBoard, readSerial } from '../src/model/load';
 import { randomId } from '../src/model/presets';
 import { registerSignals } from '../src/model/signals';
 import { type Doc, type Revision, emptyMeta } from '../src/model/types';
@@ -115,7 +115,7 @@ function load(query: string | undefined): { doc: Doc; serial: number } {
   const doc = readBoard(raw);
   if (!doc) fail(`${info.folder}/board.json は keito のボードとして読めません`);
   registerSignals(doc.signals);
-  return { doc, serial: Number(raw?.serial) || 0 };
+  return { doc, serial: readSerial(raw?.serial) };
 }
 
 /** YAML from a file, or from standard input (a pipe from `keito show`, an agent's heredoc …). */
@@ -171,7 +171,7 @@ function shareOut(doc: Doc): void {
     const next = pull(other, mine);
     if (next === other) continue;
     try {
-      boards.write(next as never, Number(raw?.serial) || 0);
+      boards.write(next as never, readSerial(raw?.serial));
       process.stderr.write(`共有している項目を「${other.meta.title}」にも反映しました\n`);
     } catch (e) {
       process.stderr.write(`「${other.meta.title}」には反映できませんでした（開いたときに取り込まれます）: ${e instanceof Error ? e.message : e}\n`);

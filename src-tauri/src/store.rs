@@ -52,7 +52,8 @@ pub fn slug(title: &str) -> String {
     let mut out = String::new();
     let mut gap = false;
     for c in title.chars() {
-        if c.is_whitespace() || matches!(c, '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '.') {
+        // Spaces as both sides count them: Unicode's, and the byte-order mark JavaScript also takes.
+        if c.is_whitespace() || matches!(c, '\u{feff}' | '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '.') {
             gap = true;
         } else {
             if gap && !out.is_empty() {
@@ -111,8 +112,15 @@ fn str_of(v: &Value, path: &[&str]) -> Option<String> {
     cur.as_str().filter(|s| !s.is_empty()).map(String::from)
 }
 
-fn serial_of(v: &Value) -> u64 {
-    v.get("serial").and_then(Value::as_u64).unwrap_or(0)
+/// A board's version number as written: a whole number, 0 and up, also when typed by hand as text
+/// ("5") or a decimal (5.0); anything else reads as 0. The page reads it the same way (load.ts, readSerial).
+pub fn serial_of(v: &Value) -> u64 {
+    let n = match v.get("serial") {
+        Some(Value::Number(n)) => n.as_f64(),
+        Some(Value::String(s)) if !s.trim().is_empty() => s.trim().parse::<f64>().ok(),
+        _ => None,
+    };
+    n.filter(|n| n.is_finite() && *n >= 0.0).map(|n| n.floor() as u64).unwrap_or(0)
 }
 
 fn read_json(p: &Path) -> Option<Value> {
@@ -370,6 +378,21 @@ mod tests {
     }
     fn board(id: &str, title: &str) -> Value {
         json!({ "version": 1, "id": id, "meta": { "title": title, "project": "P" }, "nodes": [], "edges": [] })
+    }
+
+    #[test]
+    fn makes_folder_names_as_the_page_and_the_command_line_do() {
+        let cases: Vec<(String, String)> = serde_json::from_str(include_str!("../../test/slug-cases.json")).unwrap();
+        for (title, folder) in cases {
+            assert_eq!(slug(&title), folder, "{title:?}");
+        }
+    }
+
+    #[test]
+    fn reads_a_version_number_as_the_page_does() {
+        for (v, n) in [(json!(5), 5), (json!("5"), 5), (json!(5.0), 5), (json!(-1), 0), (json!("x"), 0), (json!(null), 0)] {
+            assert_eq!(serial_of(&json!({ "serial": v })), n, "{v}");
+        }
     }
 
     #[test]

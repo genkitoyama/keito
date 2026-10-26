@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask as askDialog, message } from '@tauri-apps/plugin-dialog';
 import { openUrl } from '@tauri-apps/plugin-opener';
-import { boardKind, readBoard } from '../model/load';
+import { boardKind, readBoard, readSerial } from '../model/load';
 import { boot, flushBeforeClose, useStore } from '../model/store';
 import { upgradePreset } from '../model/video';
 import type { Doc, UserPreset } from '../model/types';
@@ -38,7 +38,7 @@ const desktop: Backend = {
     const text = await invoke<string | null>('load_board', { id });
     if (text == null) return null;
     const raw = JSON.parse(text);
-    serials.set(id, Number(raw?.serial) || 0);
+    serials.set(id, readSerial(raw?.serial));
     return readBoard(raw);
   },
   save: async (doc, force) => {

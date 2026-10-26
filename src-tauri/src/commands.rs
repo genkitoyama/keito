@@ -356,7 +356,7 @@ pub fn watch(app: AppHandle) {
             for folder in folders {
                 let Some(v) = std::fs::read_to_string(folder.join("board.json")).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()) else { continue };
                 let Some(id) = v.get("id").and_then(Value::as_str).map(String::from) else { continue };
-                let serial = v.get("serial").and_then(Value::as_u64).unwrap_or(0);
+                let serial = crate::store::serial_of(&v);
                 let writer = boards.ours.lock().ok().and_then(|o| o.get(&id).filter(|(s, _)| *s == serial).map(|(_, w)| w.clone()));
                 let _ = app.emit("board-changed", BoardNews { id, serial, writer });
             }

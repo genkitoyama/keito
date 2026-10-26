@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { readSerial } from '../src/model/load';
 
 /**
  * The boards folder, read and written the same way by the dev server and the command line (and,
@@ -32,7 +33,12 @@ export function boardsRoot(fallback = path.resolve('boards')): string {
   return fallback;
 }
 
-export const slug = (title: string): string => title.replace(/[\\/:*?"<>|\s.]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60) || 'board';
+/**
+ * A board's folder name from its title: what a file name cannot hold, spaces and dots become one
+ * "_", at most 60 characters (not UTF-16 units: an emoji is one). The desktop app makes the same
+ * (store.rs, slug); test/slug-cases.json holds both to it.
+ */
+export const slug = (title: string): string => [...title.replace(/[\\/:*?"<>|\s\u0085.]+/g, '_').replace(/^_+|_+$/g, '')].slice(0, 60).join('') || 'board';
 
 export class Conflict extends Error {
   constructor(readonly serial: number) {
@@ -147,7 +153,7 @@ export function store(root: string) {
   const serialAt = (dir: string | null): number => {
     if (!dir) return 0;
     try {
-      return Number(readAt(dir).serial) || 0;
+      return readSerial(readAt(dir).serial);
     } catch {
       return 0;
     }
@@ -186,7 +192,7 @@ export function store(root: string) {
           try {
             const doc = JSON.parse(fs.readFileSync(file, 'utf8'));
             if (typeof doc?.id !== 'string') throw new Error('no id');
-            return [{ id: doc.id as string, title: (doc.meta?.title as string) ?? d, project: (doc.meta?.project as string) || undefined, kind: (doc.kind as string) || undefined, updated: fs.statSync(file).mtimeMs, serial: Number(doc.serial) || 0, folder: d }];
+            return [{ id: doc.id as string, title: (doc.meta?.title as string) ?? d, project: (doc.meta?.project as string) || undefined, kind: (doc.kind as string) || undefined, updated: fs.statSync(file).mtimeMs, serial: readSerial(doc.serial), folder: d }];
           } catch (e) {
             console.warn(`[keito] skipped ${path.join(d, 'board.json')}: ${e instanceof Error ? e.message : e}`);
             return [];
