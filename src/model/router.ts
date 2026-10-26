@@ -163,6 +163,62 @@ export function segmentsOf(pts: Pt[]): Seg[] {
 
 /** What crossing another line costs a search that is told to keep clear of lines, against a bend's. */
 const CROSS = 400;
+/** A line this close to the border of a box or an area, and running along it, reads as part of it. */
+const HUG = 14;
+
+/** The four sides of each area frame, for keeping lines from running along them. */
+export function bordersOf(frames: Rect[]): Seg[] {
+  return frames.flatMap((f) => [
+    { flat: true, at: f.y, lo: f.x, hi: f.x + f.w },
+    { flat: true, at: f.y + f.h, lo: f.x, hi: f.x + f.w },
+    { flat: false, at: f.x, lo: f.y, hi: f.y + f.h },
+    { flat: false, at: f.x + f.w, lo: f.y, hi: f.y + f.h },
+  ]);
+}
+
+/**
+ * The cost of running alongside the borders in `borders`; crossing one is free, as a line into an
+ * area must. Right on a border, where the line is lost in it, costs a crossing every 40 px.
+ */
+export function alongBorders(borders: Seg[], flat: boolean, at: number, lo: number, hi: number): number {
+  let cost = 0;
+  for (const q of borders) {
+    if (q.flat !== flat || Math.abs(q.at - at) >= HUG) continue;
+    const shared = Math.min(hi, q.hi) - Math.max(lo, q.lo);
+    if (shared > 0) cost += shared * (Math.abs(q.at - at) < 6 ? 10 : 4);
+  }
+  return cost;
+}
+
+/** What a whole polyline costs for running alongside the borders. */
+export function hugCost(pts: Pt[], borders: Seg[]): number {
+  return segmentsOf(pts).reduce((sum, q) => sum + alongBorders(borders, q.flat, q.at, q.lo, q.hi), 0);
+}
+
+/** A piece of a line given its bend, and that line's two ends. */
+interface Laid extends Seg {
+  ends: Pt[];
+}
+
+/**
+ * How far run `u`'s piece `q` runs right on top of the pieces in `laid` (within a few pixels, the
+ * same way). Lines with an end in common meet on purpose, and are let be.
+ */
+function overLaid(laid: Laid[], u: Run, q: Seg): number {
+  const same = (a: Pt, b: Pt) => Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
+  let sum = 0;
+  for (const w of laid) {
+    if (w.flat !== q.flat || Math.abs(w.at - q.at) >= 3 || w.ends.some((p) => same(p, u.l) || same(p, u.r))) continue;
+    sum += Math.max(0, Math.min(w.hi, q.hi) - Math.max(w.lo, q.lo));
+  }
+  return sum;
+}
+
+/** The boxes a little larger than drawn, except those of the line's own two ends, which it must meet. */
+export function roomAround(obstacles: Rect[], ends: Rect[]): Rect[] {
+  const own = (r: Rect) => ends.some((e) => e.x === r.x && e.y === r.y && e.w === r.w && e.h === r.h);
+  return obstacles.filter((r) => !own(r)).map((r) => ({ x: r.x - EDGE_ROOM, y: r.y - EDGE_ROOM, w: r.w + EDGE_ROOM * 2, h: r.h + EDGE_ROOM * 2 }));
+}
 
 /** The cost of running from (x0, y) to (x1, y), or (x, y0) to (x, y1), over the lines in `segs`. */
 function overLines(segs: Seg[], flat: boolean, at: number, lo: number, hi: number): number {
@@ -181,7 +237,7 @@ function overLines(segs: Seg[], flat: boolean, at: number, lo: number, hi: numbe
   return cost;
 }
 
-function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: Seg[] = [], reach = Infinity): Pt[] | null {
+function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: Seg[] = [], reach = Infinity, borders: Seg[] = []): Pt[] | null {
   const out = (p: Anchor): Pt => ({ x: p.x + STEP[INDEX[p.dir]][0] * STUB, y: p.y + STEP[INDEX[p.dir]][1] * STUB });
   const s = out(a);
   const t = out(b);
@@ -194,8 +250,11 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
   // edges, out of their way. (Boxes beyond the reach still block: only fewer lines are tried.)
   const near = (v: number[], p: number, q: number) => (reach === Infinity ? v : v.filter((x) => x >= Math.min(p, q) - reach && x <= Math.max(p, q) + reach));
   const halves = (v: number[]) => (segs.length ? [...v, ...v.slice(1).map((x, i) => (x + v[i]) / 2)].sort((p, q) => p - q) : v);
-  const xs = withLines(halves(near(xb, s.x, t.x)), s.x, t.x);
-  const ys = withLines(halves(near(yb, s.y, t.y)), s.y, t.y);
+  // Lanes either side of each area border, clear of it, so a way along an area need not hug its edge.
+  const off = (flat: boolean) => borders.filter((q) => q.flat === flat).flatMap((q) => [q.at - HUG - 6, q.at + HUG + 6]);
+  const sorted = (v: number[]) => [...new Set(v)].sort((p, q) => p - q);
+  const xs = withLines(halves(near(borders.length ? sorted([...xb, ...off(false)]) : xb, s.x, t.x)), s.x, t.x);
+  const ys = withLines(halves(near(borders.length ? sorted([...yb, ...off(true)]) : yb, s.y, t.y)), s.y, t.y);
   const W = xs.length;
   const H = ys.length;
   if (W * H > 40000) return null;
@@ -213,9 +272,11 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
     if (!down[c]) down[c] = inside(xs[i], (ys[j] + ys[j + 1]) / 2) ? -1 : 1;
     return down[c] === 1;
   };
-  // What running over other lines costs on the grid edge leaving (i, j) to the right / downwards.
-  const linesRight = segs.length ? new Float64Array(W * H).fill(-1) : null;
-  const linesDown = segs.length ? new Float64Array(W * H).fill(-1) : null;
+  // What running over other lines, or along an area's border, costs on the grid edge leaving (i, j)
+  // to the right / downwards.
+  const costly = segs.length > 0 || borders.length > 0;
+  const linesRight = costly ? new Float64Array(W * H).fill(-1) : null;
+  const linesDown = costly ? new Float64Array(W * H).fill(-1) : null;
   const over = (nd: number, i: number, j: number, ni: number, nj: number): number => {
     if (!linesRight || !linesDown) return 0;
     const flat = nd === 0 || nd === 2;
@@ -223,7 +284,7 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
     const cj = Math.min(j, nj);
     const c = cj * W + ci;
     const cache = flat ? linesRight : linesDown;
-    if (cache[c] < 0) cache[c] = flat ? overLines(segs, true, ys[cj], xs[ci], xs[ci + 1]) : overLines(segs, false, xs[ci], ys[cj], ys[cj + 1]);
+    if (cache[c] < 0) cache[c] = flat ? overLines(segs, true, ys[cj], xs[ci], xs[ci + 1]) + alongBorders(borders, true, ys[cj], xs[ci], xs[ci + 1]) : overLines(segs, false, xs[ci], ys[cj], ys[cj + 1]) + alongBorders(borders, false, xs[ci], ys[cj], ys[cj + 1]);
     return cache[c];
   };
 
@@ -286,10 +347,10 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
  * Route from a to b keeping `margin` clear of every obstacle; in tight spots
  * the margin is reduced before giving up (null = no way through).
  */
-export function routeAround(a: Anchor, b: Anchor, obstacles: Rect[], margin: number): Pt[] | null {
+export function routeAround(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, borders: Seg[] = []): Pt[] | null {
   for (const m of [margin, 6, 2]) {
     for (const reach of REACHES) {
-      const pts = search(a, b, obstacles, m, [], reach);
+      const pts = search(a, b, obstacles, m, [], reach, borders);
       if (pts) return pts;
     }
   }
@@ -303,10 +364,10 @@ export function routeAround(a: Anchor, b: Anchor, obstacles: Rect[], margin: num
 const REACHES = [400, 1500, Infinity];
 
 /** The way round the obstacles that crosses and runs over the lines in `segs` least, or null. */
-export function routeClear(a: Anchor, b: Anchor, obstacles: Rect[], segs: Seg[]): Pt[] | null {
+export function routeClear(a: Anchor, b: Anchor, obstacles: Rect[], segs: Seg[], borders: Seg[] = []): Pt[] | null {
   for (const m of [12, 6]) {
     for (const reach of REACHES) {
-      const pts = search(a, b, obstacles, m, segs, reach);
+      const pts = search(a, b, obstacles, m, segs, reach, borders);
       if (pts) return pts;
     }
   }
@@ -314,14 +375,15 @@ export function routeClear(a: Anchor, b: Anchor, obstacles: Rect[], segs: Seg[])
 }
 
 const TRACK = 30; // distance between parallel bends
+export const EDGE_ROOM = 8; // room between a line and a box it passes (collides allows a pixel of it)
 export const CLEAR = 20; // straight run kept next to a port before a bend
 
 /** A line that leaves one port to the right and enters another from the left, with a jog in between. */
 export interface Run {
   id: string;
-  /** The end on the left and the end on the right. */
-  l: Pt;
-  r: Pt;
+  /** The end on the left and the end on the right, with the boxes they are on. */
+  l: Pt & { rect?: Rect };
+  r: Pt & { rect?: Rect };
 }
 
 /** Roughly where the tag chip next to a port lands (the exact size depends on the font). */
@@ -334,8 +396,11 @@ export function chip(at: Pt & { dir: Dir }, text: string): Rect {
 
 const span = (u: Run): [number, number] => [Math.min(u.l.y, u.r.y), Math.max(u.l.y, u.r.y)];
 const inside = (y: number, [lo, hi]: [number, number]) => y > lo + 0.5 && y < hi - 0.5;
-/** Crossings between two runs when `u` bends to the left of `v`. */
-const crossed = (u: Run, v: Run) => (inside(v.l.y, span(u)) ? 1 : 0) + (inside(u.r.y, span(v)) ? 1 : 0);
+/**
+ * Crossings between two runs when `u` bends to the left of `v`. Worse than a crossing: `u` going
+ * on from its bend at the very height `v` comes in at, the two then run on top of each other.
+ */
+const crossed = (u: Run, v: Run) => (inside(v.l.y, span(u)) ? 1 : 0) + (inside(u.r.y, span(v)) ? 1 : 0) + (Math.abs(u.r.y - v.l.y) < 0.5 ? 2 : 0);
 
 function permutations<T>(list: T[]): T[][] {
   if (list.length < 2) return [list];
@@ -360,6 +425,9 @@ const holds = (f: Rect, p: Pt) => p.x > f.x && p.x < f.x + f.w && p.y > f.y && p
  */
 export function lanes(runs: Run[], obstacles: Rect[], frames: Rect[]): Map<string, number> {
   const out = new Map<string, number>();
+  const walls = bordersOf(frames);
+  // The pieces of the lines given their bends so far.
+  const laid: Laid[] = [];
   const group = runs.map((_, i) => i);
   const find = (i: number): number => (group[i] === i ? i : (group[i] = find(group[i])));
   for (const [i, u] of runs.entries()) {
@@ -404,23 +472,33 @@ export function lanes(runs: Run[], obstacles: Rect[], frames: Rect[]): Map<strin
     const x1 = Math.max(...list.map((u) => u.r.x));
     const y0 = Math.min(...list.flatMap((u) => [u.l.y, u.r.y]));
     const y1 = Math.max(...list.flatMap((u) => [u.l.y, u.r.y]));
-    const near = obstacles.filter((r) => r.x <= x1 && r.x + r.w >= x0 && r.y <= y1 && r.y + r.h >= y0);
+    const near = obstacles.filter((r) => r.x <= x1 + EDGE_ROOM && r.x + r.w >= x0 - EDGE_ROOM && r.y <= y1 + EDGE_ROOM && r.y + r.h >= y0 - EDGE_ROOM);
+    // The lines keep off other boxes by a little more: one down a box's edge is as hard to read as
+    // one through it. (They meet the boxes of their own ends, as they must.)
+    const roomy = order.map((u) => roomAround(near, [u.l.rect, u.r.rect].filter((r): r is Rect => !!r)));
     let best: { score: number[]; first: number } | null = null;
     for (let c = Math.ceil((lo + width / 2) / 10) * 10; c <= hi - width / 2; c += 10) {
       const first = c - width / 2;
-      const blocked = order.some((u, k) => collides(path(u, first + k * step), near));
+      const blocked = order.some((u, k) => collides(path(u, first + k * step), near) || collides(path(u, first + k * step), roomy[k]));
       // Bends read best in the open corridor between areas rather than inside one or on its border:
       // an area the line both starts and ends in (a network round several others) is no matter.
       const framed = order.reduce((sum, u, k) => {
         const p = { x: first + k * step, y: (u.l.y + u.r.y) / 2 };
         return sum + frames.filter((f) => p.x > f.x - CLEAR && p.x < f.x + f.w + CLEAR && p.y > f.y && p.y < f.y + f.h && !(holds(f, u.l) && holds(f, u.r))).length;
       }, 0);
-      const score = [blocked ? 1 : 0, framed, Math.abs(c - mid)];
+      // Worst of all short of a box is a bend running down an area's border.
+      const hugging = order.reduce((sum, u, k) => sum + alongBorders(walls, false, first + k * step, Math.min(u.l.y, u.r.y), Math.max(u.l.y, u.r.y)), 0);
+      // Nor on top of a line laid already, running along the same height into or out of its bend.
+      const onTop = order.reduce((sum, u, k) => sum + segmentsOf(path(u, first + k * step)).reduce((t, q) => t + overLaid(laid, u, q), 0), 0);
+      const score = [blocked ? 1 : 0, onTop, hugging, framed, Math.abs(c - mid)];
       const at = best ? score.findIndex((v, i) => v !== best!.score[i]) : 0;
       if (!best || (at >= 0 && score[at] < best.score[at])) best = { score, first };
     }
     if (!best || best.score[0]) continue;
-    for (const [k, u] of order.entries()) out.set(u.id, best.first + k * step);
+    for (const [k, u] of order.entries()) {
+      out.set(u.id, best.first + k * step);
+      laid.push(...segmentsOf(path(u, best.first + k * step)).map((q) => ({ ...q, ends: [u.l, u.r] })));
+    }
   }
   return out;
 }

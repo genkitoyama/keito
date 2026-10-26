@@ -154,3 +154,104 @@ cables:
     expect(names(tidy(crossed('system')))).toEqual(['A', 'B']);
   });
 });
+
+describe('lines on top of each other', () => {
+  // The CDN's second output and the WAF's second input stand at one height, between them a narrow
+  // gap; one line goes on from the first far down, the other comes up into the second.
+  const board = () =>
+    fromYaml(
+      `kind: software
+protocolLabels: false
+devices:
+  - { id: cdn, name: CDN, in: [IN:http], out: [動的:http, 静的:http], pos: [300, 0] }
+  - { id: waf, name: WAF, in: [HTTPS:http, 管理:http], out: [OUT:http], pos: [560, 0] }
+  - { id: admin, name: 管理画面, out: [HTTPS:http], pos: [0, 300] }
+  - { id: s3, name: ストレージ, in: [HTTPS:http], pos: [1100, 600] }
+cables:
+  - { from: cdn.動的, to: waf.HTTPS, type: http }
+  - { from: cdn.静的, to: s3.HTTPS, type: http }
+  - { from: admin.HTTPS, to: waf.管理, type: http }
+`,
+      blank('top'),
+    );
+  /** Stretches where two lines without an end in common run within a pixel or two of each other. */
+  const onTop = (doc: Doc): number => {
+    const routes = routeEdges(doc);
+    const ends = (id: string) => [routes.get(id)![0], routes.get(id)!.at(-1)!].map((p) => `${Math.round(p.x)},${Math.round(p.y)}`);
+    const runs = doc.edges.flatMap((e) =>
+      routes.get(e.id)!.slice(1).map((b, i) => ({ id: e.id, a: routes.get(e.id)![i], b })),
+    );
+    let n = 0;
+    for (const [i, p] of runs.entries())
+      for (const q of runs.slice(i + 1)) {
+        if (p.id === q.id || ends(p.id).some((k) => ends(q.id).includes(k))) continue;
+        const flat = (r: typeof p) => Math.abs(r.a.y - r.b.y) < 0.5;
+        if (!flat(p) || !flat(q) || Math.abs(p.a.y - q.a.y) > 2) continue;
+        const shared = Math.min(Math.max(p.a.x, p.b.x), Math.max(q.a.x, q.b.x)) - Math.max(Math.min(p.a.x, p.b.x), Math.min(q.a.x, q.b.x));
+        if (shared > 4) n++;
+      }
+    return n;
+  };
+
+  it('are laid apart, a crossing being clearer than one line hiding another', () => {
+    expect(onTop(tidy(board()))).toBe(0);
+  });
+});
+
+describe('a line crossing another', () => {
+  // A line from below merges into one across; a websocket line from beside crosses its way up.
+  const board = () =>
+    fromYaml(
+      `kind: software
+protocolLabels: false
+devices:
+  - { id: browser, name: ブラウザ, out: [HTTPS:http, WSS:websocket], pos: [0, 0] }
+  - { id: app, name: アプリ, out: [HTTPS:http], pos: [0, 160] }
+  - { id: cdn, name: CDN, in: [HTTPS:http], pos: [330, 0] }
+  - { id: lb, name: LB, in: [WSS:websocket], pos: [700, 0] }
+cables:
+  - { id: page, from: browser.HTTPS, to: cdn.HTTPS, type: http }
+  - { id: api, from: app.HTTPS, to: cdn.HTTPS, type: http }
+  - { id: ws, from: browser.WSS, to: lb.WSS, type: websocket }
+`,
+      blank('detour'),
+    );
+  const length = (pts: { x: number; y: number }[]) => pts.slice(1).reduce((sum, p, i) => sum + Math.abs(p.x - pts[i].x) + Math.abs(p.y - pts[i].y), 0);
+
+  it('keeps crossing it rather than go far out of its way round the boxes', () => {
+    const before = length(routeEdges(board()).get('api')!);
+    expect(length(routeEdges(tidy(board())).get('api')!)).toBeLessThanOrEqual(before + 80);
+  });
+});
+
+describe('an area round a network and more', () => {
+  // The cloud holds the edge and a network; the network's middle falls inside one of its own subnets.
+  const board = () =>
+    fromYaml(
+      `kind: software
+areas:
+  - { name: クラウド, rect: [0, 0, 1000, 640] }
+  - { name: エッジ, rect: [30, 80, 220, 200] }
+  - { name: VPC, rect: [290, 50, 680, 560] }
+  - { name: 公開, rect: [320, 100, 340, 470] }
+  - { name: データ, rect: [690, 100, 250, 470] }
+devices:
+  - { id: cdn, name: CDN, area: エッジ, out: [OUT:http], pos: [60, 140] }
+  - { id: lb, name: LB, area: 公開, in: [IN:http], out: [OUT:tcp], pos: [360, 160] }
+  - { id: db, name: DB, area: データ, in: [IN:tcp], pos: [730, 160] }
+cables:
+  - { from: cdn.OUT, to: lb.IN, type: http }
+  - { from: lb.OUT, to: db.IN, type: tcp }
+`,
+      blank('cloud'),
+    );
+  const holds = (o: Rect, f: Rect) => o.x <= f.x && o.y <= f.y && o.x + o.w >= f.x + f.w && o.y + o.h >= f.y + f.h;
+
+  it('still holds the network after tidying', () => {
+    const after = tidy(board());
+    const frame = (name: string) => nodeRect(after.nodes.find((n) => n.type === 'frame' && n.text === name)!);
+    expect(holds(frame('クラウド'), frame('VPC'))).toBe(true);
+    expect(holds(frame('クラウド'), frame('エッジ'))).toBe(true);
+    expect(holds(frame('VPC'), frame('公開'))).toBe(true);
+  });
+});

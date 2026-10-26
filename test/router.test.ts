@@ -1,6 +1,12 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { fromYaml } from '../src/model/dsl';
+import { crossingGaps, isTagged, nodeRect, routeEdges } from '../src/model/geometry';
 import { collides, routeAround } from '../src/model/router';
-import type { Rect } from '../src/model/types';
+import { sampleBoards } from '../src/model/sample';
+import { tangle, tidy } from '../src/model/tidy';
+import type { Doc, Rect } from '../src/model/types';
+import { blank } from './helpers';
 
 describe('the way round boxes', () => {
   it('is still found on a large board, between ends close together', () => {
@@ -50,5 +56,80 @@ describe('a line from a port back to the same port', () => {
     const pts = routeEdges(doc).get('e')!;
     const length = pts.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - pts[i].x, p.y - pts[i].y), 0);
     expect(length).toBeGreaterThan(20);
+  });
+});
+
+describe('lines kept off the edges of boxes and areas', () => {
+  // How long each line runs right along the side of a box or an area's border, closer than `near`.
+  const along = (doc: Doc, near: number, kinds: string[], least = 12): string[] => {
+    const routes = routeEdges(doc);
+    const out: string[] = [];
+    for (const e of doc.edges) {
+      if (isTagged(doc, e)) continue;
+      const pts = routes.get(e.id) ?? [];
+      for (let i = 1; i < pts.length; i++) {
+        const [a, b] = [pts[i - 1], pts[i]];
+        const flat = Math.abs(a.y - b.y) < 0.5;
+        const [lo, hi] = flat ? [Math.min(a.x, b.x), Math.max(a.x, b.x)] : [Math.min(a.y, b.y), Math.max(a.y, b.y)];
+        for (const n of doc.nodes) {
+          if (!kinds.includes(n.type)) continue;
+          const r = nodeRect(n);
+          const [s0, s1] = flat ? [r.x, r.x + r.w] : [r.y, r.y + r.h];
+          if (Math.min(hi, s1) - Math.max(lo, s0) < least) continue;
+          for (const side of flat ? [r.y, r.y + r.h] : [r.x, r.x + r.w]) if (Math.abs((flat ? a.y : a.x) - side) < near) out.push(`${e.id} along ${n.text}`);
+        }
+      }
+    }
+    return out;
+  };
+  const nested = () => fromYaml(fs.readFileSync(new URL('./fixtures/web-nested.yaml', import.meta.url), 'utf8'), blank('nested'));
+
+  it('never runs a line down the side of a box', () => {
+    for (const doc of [nested(), tidy(nested()), ...sampleBoards()]) expect(along(doc, 6, ['device', 'shape'])).toEqual([]);
+  });
+
+  it('keeps tidied lines off the borders of the areas', () => {
+    // A short step beside a border may stay where moving it off would cross another line.
+    expect(along(tidy(nested()), 6, ['frame'], 30)).toEqual([]);
+  });
+});
+
+describe('crossings drawn without hops', () => {
+  it('break the line running down where a line across crosses it', () => {
+    const doc = fromYaml(
+      `kind: software
+devices:
+  - { id: a, name: A, out: [OUT:http], pos: [0, 100] }
+  - { id: b, name: B, in: [IN:http], pos: [500, 100] }
+  - { id: c, name: C, out: [OUT:http], pos: [0, -60] }
+  - { id: d, name: D, in: [IN:http], pos: [500, 260] }
+cables:
+  - { id: across, from: a.OUT, to: b.IN, type: http }
+  - { id: down, from: c.OUT, to: d.IN, type: http }
+`,
+      blank('gaps'),
+    );
+    const gaps = crossingGaps(doc);
+    expect(gaps.get('down')).toEqual([{ x: expect.any(Number), y: routeEdges(doc).get('across')![0].y }]);
+    expect(gaps.has('across')).toBe(false);
+  });
+});
+
+describe('lines close beside each other', () => {
+  it('count as tangled, as lines on top of each other do', () => {
+    const pair = (gap: number) =>
+      fromYaml(
+        `kind: software
+devices:
+  - { id: a, name: A, out: [P:http, Q:http], pos: [0, 0] }
+  - { id: b, name: B, in: [P:http], pos: [600, 400] }
+  - { id: c, name: C, in: [Q:http], pos: [600, 600] }
+cables:
+  - { id: p, from: a.P, to: b.P, type: http, route: [[300, 0], [300, 400]] }
+  - { id: q, from: a.Q, to: c.Q, type: http, route: [[${300 + gap}, 0], [${300 + gap}, 600]] }
+`,
+        blank('beside'),
+      );
+    expect(tangle(pair(7))).toBeGreaterThan(tangle(pair(40)));
   });
 });

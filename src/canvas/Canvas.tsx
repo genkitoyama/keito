@@ -9,7 +9,7 @@ import { type Placing, duplicateInPlace, storeImage, useStore } from '../model/s
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
 import { tell } from '../platform/io';
-import { EdgeView, HopCaps, INK, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
+import { EdgeView, HopCaps, INK, LabelChip, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 import { composing, onControl } from '../ui/keys';
 import { type Corner, type Drag, type Ghost, type Plan, SIDES, ACCENT, canConnect, st } from './drag';
@@ -829,17 +829,27 @@ export function Canvas() {
               );
             }
             const d = pathD(pts, 8);
-            const labelBox = editing === e.id ? null : edgeLabelBox(doc, e, SCREEN);
             return (
               <g key={e.id} opacity={faded(e.id)} onPointerDown={(ev) => onEdgeDown(ev, e.id)} style={{ cursor: 'pointer' }}>
                 {sel.has(e.id) && <path d={d} fill="none" stroke={ACCENT} strokeOpacity={0.28} strokeWidth={9} strokeLinecap="round" />}
-                <EdgeView doc={doc} e={e} theme={SCREEN} hideLabel={editing === e.id} />
+                <EdgeView doc={doc} e={e} theme={SCREEN} hideLabel />
                 <path d={d} fill="none" stroke="transparent" strokeWidth={14 / view.k} />
-                {labelBox && <rect x={labelBox.x} y={labelBox.y} width={labelBox.w} height={labelBox.h} fill="transparent" style={{ cursor: 'grab' }} onPointerDown={(ev) => onLabelDown(ev, e.id)} />}
               </g>
             );
           })}
           <HopCaps doc={doc} theme={SCREEN} />
+          {/* The labels after every line, so no line runs over another's label; each is a handle to slide it along its line. */}
+          {doc.edges.map((e) => {
+            if (editing === e.id || isTagged(doc, e)) return null;
+            const labelBox = edgeLabelBox(doc, e, SCREEN);
+            if (!labelBox) return null;
+            return (
+              <g key={`label-${e.id}`} opacity={faded(e.id)}>
+                <LabelChip doc={doc} e={e} theme={SCREEN} />
+                <rect x={labelBox.x} y={labelBox.y} width={labelBox.w} height={labelBox.h} fill="transparent" style={{ cursor: 'grab' }} onPointerDown={(ev) => onLabelDown(ev, e.id)} />
+              </g>
+            );
+          })}
           {others.map(nodeGroup)}
           <SharedMarks doc={doc} />
           <CommentPins doc={doc} sel={sel} />

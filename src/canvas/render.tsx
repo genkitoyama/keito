@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { CAPTION_SIZE, DEV, DEVICE_NAME, captionBox, crossings, deviceHead, deviceNameWidth, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { CAPTION_SIZE, DEV, DEVICE_NAME, captionBox, crossingGaps, crossings, deviceHead, deviceNameWidth, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { edgeLabel, labelFont, labelSize, tagFont } from '../model/labels';
 import { LEGEND, legendLayout } from '../model/legend';
 import { lineColor, lineDashed, mix, signalColor } from '../model/lineColor';
@@ -719,6 +719,47 @@ function TaggedEdge({ doc, e, theme }: { doc: Doc; e: Edge; theme: Theme }) {
   );
 }
 
+/**
+ * A line's label: a chip in a wash of the line's colour, with darker lettering, so it reads as part
+ * of that line and stays legible where coloured text on white did not. Drawn on its own (see
+ * EdgeLabels) it sits above every line, not under the lines painted after its own.
+ */
+export function LabelChip({ doc, e, theme }: { doc: Doc; e: Edge; theme: Theme }) {
+  const pts = routeEdges(doc).get(e.id);
+  const label = edgeLabel(doc, e);
+  if (!pts || pts.length < 2 || !label || isTagged(doc, e)) return null;
+  const stroke = signalStroke(e.signal, theme, lineColor(doc, e)).stroke;
+  const at = labelPoint(pts, e.labelAt);
+  const size = labelFont(doc, e);
+  const box = labelSize(label, size, theme.font);
+  return (
+    <g>
+      <rect x={at.x - box.w / 2} y={at.y - box.h / 2} width={box.w} height={box.h} rx={4} fill={mix(stroke, '#ffffff', 0.84)} stroke={mix(stroke, '#ffffff', 0.45)} strokeWidth={0.8} />
+      <text fontFamily={theme.font} fontSize={size} fill={mix(stroke, '#0f172a', 0.5)} textAnchor="middle">
+        {box.lines.map((l, i) => (
+          <tspan key={i} x={at.x} y={mid(at.y + (i - (box.lines.length - 1) / 2) * size * 1.35, size)}>
+            {l}
+          </tspan>
+        ))}
+      </text>
+    </g>
+  );
+}
+
+/** Every line's label, painted after all the lines: no line runs over another's label. */
+export function EdgeLabels({ doc, theme }: { doc: Doc; theme: Theme }) {
+  return (
+    <g pointerEvents="none">
+      {doc.edges.map((e) => (
+        <LabelChip key={e.id} doc={doc} e={e} theme={theme} />
+      ))}
+    </g>
+  );
+}
+
+/** Half the break in a line down where a line across crosses it, drawn without hops. */
+const GAP_HALF = 4.5;
+
 export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; theme: Theme; hideLabel?: boolean }) {
   const pts = routeEdges(doc).get(e.id);
   if (!pts || pts.length < 2) return null;
@@ -730,9 +771,6 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
   const stroke = signal.stroke;
   const dash = lineDashed(e) ? '7 6' : undefined;
   const label = hideLabel ? '' : edgeLabel(doc, e);
-  const at = labelPoint(pts, e.labelAt);
-  const size = labelFont(doc, e);
-  const box = labelSize(label, size, theme.font);
   const n = pts.length;
   const width = flow ? 2.4 : 1.8;
   const d = doc.hops ? hopRound(pts, crossings(doc).get(e.id), 8, 5) : pathD(pts, 8);
@@ -744,34 +782,25 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
     const len = Math.hypot(q.x - pts[i].x, q.y - pts[i].y);
     return back && len > back + head ? { x: pts[i].x + ((q.x - pts[i].x) / len) * back, y: pts[i].y + ((q.y - pts[i].y) / len) * back } : pts[i];
   };
+  // Without hops, a line down breaks for a moment where a line across crosses it.
+  const gaps = doc.hops ? undefined : crossingGaps(doc).get(e.id);
+  const mask = gaps && `gap-${doc.id}-${e.id}`;
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
   return (
     <g>
-      <path d={d} fill="none" stroke={stroke} strokeWidth={width} strokeDasharray={dash} strokeLinejoin="round" strokeLinecap={flow ? 'round' : undefined} />
+      {mask && (
+        <mask id={mask} maskUnits="userSpaceOnUse" x={Math.min(...xs) - 20} y={Math.min(...ys) - 20} width={Math.max(...xs) - Math.min(...xs) + 40} height={Math.max(...ys) - Math.min(...ys) + 40}>
+          <rect x={Math.min(...xs) - 20} y={Math.min(...ys) - 20} width={Math.max(...xs) - Math.min(...xs) + 40} height={Math.max(...ys) - Math.min(...ys) + 40} fill="#fff" />
+          {gaps.map((g, i) => (
+            <rect key={i} x={g.x - 6} y={g.y - GAP_HALF} width={12} height={GAP_HALF * 2} fill="#000" />
+          ))}
+        </mask>
+      )}
+      <path d={d} fill="none" stroke={stroke} strokeWidth={width} strokeDasharray={dash} strokeLinejoin="round" strokeLinecap={flow ? 'round' : undefined} mask={mask && `url(#${mask})`} />
       {e.arrow !== 'none' && !intoJunction && <polygon points={arrowHead(tip(n - 1, -1, !!e.to.port), distinct(pts, n - 1, -1), head)} fill={stroke} />}
       {e.arrow === 'both' && <polygon points={arrowHead(tip(0, 1, !!e.from.port), distinct(pts, 0, 1), head)} fill={stroke} />}
-      {label && (
-        <g>
-          <rect
-            x={at.x - box.w / 2}
-            y={at.y - box.h / 2}
-            width={box.w}
-            height={box.h}
-            rx={4}
-            // On the board the label is a chip in a wash of the line's colour, with darker lettering:
-            // it reads as part of that line, and stays legible where coloured text on white did not.
-            fill={mix(stroke, '#ffffff', 0.84)}
-            stroke={mix(stroke, '#ffffff', 0.45)}
-            strokeWidth={0.8}
-          />
-          <text fontFamily={theme.font} fontSize={size} fill={mix(stroke, '#0f172a', 0.5)} textAnchor="middle">
-            {box.lines.map((l, i) => (
-              <tspan key={i} x={at.x} y={mid(at.y + (i - (box.lines.length - 1) / 2) * size * 1.35, size)}>
-                {l}
-              </tspan>
-            ))}
-          </text>
-        </g>
-      )}
+      {label && <LabelChip doc={doc} e={e} theme={theme} />}
     </g>
   );
 }
@@ -804,8 +833,9 @@ export function DocView({ doc, theme }: { doc: Doc; theme: Theme }) {
     <g>
       {doc.nodes.filter(isUnderlay).map((n) => <NodeView key={n.id} n={n} theme={theme} doc={doc} />)}
       {doc.nodes.filter((n) => n.type === 'frame').map((n) => <NodeView key={n.id} n={n} theme={theme} />)}
-      {(doc.hops ? hopOrder(doc) : doc.edges).map((e) => <EdgeView key={e.id} doc={doc} e={e} theme={theme} />)}
+      {(doc.hops ? hopOrder(doc) : doc.edges).map((e) => <EdgeView key={e.id} doc={doc} e={e} theme={theme} hideLabel />)}
       <HopCaps doc={doc} theme={theme} />
+      <EdgeLabels doc={doc} theme={theme} />
       {doc.nodes
         .filter((n) => n.type !== 'frame' && !isUnderlay(n))
         .map((n) => (

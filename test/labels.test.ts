@@ -43,7 +43,21 @@ describe('placing labels on tidy', () => {
   const doc = readBoard(crowded)!;
 
   it('moves crowded labels apart', () => {
-    expect(clashes(labelBoxes(doc))).toBeGreaterThan(0);
+    // Three cables side by side, each label two rows high: in the middle of their lines they overlap.
+    const crowd = fromYaml(
+      `devices:
+  - { id: a, name: A, out: [V1:video, V2:video, V3:video], pos: [0, 0] }
+  - { id: b, name: B, in: [V1:video, V2:video, V3:video], pos: [600, 0] }
+cables:
+  - { from: a.V1, to: b.V1, type: video, spec: 光 HDMI AOC, length: 15, stacked: true }
+  - { from: a.V2, to: b.V2, type: video, spec: 光 HDMI AOC, length: 15, stacked: true }
+  - { from: a.V3, to: b.V3, type: video, spec: 光 HDMI AOC, length: 15, stacked: true }
+`,
+      blank('crowd'),
+    );
+    expect(clashes(labelBoxes(crowd))).toBeGreaterThan(0);
+    expect(clashes(labelBoxes(placeLabels(crowd)))).toBe(0);
+    // The board of many lines fanning out keeps its labels apart too.
     expect(clashes(labelBoxes(placeLabels(doc)))).toBe(0);
   });
 
@@ -81,5 +95,66 @@ cables:
     expect(back.edges[0].showProtocol).toBe(true);
     // The port stays where it is listed.
     expect(back.edges[0].spec).toBe('443/tcp');
+  });
+});
+
+describe('a label and a crossing', () => {
+  // A line straight across, and one stepping down across it halfway: their crossing is right where
+  // the first line's label would sit.
+  const board = () =>
+    fromYaml(
+      `kind: software
+protocolLabels: false
+devices:
+  - { id: a, name: A, out: [OUT:http], pos: [0, 100] }
+  - { id: b, name: B, in: [IN:http], pos: [500, 100] }
+  - { id: c, name: C, out: [OUT:http], pos: [0, -60] }
+  - { id: d, name: D, in: [IN:http], pos: [500, 260] }
+cables:
+  - { id: across, from: a.OUT, to: b.IN, type: http, label: とても長い横切る線のラベルです }
+  - { id: down, from: c.OUT, to: d.IN, type: http }
+`,
+      blank('cross'),
+    );
+
+  it('is not put over the crossing, where it would hide which way the lines go', () => {
+    const doc = board();
+    const routes = routeEdges(doc);
+    const down = routes.get('down')!;
+    const x = down.find((p, i) => i > 0 && Math.abs(p.x - down[i - 1].x) < 0.5 && Math.abs(p.y - down[i - 1].y) > 1)!.x;
+    const y = routes.get('across')![0].y;
+    const chip = (d: Doc) => labelBoxes(d)[0];
+    const covers = (r: Rect) => x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h;
+    expect(covers(chip(doc))).toBe(true);
+    expect(covers(chip(placeLabels(doc)))).toBe(false);
+  });
+});
+
+describe('a label and a line joining its own', () => {
+  // Two lines merging into one port: the second comes up from below and runs into the first.
+  const board = () =>
+    fromYaml(
+      `kind: software
+protocolLabels: false
+devices:
+  - { id: browser, name: ブラウザ, out: [HTTPS:http], pos: [0, 0] }
+  - { id: app, name: アプリ, out: [HTTPS:http], pos: [0, 160] }
+  - { id: cdn, name: CDN, in: [HTTPS:http], pos: [330, 0] }
+cables:
+  - { id: page, from: browser.HTTPS, to: cdn.HTTPS, type: http, label: ページ・API }
+  - { id: api, from: app.HTTPS, to: cdn.HTTPS, type: http }
+`,
+      blank('join'),
+    );
+
+  it('is not put where the other line runs into it', () => {
+    const doc = placeLabels(board());
+    const routes = routeEdges(doc);
+    const api = routes.get('api')!;
+    // Where the line from below meets the one across: the top of its run upwards.
+    const join = api.reduce((top, p) => (p.y < top.y ? p : top));
+    const r = labelBoxes(doc)[0];
+    const near = 8;
+    expect(join.x > r.x - near && join.x < r.x + r.w + near && join.y > r.y - near && join.y < r.y + r.h + near).toBe(false);
   });
 });

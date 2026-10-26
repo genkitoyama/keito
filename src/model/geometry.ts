@@ -1,5 +1,5 @@
 import { UI_FONT, measure, wrapText } from './text';
-import { type Run, STUB, chip, collides, facing, isH, lanes, routeAround } from './router';
+import { type Run, STUB, bordersOf, hugCost, roomAround, chip, collides, facing, isH, lanes, routeAround } from './router';
 import { seqLayout, seqScale } from './sequence';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node, Port, PortSide, Pt, Rect } from './types';
 
@@ -273,7 +273,9 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
       else if (facing(eb, ea)) runs.push({ id: e.id, l: eb, r: ea });
     }
   }
-  const bends = lanes(runs, [...obstacles, ...chips], doc.nodes.filter((n) => n.type === 'frame').map(nodeRect));
+  const frames = doc.nodes.filter((n) => n.type === 'frame').map(nodeRect);
+  const borders = bordersOf(frames);
+  const bends = lanes(runs, [...obstacles, ...chips], frames);
   for (const { e, index, a, b, pa, pb, ea, eb, tagged } of drawn) {
     const siblings = bySource.get(e.from.node)!;
     const lane = (siblings.indexOf(e) - (siblings.length - 1) / 2) * 8;
@@ -310,11 +312,17 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
       continue;
     }
     let pts = route(ea, to, lane, outward);
-    // The plain elbow would cut through a node: find a way around. Lines drawn as tags have no run to fix.
-    if (a !== b && !tagged && collides(pts, obstacles)) {
-      // Neighbouring lines keep slightly different clearances so they don't sit on top of each other.
-      const around = routeAround(ea, to, obstacles, 8 + (index % 3) * 4);
-      if (around) pts = simplify(around);
+    // The plain elbow would cut through a node, or run along the edge of one or of an area: find a
+    // way around (kept if it is clearer). Lines drawn as tags have no run to fix.
+    if (a !== b && !tagged) {
+      const room = roomAround(obstacles, [nodeRect(a), nodeRect(b), ea.rect, to.rect]);
+      const unclear = (p: Pt[]) => (collides(p, room) ? 1000 : 0) + hugCost(p, borders);
+      const blocked = collides(pts, obstacles);
+      if (blocked || unclear(pts) > 0) {
+        // Neighbouring lines keep slightly different clearances so they don't sit on top of each other.
+        const around = routeAround(ea, to, obstacles, 8 + (index % 3) * 4, borders);
+        if (around && (blocked || unclear(around) < unclear(pts))) pts = simplify(around);
+      }
     }
     out.set(e.id, end(pts));
   }
@@ -480,6 +488,7 @@ export function crossings(doc: Doc): Map<string, Map<number, number[]>> {
   }
   const out = new Map<string, Map<number, number[]>>();
   const over = new Map<string, Set<string>>();
+  const gaps = new Map<string, Pt[]>();
   for (const [id, pts] of routes) {
     if (tagged.has(id)) continue;
     for (let i = 1; i < pts.length; i++) {
@@ -493,14 +502,26 @@ export function crossings(doc: Doc): Map<string, Map<number, number[]>> {
       if (!out.has(id)) out.set(id, new Map());
       out.get(id)!.set(i - 1, [...new Set(under.map((v) => v.x))]);
       over.set(id, new Set([...(over.get(id) ?? []), ...under.map((v) => v.id)]));
+      for (const v of under) gaps.set(v.id, [...(gaps.get(v.id) ?? []), { x: v.x, y: a.y }]);
     }
   }
   hopCache.set(doc, out);
   overCache.set(doc, over);
+  gapCache.set(doc, gaps);
   return out;
 }
 
 const overCache = new WeakMap<Doc, Map<string, Set<string>>>();
+const gapCache = new WeakMap<Doc, Map<string, Pt[]>>();
+
+/**
+ * Where each line running down is crossed by one running across: drawn without hops, the line
+ * down breaks there for a moment, so a crossing does not read as the two lines joining.
+ */
+export function crossingGaps(doc: Doc): Map<string, Pt[]> {
+  crossings(doc);
+  return gapCache.get(doc)!;
+}
 
 /**
  * The lines in painting order when crossings are drawn as hops: a line that hops over another

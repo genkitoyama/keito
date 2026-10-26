@@ -37,7 +37,7 @@ cables:
   - { from: browser.WSS, to: alb.WSS, type: websocket, spec: 443/tcp, label: 空き状況の通知 }
   - { from: cdn.静的, to: s3.HTTPS, type: http, spec: 443/tcp, label: 画像・JS }
   - { from: cdn.動的, to: waf.HTTPS, type: http, spec: 443/tcp }
-  - { from: waf.HTTPS, to: alb.HTTPS, type: http, spec: 443/tcp }
+  - { from: waf.HTTPS#2, to: alb.HTTPS, type: http, spec: 443/tcp }
   - { from: alb.HTTP, to: api.HTTP, type: http, spec: 8080/tcp }
   - { from: alb.WS, to: ws.WS, type: websocket, spec: 8081/tcp }
   - { from: api.DB, to: db.DB, type: tcp, spec: 5432/tcp, label: 書き込み }

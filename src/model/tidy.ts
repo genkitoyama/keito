@@ -1,7 +1,7 @@
 import { deviceTagRects } from './badges';
 import { anchorOf, captionBox, center, frameOf, frameTitles, isTagged, isUnderlay, nodeRect, obstaclesOf, routeEdges, simplify, tagChips } from './geometry';
 import { placeLabels } from './labels';
-import { facing, isH, routeClear, segmentsOf } from './router';
+import { bordersOf, facing, isH, routeClear, segmentsOf } from './router';
 import { kindOf } from './kinds';
 import type { Doc, Edge, Node, Port, Rect } from './types';
 
@@ -148,12 +148,17 @@ function free(doc: Doc, members: Map<string, string[]>, frame: string): boolean 
   return !doc.edges.some((e) => ids.has(e.from.node) !== ids.has(e.to.node));
 }
 
-/** The frames inside each frame, directly: an area within an area (subnets in a network). */
+/**
+ * The frames inside each frame, directly: an area within an area (subnets in a network). A frame is
+ * within another when the whole of it is, not just its middle: a wide network's middle can fall
+ * inside one of its own subnets.
+ */
 const nestedIn = (doc: Doc): Map<string, string[]> => {
+  const frames = doc.nodes.filter((n) => n.type === 'frame');
+  const holds = (o: Node, f: Node) => o.x <= f.x && o.y <= f.y && o.x + o.w >= f.x + f.w && o.y + o.h >= f.y + f.h;
   const inner = new Map<string, string[]>();
-  for (const f of doc.nodes) {
-    if (f.type !== 'frame') continue;
-    const outer = frameOf(doc, f);
+  for (const f of frames) {
+    const outer = frames.filter((o) => o !== f && holds(o, f)).sort((p, q) => p.w * p.h - q.w * q.h)[0];
     if (outer) inner.set(outer.id, [...(inner.get(outer.id) ?? []), f.id]);
   }
   return inner;
@@ -279,6 +284,10 @@ function tangles(doc: Doc): Map<string, number> {
     const pts = routes.get(e.id);
     if (!pts || isTagged(doc, e)) continue;
     add(e.id, Math.max(0, pts.length - 2) * 2);
+    // A long way round costs too: some 500 px out of the way and back is worse than a crossing.
+    const length = pts.slice(1).reduce((sum, p, i) => sum + Math.abs(p.x - pts[i].x) + Math.abs(p.y - pts[i].y), 0);
+    const direct = Math.abs(pts[pts.length - 1].x - pts[0].x) + Math.abs(pts[pts.length - 1].y - pts[0].y);
+    add(e.id, Math.max(0, length - direct - DETOUR_FREE) / 5);
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1];
       const b = pts[i];
@@ -312,20 +321,34 @@ function tangles(doc: Doc): Map<string, number> {
       if (h.id !== w.id && h.at > w.lo + 1 && w.at > h.lo + 1 && w.at < h.hi - 1) pair(h, w, 100);
     }
   }
-  // Two lines on top of each other for a stretch.
+  // Two lines on top of each other for a stretch, or so close beside each other they read as one.
+  // On top of each other is worse than a crossing.
+  const ends = new Map<string, string[]>();
+  for (const [id, pts] of routes) if (pts.length) ends.set(id, [pts[0], pts[pts.length - 1]].map((p) => `${Math.round(p.x)},${Math.round(p.y)}`));
+  const meet = (a: string, b: string) => ends.get(a)?.some((k) => ends.get(b)?.includes(k)) ?? false;
   for (const list of [flat, tall]) {
     for (let i = 0; i < list.length; i++) {
-      for (let j = i + 1; j < list.length && list[j].at - list[i].at < 3; j++) {
+      for (let j = i + 1; j < list.length && list[j].at - list[i].at < BESIDE; j++) {
         const p = list[i];
         const q = list[j];
         if (p.id === q.id) continue;
         const shared = Math.min(p.hi, q.hi) - Math.max(p.lo, q.lo);
-        if (shared > 4) pair(p, q, shared / 4);
+        if (shared <= 4) continue;
+        // Lines that meet at an end run in (or out) together on purpose: that is no tangle.
+        if (meet(p.id, q.id)) continue;
+        if (q.at - p.at >= 3) pair(p, q, shared / 10);
+        else pair(p, q, 200 + shared * 2);
       }
     }
   }
   return by;
 }
+
+/** How far out of its way a line may go (round the back of a box, out of a port and in) at no cost. */
+const DETOUR_FREE = 80;
+
+/** Lines closer side by side than this, running along together, read as one. */
+const BESIDE = 9;
 
 /** Lines this many and more are left as levelling makes them, as weighing every move would take too long. */
 const WEIGH_UP_TO = 300;
@@ -411,12 +434,12 @@ function stacks(frames: Node[], nodes: Map<string, Node>): Node[][] {
 
 /**
  * Apply a change, and take it back if it puts anything on top of something it was clear of, or
- * leaves the wiring more tangled than before.
+ * (unless told the wiring is no matter) leaves the wiring more tangled than before.
  */
-function attempt(doc: Doc, nodes: Map<string, Node>, change: () => void): void {
+function attempt(doc: Doc, nodes: Map<string, Node>, change: () => void, wiring = true): void {
   const before = new Map(nodes);
   const laid = (m: Map<string, Node>): Doc => ({ ...doc, nodes: doc.nodes.map((n) => m.get(n.id)!), edges: comb(doc, m) });
-  const weigh = doc.edges.length < WEIGH_UP_TO;
+  const weigh = wiring && doc.edges.length < WEIGH_UP_TO;
   const was = weigh ? tangle(laid(before)) : 0;
   change();
   if (!collision(doc, nodes) && (!weigh || tangle(laid(nodes)) <= was)) return;
@@ -506,7 +529,9 @@ function arrange(doc: Doc): Map<string, Node> {
   // innermost first, round what it holds and the areas within it.
   const contents = contentsOf(doc);
   const nested = doc.nodes.filter((f) => f.type === 'frame' && contents.has(f.id) && !frames.includes(f) && (inner.has(f.id) || frameOf(doc, f)));
-  for (const f of nested.sort((p, q) => p.w * p.h - q.w * q.h)) attempt(doc, nodes, () => fit(nodes.get(f.id)!));
+  // Only a frame moves, so nothing is weighed but what it would run into: the lines keep off its
+  // border wherever it ends up.
+  for (const f of nested.sort((p, q) => p.w * p.h - q.w * q.h)) attempt(doc, nodes, () => fit(nodes.get(f.id)!), false);
   return nodes;
 }
 
@@ -624,6 +649,7 @@ function untangle(doc: Doc): Doc {
   if (doc.edges.length >= WEIGH_UP_TO) return doc;
   const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
   const obstacles = [...obstaclesOf(doc), ...tagChips(doc), ...frameTitles(doc)];
+  const borders = bordersOf(doc.nodes.filter((n) => n.type === 'frame').map(nodeRect));
   const own = tangles(doc);
   let best = [...own.values()].reduce((sum, v) => sum + v, 0);
   // A crossing is shared between its two lines; the worst few are tried, as each try weighs the board.
@@ -638,7 +664,7 @@ function untangle(doc: Doc): Doc {
     if (!at) continue;
     const routes = routeEdges(doc);
     const segs = doc.edges.filter((x) => x.id !== e.id && !isTagged(doc, x)).flatMap((x) => segmentsOf(routes.get(x.id) ?? []));
-    const pts = routeClear(at.pa, at.pb, obstacles, segs);
+    const pts = routeClear(at.pa, at.pb, obstacles, segs, borders);
     if (!pts) continue;
     const route = simplify(pts).slice(1, -1);
     if (route.length < 2) continue;
