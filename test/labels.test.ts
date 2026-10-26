@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import crowded from './fixtures/crowded-labels.json';
 import { isTagged, labelPoint, routeEdges } from '../src/model/geometry';
 import { edgeLabel, labelFont, labelSize, placeLabels, tagFont } from '../src/model/labels';
+import { fromYaml, toYaml } from '../src/model/dsl';
 import { readBoard } from '../src/model/load';
 import { UI_FONT } from '../src/model/text';
 import type { Doc, Edge, Rect } from '../src/model/types';
@@ -49,5 +50,36 @@ describe('placing labels on tidy', () => {
   it('gives the same board back when run again', () => {
     const once = placeLabels(doc);
     expect(placeLabels(once)).toBe(once);
+  });
+});
+
+describe('the type and port of a protocol line', () => {
+  const board = (extra = '', cable = '') =>
+    fromYaml(
+      `kind: software
+${extra}
+devices:
+  - { id: web, name: Web, out: [API:http] }
+  - { id: api, name: API, in: [HTTP:http] }
+cables:
+  - { from: web.API, to: api.HTTP, type: http, spec: 443/tcp, label: 予約${cable} }
+`,
+      blank('proto'),
+    );
+
+  it('are in its label unless the board leaves them out', () => {
+    expect(edgeLabel(board(), board().edges[0])).toBe('HTTP 443/tcp · 予約');
+    const plain = board('protocolLabels: false');
+    expect(edgeLabel(plain, plain.edges[0])).toBe('予約');
+  });
+
+  it('follow the line itself before the board, and come back through YAML', () => {
+    const one = board('protocolLabels: false', ', showProtocol: true');
+    expect(edgeLabel(one, one.edges[0])).toBe('HTTP 443/tcp · 予約');
+    const back = fromYaml(toYaml(one), blank('proto'));
+    expect(back.protocolLabels).toBe(false);
+    expect(back.edges[0].showProtocol).toBe(true);
+    // The port stays where it is listed.
+    expect(back.edges[0].spec).toBe('443/tcp');
   });
 });

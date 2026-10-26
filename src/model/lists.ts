@@ -12,6 +12,8 @@ const pad2 = (n: number): string => String(n).padStart(2, '0');
 export const idShown = (doc: Doc, e: Edge): boolean => e.showId ?? doc.cableIdLabels !== false;
 
 export const lengthShown = (doc: Doc, e: Edge): boolean => e.showLength ?? doc.lengthLabels !== false;
+/** Is a protocol line's type and port ("HTTP 443/tcp") written in its label? The colour says the type, the comms list the port. */
+export const protocolShown = (doc: Doc, e: Edge): boolean => e.showProtocol ?? doc.protocolLabels !== false;
 /** Are the label's items stacked one per line rather than joined on one? */
 export const labelStacked = (doc: Doc, e: Edge): boolean => e.stacked ?? doc.stackedLabels === true;
 

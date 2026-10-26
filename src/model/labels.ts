@@ -1,5 +1,5 @@
 import { isTagged, isUnderlay, labelPoint, nodeRect, routeEdges, tagChips } from './geometry';
-import { cableIds, idShown, labelStacked, lengthShown } from './lists';
+import { cableIds, idShown, labelStacked, lengthShown, protocolShown } from './lists';
 import { signalOf } from './signals';
 import { UI_FONT, measure } from './text';
 import type { Doc, Edge, Pt, Rect } from './types';
@@ -28,7 +28,10 @@ export const tagFont = (doc: Doc, e: Edge): number => (10 * (e.fontSize ?? doc.l
 export function edgeLabel(doc: Doc, e: Edge): string {
   // A protocol line names what it is and its port ("OSC 7000/udp"): its colour alone would not say.
   const sig = signalOf(e.signal);
-  if (sig.protocol) return [[sig.id === 'data' ? '' : sig.prefix, e.spec].filter(Boolean).join(' '), e.label.trim()].filter(Boolean).join(labelStacked(doc, e) ? '\n' : ' · ');
+  if (sig.protocol) {
+    const what = protocolShown(doc, e) ? [sig.id === 'data' ? '' : sig.prefix, e.spec].filter(Boolean).join(' ') : '';
+    return [what, e.label.trim()].filter(Boolean).join(labelStacked(doc, e) ? '\n' : ' · ');
+  }
   const id = idShown(doc, e) ? cableIds(doc).get(e.id) : undefined;
   const length = e.length != null && lengthShown(doc, e) ? `${e.length}m` : '';
   return [id, e.spec, e.label.trim(), length].filter(Boolean).join(labelStacked(doc, e) ? '\n' : ' · ');
