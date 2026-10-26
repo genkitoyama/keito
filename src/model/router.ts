@@ -195,6 +195,14 @@ export function hugCost(pts: Pt[], borders: Seg[]): number {
   return segmentsOf(pts).reduce((sum, q) => sum + alongBorders(borders, q.flat, q.at, q.lo, q.hi), 0);
 }
 
+/** How many ways into ports (other than its own two) run `u`'s bend at `x` runs across. */
+function acrossFronts(fronts: Seg[], u: Run, x: number): number {
+  const lo = Math.min(u.l.y, u.r.y);
+  const hi = Math.max(u.l.y, u.r.y);
+  const mine = (f: Seg) => [u.l, u.r].some((p) => Math.abs(p.y - f.at) < 0.5 && p.x >= f.lo - 0.5 && p.x <= f.hi + 0.5);
+  return fronts.filter((f) => f.at > lo + 0.5 && f.at < hi - 0.5 && x > f.lo && x < f.hi && !mine(f)).length;
+}
+
 /** A piece of a line given its bend, and that line's two ends. */
 interface Laid extends Seg {
   ends: Pt[];
@@ -340,7 +348,65 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
     path.push({ x: xs[i], y: ys[(cell - i) / W] });
   }
   path.reverse();
-  return [{ x: a.x, y: a.y }, ...path, { x: b.x, y: b.y }];
+  // The steps are taken out keeping as clear of the boxes as the search did.
+  const clear = margin > 1 ? obstacles.map((r) => ({ x: r.x - margin + 1, y: r.y - margin + 1, w: r.w + (margin - 1) * 2, h: r.h + (margin - 1) * 2 })) : obstacles;
+  return unjog([{ x: a.x, y: a.y }, ...path, { x: b.x, y: b.y }], clear);
+}
+
+/** A step this short between two turns reads as a kink in the line, not a way round anything. */
+const JOG = 14;
+
+/**
+ * Take out the small steps a search leaves where a line edges a few pixels aside (to keep off
+ * another line by a hair): the run before or after the step is moved across to meet it, wherever
+ * that runs clear of the boxes. The two ends and the runs straight out of them stay.
+ */
+export function unjog(pts: Pt[], obstacles: Rect[]): Pt[] {
+  let path = squeeze(pts);
+  for (let pass = 0; pass < 4; pass++) {
+    let changed = false;
+    for (let i = 2; i < path.length - 2; i++) {
+      const p = path[i];
+      const q = path[i + 1];
+      const flat = Math.abs(p.y - q.y) < 0.5;
+      if (Math.abs(p.x - q.x) + Math.abs(p.y - q.y) >= JOG) continue;
+      // Either the run leading in takes the step's far side, or the run leading out its near side.
+      const tries = [
+        path.map((r, k) => (k === i - 1 || k === i ? (flat ? { x: q.x, y: r.y } : { x: r.x, y: q.y }) : r)),
+        path.map((r, k) => (k === i + 1 || k === i + 2 ? (flat ? { x: p.x, y: r.y } : { x: r.x, y: p.y }) : r)),
+      ];
+      const ok = tries.find((t) => square(t) && t[1].x === path[1].x && t[1].y === path[1].y && t[t.length - 2].x === path[path.length - 2].x && t[t.length - 2].y === path[path.length - 2].y && !collides(t, obstacles));
+      if (ok) {
+        path = squeeze(ok);
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) break;
+  }
+  return path;
+}
+
+/** Whether every piece runs straight across or down. */
+const square = (pts: Pt[]): boolean => pts.every((p, i) => i === 0 || Math.abs(p.x - pts[i - 1].x) < 0.5 || Math.abs(p.y - pts[i - 1].y) < 0.5);
+
+/** The polyline without repeated points or points in the middle of a straight run. */
+function squeeze(pts: Pt[]): Pt[] {
+  const out: Pt[] = [];
+  for (const p of pts) {
+    if (out.length && Math.abs(out[out.length - 1].x - p.x) < 0.5 && Math.abs(out[out.length - 1].y - p.y) < 0.5) continue;
+    if (out.length >= 2) {
+      const a = out[out.length - 2];
+      const b = out[out.length - 1];
+      const straight = (Math.abs(a.x - b.x) < 0.5 && Math.abs(b.x - p.x) < 0.5) || (Math.abs(a.y - b.y) < 0.5 && Math.abs(b.y - p.y) < 0.5);
+      if (straight && out.length > 2) {
+        out[out.length - 1] = p;
+        continue;
+      }
+    }
+    out.push(p);
+  }
+  return out;
 }
 
 /**
@@ -451,7 +517,7 @@ const holds = (f: Rect, p: Pt) => p.x > f.x && p.x < f.x + f.w && p.y > f.y && p
  * by side, ordered so they do not cross, in the open corridor between areas when there is one.
  * A line missing from the result has no clear spot and is left to the ordinary router.
  */
-export function lanes(given: Run[], obstacles: Rect[], frames: Rect[]): Map<string, number> {
+export function lanes(given: Run[], obstacles: Rect[], frames: Rect[], fronts: Seg[] = []): Map<string, number> {
   const runs = bundled(given);
   const each = (u: Run): Run[] => u.members ?? [u];
   const out = new Map<string, number>();
@@ -520,7 +586,9 @@ export function lanes(given: Run[], obstacles: Rect[], frames: Rect[]): Map<stri
       const hugging = order.reduce((sum, u, k) => sum + each(u).reduce((t, m) => t + alongBorders(walls, false, first + k * step, Math.min(m.l.y, m.r.y), Math.max(m.l.y, m.r.y)), 0), 0);
       // Nor on top of a line laid already, running along the same height into or out of its bend.
       const onTop = order.reduce((sum, u, k) => sum + each(u).reduce((t, m) => t + segmentsOf(path(m, first + k * step)).reduce((v, q) => v + overLaid(laid, m, q), 0), 0), 0);
-      const score = [blocked ? 1 : 0, onTop, hugging, framed, Math.abs(c - mid)];
+      // Nor across the way into another port, leaving that port's line to step round it.
+      const blocking = order.reduce((sum, u, k) => sum + each(u).reduce((t, m) => t + acrossFronts(fronts, m, first + k * step), 0), 0);
+      const score = [blocked ? 1 : 0, onTop, blocking, hugging, framed, Math.abs(c - mid)];
       const at = best ? score.findIndex((v, i) => v !== best!.score[i]) : 0;
       if (!best || (at >= 0 && score[at] < best.score[at])) best = { score, first };
     }

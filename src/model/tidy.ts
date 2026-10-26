@@ -1,7 +1,7 @@
 import { deviceTagRects } from './badges';
-import { anchorOf, captionBox, center, frameOf, frameTitles, isTagged, isUnderlay, nodeRect, obstaclesOf, routeEdges, simplify, tagChips } from './geometry';
+import { anchorOf, captionBox, center, frameOf, frameTitles, isTagged, isUnderlay, nodeRect, obstaclesOf, portFronts, routeEdges, simplify, tagChips } from './geometry';
 import { placeLabels } from './labels';
-import { bordersOf, facing, isH, routeClear, segmentsOf } from './router';
+import { bordersOf, facing, isH, roomAround, routeClear, segmentsOf, unjog } from './router';
 import { kindOf } from './kinds';
 import type { Doc, Edge, Node, Port, Rect } from './types';
 
@@ -650,6 +650,7 @@ function untangle(doc: Doc): Doc {
   const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
   const obstacles = [...obstaclesOf(doc), ...tagChips(doc), ...frameTitles(doc)];
   const borders = bordersOf(doc.nodes.filter((n) => n.type === 'frame').map(nodeRect));
+  const fronts = portFronts(doc);
   const own = tangles(doc);
   let best = [...own.values()].reduce((sum, v) => sum + v, 0);
   // A crossing is shared between its two lines; the worst few are tried, as each try weighs the board.
@@ -663,9 +664,14 @@ function untangle(doc: Doc): Doc {
     const at = ends(nodes, e);
     if (!at) continue;
     const routes = routeEdges(doc);
-    const segs = doc.edges.filter((x) => x.id !== e.id && !isTagged(doc, x)).flatMap((x) => segmentsOf(routes.get(x.id) ?? []));
-    const pts = routeClear(at.pa, at.pb, obstacles, segs, borders);
-    if (!pts) continue;
+    // The other lines, and the ways into the other ports: a line kept off those does not leave a
+    // neighbour to step round it at the last moment.
+    const own = (f: { node: string; port: string }) => (f.node === e.from.node && f.port === e.from.port) || (f.node === e.to.node && f.port === e.to.port);
+    const segs = [...doc.edges.filter((x) => x.id !== e.id && !isTagged(doc, x)).flatMap((x) => segmentsOf(routes.get(x.id) ?? [])), ...fronts.filter((f) => !own(f)).map((f) => f.seg)];
+    const found = routeClear(at.pa, at.pb, obstacles, segs, borders);
+    if (!found) continue;
+    // Any small step left in it taken out, keeping off every box but its own ends'.
+    const pts = unjog(found, roomAround(obstacles, [nodeRect(at.a), nodeRect(at.b)]));
     const route = simplify(pts).slice(1, -1);
     if (route.length < 2) continue;
     let trial = { ...doc, edges: doc.edges.map((x) => (x.id === e.id ? { ...x, route, tidied: true } : x)) };
@@ -674,7 +680,9 @@ function untangle(doc: Doc): Doc {
     const same = (p: { x: number; y: number }[], q: { x: number; y: number }[] = []) => p.length === q.length && p.every((v, i) => v.x === q[i].x && v.y === q[i].y);
     trial = { ...trial, edges: trial.edges.map((x) => {
       const was = routes.get(x.id) ?? [];
-      return x.id === e.id || x.route || isTagged(doc, x) || was.length < 4 || same(was, after.get(x.id)) ? x : { ...x, route: was.slice(1, -1).map((p) => ({ x: p.x, y: p.y })), tidied: true };
+      if (x.id === e.id || x.route || isTagged(doc, x) || was.length < 4 || same(was, after.get(x.id))) return x;
+      const ends = [nodes.get(x.from.node), nodes.get(x.to.node)].filter((n): n is Node => !!n).map(nodeRect);
+      return { ...x, route: simplify(unjog(was, roomAround(obstacles, ends))).slice(1, -1).map((p) => ({ x: p.x, y: p.y })), tidied: true };
     }) };
     const score = tangle(trial);
     if (score >= best) continue;

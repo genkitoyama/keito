@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { fromYaml } from '../src/model/dsl';
 import { crossingGaps, crossings, isTagged, nodeRect, routeEdges } from '../src/model/geometry';
-import { collides, routeAround } from '../src/model/router';
+import { collides, routeAround, unjog } from '../src/model/router';
 import { sampleBoards } from '../src/model/sample';
 import { tangle, tidy } from '../src/model/tidy';
 import type { Doc, Rect } from '../src/model/types';
@@ -176,5 +176,28 @@ cables:
     // Where each line goes down (or up) to the port's height: the same for all three.
     const turn = (id: string) => routes.get(id)!.find((p, i, pts) => i > 0 && Math.abs(p.x - pts[i - 1].x) < 0.5 && Math.abs(p.y - pts[i - 1].y) > 0.5)?.x;
     expect(new Set(['p', 'q', 'r'].map(turn)).size).toBe(1);
+  });
+});
+
+describe('small steps in a line', () => {
+  const nested = () => fromYaml(fs.readFileSync(new URL('./fixtures/web-nested.yaml', import.meta.url), 'utf8'), blank('nested'));
+  it('are taken out where the run beside them can move across', () => {
+    const pts = [[0, 100], [18, 100], [18, 96], [12, 96], [12, 20], [200, 20], [200, 60], [218, 60]].map(([x, y]) => ({ x, y }));
+    expect(unjog(pts, []).map((p) => [p.x, p.y])).toEqual([[0, 100], [18, 100], [18, 20], [200, 20], [200, 60], [218, 60]]);
+  });
+
+  it('are left where taking them out would run through a box', () => {
+    const pts = [[0, 100], [18, 100], [18, 96], [12, 96], [12, 20], [200, 20], [200, 60], [218, 60]].map(([x, y]) => ({ x, y }));
+    expect(unjog(pts, [{ x: 14, y: 40, w: 30, h: 30 }])).toHaveLength(pts.length);
+  });
+
+  it('are not left by tidying', () => {
+    const doc = tidy(nested());
+    const routes = routeEdges(doc);
+    const steps = doc.edges.flatMap((e) => {
+      const pts = routes.get(e.id) ?? [];
+      return pts.slice(2, -1).flatMap((p, i) => (Math.abs(p.x - pts[i + 1].x) + Math.abs(p.y - pts[i + 1].y) < 14 ? [`${e.id}: ${JSON.stringify([pts[i + 1], p])}`] : []));
+    });
+    expect(steps).toEqual([]);
   });
 });

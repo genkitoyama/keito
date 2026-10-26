@@ -1,5 +1,5 @@
 import { UI_FONT, measure, wrapText } from './text';
-import { type Run, STUB, bordersOf, hugCost, roomAround, chip, collides, facing, isH, lanes, routeAround } from './router';
+import { type Run, type Seg, STUB, bordersOf, hugCost, roomAround, chip, collides, facing, isH, lanes, routeAround } from './router';
 import { seqLayout, seqScale } from './sequence';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node, Port, PortSide, Pt, Rect } from './types';
 
@@ -66,6 +66,25 @@ export function portPos(d: DeviceNode, portId: string): (Pt & { side: PortSide }
     y: d.y + deviceHead(d) + i * DEV.row + DEV.row / 2,
     side: port.side,
   };
+}
+
+/** How far in front of a port another line crossing there blocks its way in: the run straight out of the port. */
+const FRONT = STUB;
+
+/**
+ * The way into each port that has a line: the stretch in front of it a line runs out of or into.
+ * Another line passing across it blocks that way in (lines then step round it at the last moment).
+ */
+export function portFronts(doc: Doc): { node: string; port: string; seg: Seg }[] {
+  const used = new Set(doc.edges.flatMap((e) => [`${e.from.node}|${e.from.port}`, `${e.to.node}|${e.to.port}`]));
+  return doc.nodes.flatMap((n) =>
+    n.type !== 'device'
+      ? []
+      : n.ports.flatMap((p) => {
+          const at = used.has(`${n.id}|${p.id}`) ? portPos(n, p.id) : null;
+          return at ? [{ node: n.id, port: p.id, seg: { flat: true, at: at.y, lo: at.side === 'left' ? at.x - FRONT : at.x, hi: at.side === 'left' ? at.x : at.x + FRONT } }] : [];
+        }),
+  );
 }
 
 /** The point on one side of a box, `at` of the way along it from its left or top end (the middle by default). */
@@ -275,7 +294,7 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
   }
   const frames = doc.nodes.filter((n) => n.type === 'frame').map(nodeRect);
   const borders = bordersOf(frames);
-  const bends = lanes(runs, [...obstacles, ...chips], frames);
+  const bends = lanes(runs, [...obstacles, ...chips], frames, portFronts(doc).map((f) => f.seg));
   for (const { e, index, a, b, pa, pb, ea, eb, tagged } of drawn) {
     const siblings = bySource.get(e.from.node)!;
     const lane = (siblings.indexOf(e) - (siblings.length - 1) / 2) * 8;
