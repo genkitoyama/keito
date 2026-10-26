@@ -129,3 +129,32 @@ cables:
     expect(covers(chip(placeLabels(doc)))).toBe(false);
   });
 });
+
+describe('a label and a line joining its own', () => {
+  // Two lines merging into one port: the second comes up from below and runs into the first.
+  const board = () =>
+    fromYaml(
+      `kind: software
+protocolLabels: false
+devices:
+  - { id: browser, name: ブラウザ, out: [HTTPS:http], pos: [0, 0] }
+  - { id: app, name: アプリ, out: [HTTPS:http], pos: [0, 160] }
+  - { id: cdn, name: CDN, in: [HTTPS:http], pos: [330, 0] }
+cables:
+  - { id: page, from: browser.HTTPS, to: cdn.HTTPS, type: http, label: ページ・API }
+  - { id: api, from: app.HTTPS, to: cdn.HTTPS, type: http }
+`,
+      blank('join'),
+    );
+
+  it('is not put where the other line runs into it', () => {
+    const doc = placeLabels(board());
+    const routes = routeEdges(doc);
+    const api = routes.get('api')!;
+    // Where the line from below meets the one across: the top of its run upwards.
+    const join = api.reduce((top, p) => (p.y < top.y ? p : top));
+    const r = labelBoxes(doc)[0];
+    const near = 8;
+    expect(join.x > r.x - near && join.x < r.x + r.w + near && join.y > r.y - near && join.y < r.y + r.h + near).toBe(false);
+  });
+});

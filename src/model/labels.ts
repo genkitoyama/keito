@@ -45,11 +45,14 @@ export function labelSize(label: string, size: number, font: string): { w: numbe
 
 const area = (a: Rect, b: Rect): number => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 
-/** Whether two square segments, one across and one down, cross each other. */
-function crosses(a: Pt, b: Pt, c: Pt, d: Pt): boolean {
+/** Whether two square segments, one across and one down, cross or one runs into the other. */
+function meets(a: Pt, b: Pt, c: Pt, d: Pt): boolean {
   const [h0, h1, v0, v1] = Math.abs(a.y - b.y) < 0.5 ? [a, b, c, d] : [c, d, a, b];
-  return v0.x > Math.min(h0.x, h1.x) && v0.x < Math.max(h0.x, h1.x) && h0.y > Math.min(v0.y, v1.y) && h0.y < Math.max(v0.y, v1.y);
+  return v0.x > Math.min(h0.x, h1.x) && v0.x < Math.max(h0.x, h1.x) && h0.y >= Math.min(v0.y, v1.y) - 0.5 && h0.y <= Math.max(v0.y, v1.y) + 0.5;
 }
+
+/** How far round a label a crossing or a joining line is still too close to it (a hop's width and some). */
+const JOIN_ROOM = 8;
 
 /** Length of the segment a–b inside r (Liang–Barsky clipping). */
 function inside(a: Pt, b: Pt, r: Rect): number {
@@ -166,18 +169,19 @@ export function placeLabels(doc: Doc): Doc {
         const o = area(r, f);
         if (o > 0 && o < own) cost += 15;
       }
-      // Other lines running under the chip are hidden by it; worst, a crossing hidden under it (and
-      // its hop) leaves no telling which way either line goes.
+      // Other lines running under the chip are hidden by it; worst, a crossing (and its hop) or a
+      // line joining this one, under the chip or right at its edge, leaves no telling which way the
+      // lines go.
       const s0 = onSegment(pts, t);
       const across = Math.abs(pts[s0.i + 1]?.x - pts[s0.i].x) >= Math.abs(pts[s0.i + 1]?.y - pts[s0.i].y);
+      const reach = { x: r.x - JOIN_ROOM, y: r.y - JOIN_ROOM, w: r.w + JOIN_ROOM * 2, h: r.h + JOIN_ROOM * 2 };
       for (const o of lines) {
         if (o === e) continue;
         const op = routes.get(o.id)!;
         for (let i = 1; i < op.length; i++) {
-          const hidden = inside(op[i - 1], op[i], r);
-          cost += hidden * 1.5;
+          cost += inside(op[i - 1], op[i], r) * 1.5;
           const flat = Math.abs(op[i].y - op[i - 1].y) < 0.5;
-          if (hidden > 0 && flat !== across && crosses(pts[s0.i], pts[s0.i + 1] ?? pts[s0.i], op[i - 1], op[i])) cost += 120;
+          if (flat !== across && inside(op[i - 1], op[i], reach) > 0 && meets(pts[s0.i], pts[s0.i + 1] ?? pts[s0.i], op[i - 1], op[i])) cost += 120;
         }
       }
       // Over a bend the chip hides the corner: it reads best on a straight run.
