@@ -5,8 +5,11 @@
  * the app needs to know which it runs in.
  */
 export interface Platform {
-  /** Save a file the user names (or that goes to their downloads); false when they called it off. */
-  saveFile(name: string, data: Blob | string, type: string): Promise<boolean>;
+  /**
+   * Save a file the user names (or that goes to their downloads); false when they called it off.
+   * An export is offered the downloads folder to start in, as a browser would put it there.
+   */
+  saveFile(name: string, data: Blob | string, type: string, exported?: boolean): Promise<boolean>;
   /** One file of the given kinds, or null when the dialog is dismissed. */
   pickFile(accept: string): Promise<File | null>;
   /** A yes-or-no question; true for yes. */
@@ -82,7 +85,7 @@ let platform: Platform = web;
 /** Hand in the ways of the system the app runs in (the desktop app does, at start). */
 export const usePlatform = (p: Platform): void => void (platform = p);
 
-export const saveFile = (name: string, data: Blob | string, type = 'application/octet-stream'): Promise<boolean> => platform.saveFile(name, data, type);
+export const saveFile = (name: string, data: Blob | string, type = 'application/octet-stream', exported = false): Promise<boolean> => platform.saveFile(name, data, type, exported);
 export const pickFile = (accept: string): Promise<File | null> => platform.pickFile(accept);
 export const ask = (message: string): Promise<boolean> => platform.ask(message);
 export const tell = (message: string): Promise<void> => platform.tell(message);
