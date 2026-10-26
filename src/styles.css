@@ -2428,3 +2428,89 @@ button.project-item {
   color: var(--sub);
   font-size: 12.5px;
 }
+
+/* Search on the board (⌘F): a field over the top of the canvas, the hits listed under it. */
+.search-bar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: min(560px, calc(100% - 32px));
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
+  overflow: hidden;
+}
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: var(--sub);
+}
+.search-field input {
+  flex: 1;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink, #0f172a);
+  background: none;
+}
+.search-field small {
+  white-space: nowrap;
+}
+.search-close {
+  border: 0;
+  background: none;
+  color: var(--sub);
+  font-size: 16px;
+  cursor: pointer;
+}
+.search-hits {
+  max-height: min(50vh, 420px);
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  padding: 4px;
+}
+.search-hit {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.search-hit.on {
+  background: var(--accent-soft);
+}
+.search-hit .kind {
+  flex: none;
+  width: 4.5em;
+  font-size: 11px;
+  color: var(--sub);
+}
+.search-hit .name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-hit small {
+  margin-left: auto;
+  color: var(--sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+.search-hits .hint {
+  padding: 6px 8px;
+}

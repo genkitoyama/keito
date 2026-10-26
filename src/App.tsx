@@ -1,4 +1,5 @@
 import { toggleProjectMenu } from './ui/ProjectMenu';
+import { SearchBar, openSearch } from './ui/SearchBar';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { flushSync } from 'react-dom';
@@ -71,6 +72,7 @@ function useHotkeys() {
       } else if (mod && key === 'a') s.select(s.doc.nodes.filter((n) => !isUnderlay(n)).map((n) => n.id));
       else if (mod && key === 's') void saveBoardFile();
       else if (mod && key === 'k') toggleProjectMenu();
+      else if (mod && key === 'f') openSearch();
       else if (mod && (key === '=' || key === '+')) zoomBy(1.25);
       else if (mod && key === '-') zoomBy(0.8);
       else if (mod && key.startsWith('arrow') && nodeIds.length === 1) spawnFrom(nodeIds[0], key === 'arrowleft' ? 'left' : key === 'arrowright' ? 'right' : key === 'arrowup' ? 'top' : 'bottom');
@@ -173,6 +175,7 @@ export function App() {
         <div className="stage">
           <RevisionBanner />
           <Canvas />
+          <SearchBar />
           {panel === 'comments' && <CommentsPanel />}
           {panel === 'lists' && hasLists && <Splitter axis="y" onDrag={(d) => growLists(-d)} />}
           {panel === 'lists' && hasLists && <ListsPanel />}

@@ -12,7 +12,7 @@ import { allIds, freshId, makeNode, randomId } from './presets';
 import { sampleBoards } from './sample';
 import { registerSignals } from './signals';
 import { type Entry, type ShareNode, catalog, newKey, pull, stamp, takeFrom } from './shared';
-import { type Doc, type Edge, type Node, type Revision, type UserPreset, emptyMeta } from './types';
+import { type Doc, type Edge, type Node, type Rect, type Revision, type UserPreset, emptyMeta } from './types';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
 export type Panel = null | 'lists' | 'export' | 'library' | 'boards' | 'comments' | 'settings';
@@ -64,6 +64,8 @@ interface State {
   future: Doc[];
   boards: BoardInfo[];
   selection: string[];
+  /** What a search on the board found: shown as it is while the rest fades; null when not searching. */
+  found: string[] | null;
   tool: Tool;
   view: View;
   editing: string | null;
@@ -145,6 +147,7 @@ export const useStore = create<State>((set, get) => ({
   future: [],
   boards: [],
   selection: [],
+  found: null,
   tool: 'select',
   view: { x: 0, y: 0, k: 1 },
   editing: null,
@@ -571,6 +574,17 @@ function show(doc: Doc): void {
   showInUrl(doc.id);
   requestAnimationFrame(useStore.getState().fit);
   void readProject();
+}
+
+/** Bring a part of the board to the middle of the view, zooming in if it would be too small to read. */
+export function showRect(r: Rect): void {
+  const { view } = useStore.getState();
+  const el = document.getElementById('canvas');
+  if (!el) return;
+  const { width, height } = el.getBoundingClientRect();
+  const fits = Math.min((width - 120) / Math.max(1, r.w), (height - 120) / Math.max(1, r.h));
+  const k = Math.min(Math.max(view.k, 0.8), Math.max(fits, 0.2), 1.5);
+  useStore.setState({ view: { k, x: width / 2 - (r.x + r.w / 2) * k, y: height / 2 - (r.y + r.h / 2) * k } });
 }
 
 export function centerOn(nodeId: string): void {
