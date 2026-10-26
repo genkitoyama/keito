@@ -5,6 +5,10 @@ const COL_GAP = 180;
 const LOOSE = '\u0000loose';
 const GAP_Y = 36;
 const BAND_GAP = 90;
+/** Space between one area's block and the next, at the least. */
+const AREA_GAP = 80;
+/** Room for each line passing between two areas, so many of them run side by side rather than crowd. */
+const LINE_ROOM = 12;
 const FRAME_PAD = { x: 40, top: 60, bottom: 40 };
 
 /** Longest-path rank per node, ignoring back edges so cycles can't blow up. */
@@ -30,7 +34,9 @@ function ranks(ids: string[], edges: Edge[]): Map<string, number> {
     state.set(id, 2);
     order.push(id);
   };
-  for (const id of ids) if (!state.has(id)) visit(id);
+  // Start where nothing leads in, so a loop is broken at its far end rather than where it was listed.
+  const fed = new Set(edges.map((e) => e.to.node));
+  for (const id of [...ids.filter((id) => !fed.has(id)), ...ids]) if (!state.has(id)) visit(id);
   // Reverse post-order is a topological order once back edges are dropped.
   for (const id of order.reverse()) {
     for (const next of out.get(id) ?? []) {
@@ -48,8 +54,12 @@ export interface LayoutResult {
 }
 
 /**
- * Left-to-right layered layout. Nodes sharing an area are kept together in a
- * horizontal band so each area can be wrapped in a frame without overlaps.
+ * Left-to-right layered layout. Each area is a column block, the areas set out left to right in the
+ * order the flow passes through them (the lines between them taken the way most of them go), so a layered system —
+ * clients, edge, servers, data, outside services — reads across as it is built. Within an area its
+ * nodes keep their own ranks as sub-columns, each stacked top to bottom in the order of what they
+ * connect to, to cross as little as can be. Nodes in no area form a column block of their own
+ * where the flow puts them; loose ones (notes, sequence diagrams) go in a row underneath.
  */
 export function autoLayout(
   nodes: Node[],
@@ -57,8 +67,6 @@ export function autoLayout(
   areaOf: (id: string) => string,
   origin = { x: 80, y: 80 },
 ): LayoutResult {
-  const ids = nodes.map((n) => n.id);
-  const rank = ranks(ids, edges);
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const pos = new Map<string, { x: number; y: number }>();
   const areas = new Map<string, Rect>();
@@ -66,90 +74,81 @@ export function autoLayout(
   // Unconnected, un-areaed nodes (stickies, sequence diagrams) go in a row of
   // their own instead of crowding the first column of the flow.
   const linked = new Set(edges.flatMap((e) => [e.from.node, e.to.node]));
-  const bandOf = (id: string): string => areaOf(id) || (linked.has(id) ? '' : LOOSE);
+  const blockOf = (id: string): string => areaOf(id) || (linked.has(id) ? '' : LOOSE);
 
-  // Column x positions follow the widest node of each rank, shared by all bands.
-  const colW = new Map<number, number>();
+  const blocks = new Map<string, Node[]>();
   for (const n of nodes) {
-    if (bandOf(n.id) === LOOSE) continue;
-    const r = rank.get(n.id)!;
-    colW.set(r, Math.max(colW.get(r) ?? 0, nodeSize(n).w));
+    const b = blockOf(n.id);
+    blocks.set(b, [...(blocks.get(b) ?? []), n]);
   }
-  const colX = new Map<number, number>();
-  let cx = origin.x;
-  for (const r of [...colW.keys()].sort((a, b) => a - b)) {
-    colX.set(r, cx);
-    cx += colW.get(r)! + COL_GAP;
-  }
+  const loose = blocks.get(LOOSE) ?? [];
+  blocks.delete(LOOSE);
+  // Areas in the order the flow passes through them: each area one step, a line between two areas
+  // an edge (a loop between them broken as listed), ties as listed.
+  const names = [...blocks.keys()];
+  // Between two areas the way most lines go is the flow: a reply the other way (a worker taking
+  // jobs off a queue, a webhook coming back) does not turn the two around.
+  const count = new Map<string, number>();
+  const pairs = edges.map((e) => [blockOf(e.from.node), blockOf(e.to.node)] as const).filter(([a, b]) => a !== b);
+  for (const [a, b] of pairs) count.set(`${a}>${b}`, (count.get(`${a}>${b}`) ?? 0) + 1);
+  const between = pairs.filter(([a, b]) => count.get(`${a}>${b}`)! >= (count.get(`${b}>${a}`) ?? 0)).map(([a, b]) => ({ from: { node: a }, to: { node: b } }) as Edge);
+  const areaRank = ranks(names, between);
+  const order = names.map((b, i) => ({ b, r: areaRank.get(b)!, i })).sort((p, q) => p.r - q.r || p.i - q.i).map((x) => x.b);
 
-  const bandNames: string[] = [];
-  for (const n of nodes) {
-    const a = bandOf(n.id);
-    if (!bandNames.includes(a)) bandNames.push(a);
-  }
-  // Un-areaed nodes first, then each area as its own band.
-  const order = (a: string): number => (a === '' ? 0 : a === LOOSE ? 2 : 1);
-  bandNames.sort((a, b) => order(a) - order(b));
-
-  let top = origin.y;
-  for (const band of bandNames) {
-    const members = nodes.filter((n) => bandOf(n.id) === band);
-    if (band === LOOSE) {
-      let x = origin.x;
-      for (const n of members) {
-        pos.set(n.id, { x, y: top });
-        x += nodeSize(n).w + 60;
-      }
-      top += Math.max(...members.map((n) => nodeSize(n).h)) + BAND_GAP;
-      continue;
+  const colHeight = (list: Node[]): number => list.reduce((s, n) => s + nodeSize(n).h, 0) + GAP_Y * Math.max(0, list.length - 1);
+  // Where a node's neighbours already placed sit, on average: its place in its column.
+  const bary = (n: Node): number => {
+    const ys: number[] = [];
+    for (const e of edges) {
+      const other = e.to.node === n.id ? e.from.node : e.from.node === n.id ? e.to.node : null;
+      const p = other && pos.get(other);
+      if (p) ys.push(p.y + nodeSize(byId.get(other)!).h / 2);
     }
-    const cols = new Map<number, Node[]>();
-    for (const n of members) {
-      const r = rank.get(n.id)!;
-      const list = cols.get(r);
-      if (list) list.push(n);
-      else cols.set(r, [n]);
-    }
-    const colKeys = [...cols.keys()].sort((a, b) => a - b);
-    const innerTop = top + (band ? FRAME_PAD.top : 0);
-    const colHeight = (list: Node[]): number =>
-      list.reduce((s, n) => s + nodeSize(n).h, 0) + GAP_Y * (list.length - 1);
-    const bandH = Math.max(...colKeys.map((k) => colHeight(cols.get(k)!)));
+    return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : Infinity;
+  };
 
-    for (const k of colKeys) {
-      const list = cols.get(k)!;
-      // Order by the average y of already-placed neighbours to reduce crossings.
-      const bary = (n: Node): number => {
-        const ys: number[] = [];
-        for (const e of edges) {
-          const other = e.to.node === n.id ? e.from.node : e.from.node === n.id ? e.to.node : null;
-          const p = other && pos.get(other);
-          if (p) ys.push(p.y + nodeSize(byId.get(other)!).h / 2);
-        }
-        return ys.length ? ys.reduce((a, b) => a + b, 0) / ys.length : Infinity;
-      };
-      const keyed = list.map((n, i) => ({ n, b: bary(n), i }));
-      keyed.sort((a, b) => a.b - b.b || a.i - b.i);
-      let y = innerTop + (bandH - colHeight(list)) / 2;
+  // How many lines pass the gap after each block: the busier gaps are made wider.
+  const slot = new Map(order.map((b, i) => [b, i]));
+  const through = order.map((_, i) => edges.filter((e) => {
+    const [a, b] = [slot.get(blockOf(e.from.node)), slot.get(blockOf(e.to.node))];
+    return a !== undefined && b !== undefined && Math.min(a, b) <= i && i < Math.max(a, b);
+  }).length);
+
+  let left = origin.x;
+  let bottom = origin.y;
+  for (const [index, block] of order.entries()) {
+    const members = blocks.get(block)!;
+    // The block's own columns: what follows what within it, so parts that only meet across areas
+    // stand in one column rather than spread out.
+    const inner = new Set(members.map((n) => n.id));
+    const local = ranks([...inner], edges.filter((e) => inner.has(e.from.node) && inner.has(e.to.node)));
+    const own = [...new Set(members.map((n) => local.get(n.id)!))].sort((p, q) => p - q);
+    const cols = own.map((r) => members.filter((n) => local.get(n.id) === r));
+    const pad = block ? FRAME_PAD : { x: 0, top: 0, bottom: 0 };
+    const innerTop = origin.y + pad.top;
+    let x = left + pad.x;
+    let tallest = 0;
+    for (const list of cols) {
+      const keyed = list.map((n, i) => ({ n, b: bary(n), i })).sort((p, q) => p.b - q.b || p.i - q.i);
+      let y = innerTop;
       for (const { n } of keyed) {
-        pos.set(n.id, { x: colX.get(k)!, y: Math.round(y / 10) * 10 });
+        pos.set(n.id, { x, y: Math.round(y / 10) * 10 });
         y += nodeSize(n).h + GAP_Y;
       }
+      tallest = Math.max(tallest, colHeight(list));
+      x += Math.max(...list.map((n) => nodeSize(n).w)) + COL_GAP;
     }
+    const right = x - COL_GAP + pad.x;
+    if (block) areas.set(block, { x: left, y: origin.y, w: right - left, h: pad.top + tallest + pad.bottom });
+    bottom = Math.max(bottom, origin.y + pad.top + tallest + pad.bottom);
+    left = right + Math.max(AREA_GAP, through[index] * LINE_ROOM - FRAME_PAD.x);
+  }
 
-    if (band) {
-      const xs = members.map((n) => pos.get(n.id)!.x);
-      const x1 = Math.max(...members.map((n) => pos.get(n.id)!.x + nodeSize(n).w));
-      areas.set(band, {
-        x: Math.min(...xs) - FRAME_PAD.x,
-        y: top,
-        w: x1 - Math.min(...xs) + FRAME_PAD.x * 2,
-        h: FRAME_PAD.top + bandH + FRAME_PAD.bottom,
-      });
-      top += FRAME_PAD.top + bandH + FRAME_PAD.bottom + BAND_GAP;
-    } else {
-      top += bandH + BAND_GAP;
-    }
+  let x = origin.x;
+  const top = bottom + BAND_GAP;
+  for (const n of loose) {
+    pos.set(n.id, { x, y: top });
+    x += nodeSize(n).w + 60;
   }
   return { pos, areas };
 }

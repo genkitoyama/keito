@@ -29,6 +29,11 @@ export interface KindSpec {
   listsLabel: string;
   /** Board-wide label settings (power lines, cable IDs, lengths …) apply. */
   cableOptions: boolean;
+  /**
+   * Tidying may put a box's ports in the order of what they lead to, so lines cross less. Not on a
+   * system board, where the ports stand as they are on the back of the device.
+   */
+  freePorts: boolean;
 }
 
 const DRAW: Tool[] = ['select', 'pan', 'rect', 'round', 'diamond', 'ellipse', 'cloud', 'sticky', 'text', 'frame'];
@@ -44,6 +49,7 @@ export const KINDS: Record<BoardKind, KindSpec> = {
     lists: ['equipment', 'cables', 'summary', 'power', 'network', 'check'],
     listsLabel: '機材・ケーブル表',
     cableOptions: true,
+    freePorts: false,
   },
   software: {
     id: 'software',
@@ -55,6 +61,7 @@ export const KINDS: Record<BoardKind, KindSpec> = {
     lists: ['comms', 'network', 'check'],
     listsLabel: '通信一覧',
     cableOptions: false,
+    freePorts: true,
   },
   sequence: {
     id: 'sequence',
@@ -66,6 +73,7 @@ export const KINDS: Record<BoardKind, KindSpec> = {
     lists: [],
     listsLabel: '',
     cableOptions: false,
+    freePorts: false,
   },
   free: {
     id: 'free',
@@ -77,6 +85,7 @@ export const KINDS: Record<BoardKind, KindSpec> = {
     lists: [],
     listsLabel: '',
     cableOptions: false,
+    freePorts: false,
   },
 };
 

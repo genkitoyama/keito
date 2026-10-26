@@ -1,0 +1,59 @@
+title: 予約サイト システム構成
+kind: software
+project: Web 構成の試し
+areas:
+  - { name: 利用者, rect: [10, 20, 240, 380] }
+  - { name: エッジ（CDN・WAF）, color: purple, rect: [310, 20, 240, 380] }
+  - { name: AWS（東京リージョン・VPC）, rect: [580, -100, 1040, 920] }
+  - { name: 公開サブネット, color: green, rect: [630, 180, 240, 220] }
+  - { name: アプリ用サブネット, color: blue, rect: [930, 20, 260, 610] }
+  - { name: データ用サブネット, color: orange, rect: [1290, 0, 240, 700] }
+  - { name: 外部サービス, rect: [1650, 0, 240, 580] }
+devices:
+  - { id: browser, name: Web ブラウザ, model: PC・スマホ, category: アプリ, area: 利用者, out: [HTTPS:http, WSS:websocket], pos: [40, 70] }
+  - { id: app, name: スマホアプリ, model: iOS / Android, category: アプリ, area: 利用者, out: [HTTPS:http, Push:http], pos: [40, 190] }
+  - { id: admin, name: 管理画面, model: 社内ブラウザ, category: アプリ, area: 利用者, out: [HTTPS:http], pos: [40, 310] }
+  - { id: cdn, name: CDN, model: CloudFront, category: データ, area: エッジ（CDN・WAF）, in: [HTTPS:http], out: [静的:http, 動的:http], pos: [340, 70] }
+  - { id: waf, name: WAF, model: AWS WAF, category: サーバー, area: エッジ（CDN・WAF）, in: [HTTPS:http], out: [HTTPS:http], pos: [340, 230] }
+  - { id: alb, name: ロードバランサー, model: ALB, category: サーバー, area: 公開サブネット, in: [HTTPS:http], out: [HTTP:http, WS:websocket], pos: [660, 230] }
+  - { id: api, name: API サーバー x3, width: 200, model: Node.js 22（ECS）, category: サーバー, area: アプリ用サブネット, in: [HTTP:http], out: [DB:tcp, 読み出し:tcp, Redis:tcp, Queue:http, 検索:http, 決済:http, 認証:http, ログ:http], pos: [960, 70] }
+  - { id: ws, name: WebSocket サーバー x2, model: Node.js 22（ECS）, category: サーバー, area: アプリ用サブネット, in: [WS:websocket], out: [Redis:tcp], pos: [960, 330] }
+  - { id: worker, name: ワーカー x2, model: Node.js 22（ECS）, category: サーバー, area: アプリ用サブネット, in: [Queue:http], out: [DB:tcp, メール:http, 画像:http, 検索:http], pos: [960, 450] }
+  - { id: db, name: データベース（主）, model: PostgreSQL 16（Aurora）, category: データ, area: データ用サブネット, in: [DB:tcp], out: [複製:tcp], pos: [1320, 50] }
+  - { id: replica, name: データベース（読み出し用）, model: PostgreSQL 16（Aurora）, category: データ, area: データ用サブネット, in: [DB:tcp, 複製:tcp], pos: [1320, 160] }
+  - { id: redis, name: キャッシュ・セッション, model: Redis 7（ElastiCache）, category: データ, area: データ用サブネット, in: [Redis:tcp], pos: [1320, 290] }
+  - { id: search, name: 検索, model: OpenSearch, category: データ, area: データ用サブネット, in: [HTTP:http], pos: [1320, 390] }
+  - { id: queue, name: キュー, model: SQS, category: サーバー, area: データ用サブネット, in: [HTTPS:http], out: [Queue:http], pos: [1320, 490] }
+  - { id: s3, name: ストレージ, model: S3, category: データ, area: データ用サブネット, in: [HTTPS:http], pos: [1320, 600] }
+  - { id: pay, name: 決済, model: Stripe, category: 外部サービス, area: 外部サービス, in: [HTTPS:http], out: [Webhook:http], pos: [1680, 50] }
+  - { id: mail, name: メール配信, model: SendGrid, category: 外部サービス, area: 外部サービス, in: [HTTPS:http], pos: [1680, 160] }
+  - { id: auth, name: 認証, model: Cognito, category: 外部サービス, area: 外部サービス, in: [HTTPS:http], pos: [1680, 260] }
+  - { id: mon, name: 監視・ログ, model: Datadog, category: 外部サービス, area: 外部サービス, in: [HTTPS:http], out: [通知:http], pos: [1680, 360] }
+  - { id: slack, name: 障害通知, model: Slack, category: 外部サービス, area: 外部サービス, in: [HTTPS:http], pos: [1680, 480] }
+cables:
+  - { from: browser.HTTPS, to: cdn.HTTPS, type: http, spec: 443/tcp, label: ページ・API }
+  - { from: app.HTTPS, to: cdn.HTTPS, type: http, spec: 443/tcp, label: API }
+  - { from: admin.HTTPS, to: waf.HTTPS, type: http, spec: 443/tcp, label: 管理（社内 IP のみ） }
+  - { from: browser.WSS, to: alb.WSS, type: websocket, spec: 443/tcp, label: 空き状況の通知 }
+  - { from: cdn.静的, to: s3.HTTPS, type: http, spec: 443/tcp, label: 画像・JS }
+  - { from: cdn.動的, to: waf.HTTPS, type: http, spec: 443/tcp }
+  - { from: waf.HTTPS, to: alb.HTTPS, type: http, spec: 443/tcp }
+  - { from: alb.HTTP, to: api.HTTP, type: http, spec: 8080/tcp }
+  - { from: alb.WS, to: ws.WS, type: websocket, spec: 8081/tcp }
+  - { from: api.DB, to: db.DB, type: tcp, spec: 5432/tcp, label: 書き込み }
+  - { from: api.読み出し, to: replica.DB, type: tcp, spec: 5432/tcp, label: 読み出し }
+  - { from: db.複製, to: replica.複製, type: tcp, spec: 5432/tcp, label: レプリケーション }
+  - { from: api.Redis, to: redis.Redis, type: tcp, spec: 6379/tcp, label: セッション }
+  - { from: ws.Redis, to: redis.Redis, type: tcp, spec: 6379/tcp, label: Pub/Sub }
+  - { from: api.Queue, to: queue.HTTPS, type: http, spec: 443/tcp, label: ジョブ投入 }
+  - { from: queue.Queue, to: worker.Queue, type: http, spec: 443/tcp, label: ジョブ取得 }
+  - { from: api.検索, to: search.HTTP, type: http, spec: 443/tcp }
+  - { from: worker.検索, to: search.HTTP, type: http, spec: 443/tcp, label: 索引更新 }
+  - { from: worker.DB, to: db.DB, type: tcp, spec: 5432/tcp }
+  - { from: worker.画像, to: s3.HTTPS, type: http, spec: 443/tcp, label: サムネイル }
+  - { from: worker.メール, to: mail.HTTPS, type: http, spec: 443/tcp, label: 予約確認メール }
+  - { from: api.決済, to: pay.HTTPS, type: http, spec: 443/tcp, label: 決済 }
+  - { from: pay.Webhook, to: alb.HTTPS, type: http, spec: 443/tcp, label: 決済結果の Webhook }
+  - { from: api.認証, to: auth.HTTPS, type: http, spec: 443/tcp, label: トークン検証 }
+  - { from: api.ログ, to: mon.HTTPS, type: http, spec: 443/tcp, label: ログ・メトリクス }
+  - { from: mon.通知, to: slack.HTTPS, type: http, spec: 443/tcp, label: アラート }

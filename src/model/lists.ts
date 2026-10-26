@@ -668,7 +668,10 @@ export function checkTable(doc: Doc): Table {
     if (e.signal === 'flow') continue;
     // A generic "data" port (a new piece of software) takes any protocol, and any protocol line may meet it.
     const generic = (x: string) => x === 'data' && !!signalOf(e.signal).protocol;
-    const mismatch = [portOf(e.from), portOf(e.to)].filter((p) => p && p.signal !== e.signal && !generic(p.signal) && !(e.signal === 'data' && signalOf(p.signal).protocol));
+    // WebSocket begins as an HTTP request and is upgraded on the same port: one listener on 443
+    // takes both (a load balancer, a web server), so neither is a mismatch on the other's port.
+    const upgrade = (x: string) => (x === 'http' && e.signal === 'websocket') || (x === 'websocket' && e.signal === 'http');
+    const mismatch = [portOf(e.from), portOf(e.to)].filter((p) => p && p.signal !== e.signal && !generic(p.signal) && !upgrade(p.signal) && !(e.signal === 'data' && signalOf(p.signal).protocol));
     if (mismatch.length)
       found.push({ level: 0, what: '種別の不一致', target: ids.get(e.id) ?? `${name(e.from.node)} → ${name(e.to.node)}`, detail: `${signalOf(e.signal).label} のケーブルが ${mismatch.map((p) => (p!.name === signalOf(p!.signal).label ? p!.name : `${p!.name}（${signalOf(p!.signal).label}）`)).join('・')} につながっています`, ref: [e.id] });
   }

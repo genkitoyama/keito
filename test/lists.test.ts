@@ -191,3 +191,15 @@ describe('power and addresses in less usual drawings', () => {
     expect(checkTable(d).rows.some((r) => r.join(' ').includes('重複'))).toBe(false);
   });
 });
+
+describe('WebSocket on an HTTPS port', () => {
+  it('is not a mismatch: one listener takes both', () => {
+    const d: Doc = {
+      ...blank(),
+      kind: 'software',
+      nodes: [device('b', 'ブラウザ', [{ id: 'o', name: 'WSS', side: 'right', signal: 'websocket' }]), device('lb', 'ALB', [{ id: 'i', name: 'HTTPS', side: 'left', signal: 'http' }])],
+      edges: [{ id: 'e', from: { node: 'b', port: 'o' }, to: { node: 'lb', port: 'i' }, signal: 'websocket', label: '', arrow: 'end' }],
+    };
+    expect(checkTable(d).rows.some((r) => r.join(' ').includes('種別の不一致'))).toBe(false);
+  });
+});
