@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cableIds, checkTable, editCell, editable, equipmentTable, powerLoads, powerTable } from '../src/model/lists';
+import { bands, cableIds, checkTable, editCell, editable, equipmentTable, powerLoads, powerTable } from '../src/model/lists';
 import type { DeviceNode, Doc } from '../src/model/types';
 import { blank, sample } from './helpers';
 
@@ -136,5 +136,20 @@ describe('figures typed into a list', () => {
     expect(typed('数量', '2.6').qty).toBe(3);
     expect(typed('数量', '0').qty).toBeUndefined();
     expect(typed('数量', '-3').qty).toBeUndefined();
+  });
+});
+
+describe('shaded rows', () => {
+  it('shades every other row, the total apart', () => {
+    const t = { title: '', head: ['a'], rows: [['1'], ['2'], ['3'], ['4'], ['計']], refs: [[], [], [], [], []], widths: [1], total: true };
+    expect([...bands(t)]).toEqual([1, 3]);
+    // In the order shown, while a row is being dragged.
+    expect([...bands(t, [1, 0, 2, 3, 4])].sort()).toEqual([0, 3]);
+  });
+
+  it('shades a power source with its sum as one', () => {
+    const rowClass = ['member', 'member', 'subtotal', 'member', 'subtotal', 'member', 'subtotal'];
+    const t = { title: '', head: ['a'], rows: rowClass.map(() => ['x']), refs: rowClass.map(() => []), widths: [1], rowClass };
+    expect([...bands(t)]).toEqual([3, 4]);
   });
 });

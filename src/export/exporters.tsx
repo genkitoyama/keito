@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { DocView, SCREEN } from '../canvas/render';
 import { deviceTagRects } from '../model/badges';
 import { docBounds } from '../model/geometry';
-import type { Table } from '../model/lists';
+import { type Table, bands } from '../model/lists';
 import type { Doc, Rect } from '../model/types';
 
 export interface Image {
@@ -78,6 +78,7 @@ const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;'
 function tableHtml(t: Table, doc: Doc): string {
   const sum = t.widths.reduce((a, b) => a + b, 0);
   const num = new Set(t.numeric ?? []);
+  const shaded = bands(t);
   const cell = (c: string, i: number): string => {
     const body = /^https?:\/\//.test(c) ? `<a href="${esc(c)}">${esc(c.replace(/^https?:\/\/(www\.)?/, ''))}</a>` : esc(c);
     return `<td${num.has(t.head[i]) ? ' class="num"' : ''}>${body}</td>`;
@@ -85,7 +86,7 @@ function tableHtml(t: Table, doc: Doc): string {
   return `<section class="list"><header><h2>${esc(t.title)}</h2><span>${esc(doc.meta.title)}</span></header><table>
 <colgroup>${t.widths.map((w) => `<col style="width:${((w / sum) * 100).toFixed(2)}%">`).join('')}</colgroup>
 <thead><tr>${t.head.map((h) => `<th${num.has(h) ? ' class="num"' : ''}>${esc(h)}</th>`).join('')}</tr></thead>
-<tbody>${t.rows.map((row, r) => { const cls = [t.total && r === t.rows.length - 1 ? 'total' : '', t.rowClass?.[r] ?? ''].filter(Boolean).join(' '); return `<tr${cls ? ` class="${cls}"` : ''}>${row.map(cell).join('')}</tr>`; }).join('')}</tbody></table></section>`;
+<tbody>${t.rows.map((row, r) => { const cls = [t.total && r === t.rows.length - 1 ? 'total' : '', t.rowClass?.[r] ?? '', shaded.has(r) ? 'band' : ''].filter(Boolean).join(' '); return `<tr${cls ? ` class="${cls}"` : ''}>${row.map(cell).join('')}</tr>`; }).join('')}</tbody></table></section>`;
 }
 
 /**
@@ -132,7 +133,7 @@ thead{display:table-header-group}tr{break-inside:avoid}
 th,td{border:.4pt solid #cbd5e1;padding:2.5pt 4pt;text-align:left;vertical-align:top;overflow-wrap:anywhere}
 th{background:#eef2f6;font-weight:600;vertical-align:bottom;word-break:keep-all;overflow-wrap:anywhere}
 tbody tr:nth-child(even) td{background:#f8fafc}
-.num{text-align:right}tr.total td{font-weight:700;background:#eef2f6;border-top:.8pt solid #334155}tr.member td:first-child{color:#94a3b8}tr.subtotal td{font-weight:700;background:#f4f6f9;border-bottom:.8pt solid #334155}tr.subtotal td:last-child{color:#15803d}tr.subtotal.over td{background:#fdecec}tr.subtotal.over td:last-child{color:#b91c1c}tr.subtotal.unknown td:last-child{color:#64748b;font-weight:400}
+.num{text-align:right}tr.band td{background:#f6f8fa}tr.total td{font-weight:700;background:#eef2f6;border-top:.8pt solid #334155}tr.member td:first-child{color:#94a3b8}tr.subtotal td{font-weight:700;border-bottom:.8pt solid #334155}tr.subtotal td:last-child{color:#15803d}tr.subtotal.over td{background:#fdecec}tr.subtotal.over td:last-child{color:#b91c1c}tr.subtotal.unknown td:last-child{color:#64748b;font-weight:400}
 a{color:#1d4ed8;text-decoration:none}
 @media screen{html{zoom:${zoom};background:#e2e8f0}body{padding:6mm}
 .figure,.list{background:#fff;width:${w - MARGIN * 2}mm;padding:${MARGIN}mm;margin:0 auto 6mm;box-shadow:0 1px 6px rgba(15,23,42,.18)}

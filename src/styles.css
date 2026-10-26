@@ -824,8 +824,12 @@ th {
 tbody tr {
   cursor: pointer;
 }
+/* Every other row (or group) faintly shaded, so a wide row is easy to follow; hover and selection show over it. */
+tbody tr.band {
+  background: #f6f8fa;
+}
 tbody tr:hover {
-  background: #f8fafc;
+  background: #edf1f5;
 }
 tbody tr.on {
   background: var(--accent-soft);
@@ -1396,9 +1400,9 @@ td a {
 .lists tr.member td:first-child {
   color: var(--sub);
 }
+/* The sum takes its group's shade: bold and the rule under it set it apart. */
 .lists tr.subtotal td {
   font-weight: 700;
-  background: #f8fafc;
   border-bottom: 2px solid #cbd5e1;
 }
 .lists tr.subtotal td:last-child {

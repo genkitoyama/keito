@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent } from 'react';
-import { type CellEdit, TABLES, type Table, clearOrder, editCell, editable, moveRow } from '../model/lists';
+import { type CellEdit, TABLES, type Table, bands, clearOrder, editCell, editable, moveRow } from '../model/lists';
 import { kindOf } from '../model/kinds';
 import { allSignals, groupSignals } from '../model/signals';
 import { useStore } from '../model/store';
@@ -141,6 +141,7 @@ export function ListsPanel() {
     window.addEventListener('keydown', key, true);
   };
   const sel = new Set(selection);
+  const shaded = bands(t, order);
   const totalLength = doc.edges.reduce((a, e) => a + (e.length ?? 0), 0);
 
   return (
@@ -214,6 +215,7 @@ export function ListsPanel() {
                 className={[
                   t.total && i === t.rows.length - 1 ? 'total' : t.refs[i].some((id) => sel.has(id)) ? 'on' : '',
                   t.rowClass?.[i] ?? '',
+                  shaded.has(i) ? 'band' : '',
                   drag?.from === i ? 'dragging' : '',
                 ]
                   .filter(Boolean)
