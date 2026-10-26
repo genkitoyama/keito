@@ -2428,3 +2428,124 @@ button.project-item {
   color: var(--sub);
   font-size: 12.5px;
 }
+
+/* Search on the board (⌘F): a field over the top of the canvas, the hits listed under it. */
+.search-bar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  width: min(580px, calc(100% - 32px));
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+}
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  color: var(--sub);
+}
+.search-field input {
+  flex: 1;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 15px;
+  color: var(--ink, #0f172a);
+  background: none;
+}
+.search-field small {
+  white-space: nowrap;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  font-size: 11.5px;
+}
+.search-close {
+  border: 0;
+  background: none;
+  color: var(--sub);
+  font-size: 16px;
+  cursor: pointer;
+}
+.search-hits {
+  max-height: min(50vh, 440px);
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  padding: 4px;
+}
+.search-hit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.search-hit.on {
+  background: var(--accent-soft);
+}
+.search-hit .sample {
+  flex: none;
+}
+.search-hit .text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
+}
+.search-hit .name {
+  font-weight: 600;
+  font-size: 13.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-hit small {
+  color: var(--sub);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.search-hit mark {
+  background: #fde68a;
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.search-hits .hint {
+  padding: 6px 10px;
+}
+.search-keys {
+  display: flex;
+  gap: 14px;
+  padding: 7px 12px;
+  border-top: 1px solid var(--line);
+  background: #f8fafc;
+  color: var(--sub);
+  font-size: 11.5px;
+}
+.search-keys kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 0 4px;
+  margin-right: 2px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #fff;
+  font-weight: 600;
+  font-size: 10.5px;
+  line-height: 16px;
+  text-align: center;
+}

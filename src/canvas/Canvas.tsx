@@ -203,6 +203,7 @@ export function Canvas() {
   const doc = useStore((s) => s.doc);
   const view = useStore((s) => s.view);
   const selection = useStore((s) => s.selection);
+  const foundIds = useStore((s) => s.found);
   const tool = useStore((s) => s.tool);
   const editing = useStore((s) => s.editing);
   const placing = useStore((s) => s.placing);
@@ -720,6 +721,7 @@ export function Canvas() {
   };
 
   const sel = new Set(selection);
+  const found = foundIds && new Set(foundIds);
   const routes = routeEdges(doc);
   // An underlay (a floor plan) lies beneath everything and lets the pointer through.
   const underlays = doc.nodes.filter(isUnderlay);
@@ -735,9 +737,12 @@ export function Canvas() {
   const waiting = placing ? { label: placing.label, size: placing.size } : placesBox(tool) && boxSize(tool) && !busy ? { label: '', size: boxSize(tool)! } : null;
   const preview = idle && handleNode && canConnect(handleNode) && hoverSide ? spawnRect(doc, handleNode, hoverSide) : null;
 
+  // While searching, what was not found fades (areas less, so the found keep their setting).
+  const faded = (id: string, frame = false): number | undefined => (found && !found.has(id) ? (frame ? 0.5 : 0.22) : undefined);
   const nodeGroup = (n: Node) => (
     <g
       key={n.id}
+      opacity={faded(n.id, n.type === 'frame')}
       onPointerDown={(e) => onNodeDown(e, n)}
       onPointerEnter={() => setHover(n.id)}
       onPointerLeave={() => {
@@ -781,7 +786,7 @@ export function Canvas() {
             if (isTagged(doc, e)) {
               // No line to grab: the two tags are the cable's handles.
               return (
-                <g key={e.id} onPointerDown={(ev) => onEdgeDown(ev, e.id)} style={{ cursor: 'pointer' }}>
+                <g key={e.id} opacity={faded(e.id)} onPointerDown={(ev) => onEdgeDown(ev, e.id)} style={{ cursor: 'pointer' }}>
                   <EdgeView doc={doc} e={e} theme={SCREEN} />
                   {edgeTags(doc, e, SCREEN).map((t, i) => (
                     <rect key={i} x={t.x - 2} y={t.y - 2} width={t.w + 4} height={t.h + 4} rx={4} fill="transparent" stroke={sel.has(e.id) ? ACCENT : 'none'} strokeWidth={2 / view.k} />
@@ -792,7 +797,7 @@ export function Canvas() {
             const d = pathD(pts, 8);
             const labelBox = editing === e.id ? null : edgeLabelBox(doc, e, SCREEN);
             return (
-              <g key={e.id} onPointerDown={(ev) => onEdgeDown(ev, e.id)} style={{ cursor: 'pointer' }}>
+              <g key={e.id} opacity={faded(e.id)} onPointerDown={(ev) => onEdgeDown(ev, e.id)} style={{ cursor: 'pointer' }}>
                 {sel.has(e.id) && <path d={d} fill="none" stroke={ACCENT} strokeOpacity={0.28} strokeWidth={9} strokeLinecap="round" />}
                 <EdgeView doc={doc} e={e} theme={SCREEN} hideLabel={editing === e.id} />
                 <path d={d} fill="none" stroke="transparent" strokeWidth={14 / view.k} />
