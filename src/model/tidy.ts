@@ -1,7 +1,7 @@
 import { deviceTagRects } from './badges';
 import { anchorOf, captionBox, center, frameOf, frameTitles, isTagged, isUnderlay, nodeRect, obstaclesOf, portFronts, routeEdges, simplify, tagChips } from './geometry';
 import { placeLabels } from './labels';
-import { bordersOf, facing, isH, roomAround, routeClear, segmentsOf, unjog } from './router';
+import { EDGE_ROOM, JOG, bordersOf, facing, isH, roomAround, routeClear, segmentsOf, unjog } from './router';
 import { kindOf } from './kinds';
 import type { Doc, Edge, Node, Port, Rect } from './types';
 
@@ -283,7 +283,9 @@ function tangles(doc: Doc): Map<string, number> {
   for (const e of doc.edges) {
     const pts = routes.get(e.id);
     if (!pts || isTagged(doc, e)) continue;
-    add(e.id, Math.max(0, pts.length - 2) * 2);
+    // A bend costs some of a crossing: a crossing drawn with a hop reads well, a line winding about
+    // does not, so a way round trades at most two bends or so for each crossing it saves.
+    add(e.id, Math.max(0, pts.length - 2) * BEND_COST);
     // A long way round costs too: some 500 px out of the way and back is worse than a crossing.
     const length = pts.slice(1).reduce((sum, p, i) => sum + Math.abs(p.x - pts[i].x) + Math.abs(p.y - pts[i].y), 0);
     const direct = Math.abs(pts[pts.length - 1].x - pts[0].x) + Math.abs(pts[pts.length - 1].y - pts[0].y);
@@ -292,7 +294,12 @@ function tangles(doc: Doc): Map<string, number> {
       const a = pts[i - 1];
       const b = pts[i];
       const seg = { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
-      for (const { id, r } of boxes) if (id !== e.from.node && id !== e.to.node && seg.x < r.x + r.w - 2 && r.x + 2 < seg.x + seg.w && seg.y < r.y + r.h - 2 && r.y + 2 < seg.y + seg.h) add(e.id, 150);
+      for (const { id, r } of boxes) {
+        if (id === e.from.node || id === e.to.node) continue;
+        if (seg.x < r.x + r.w - 2 && r.x + 2 < seg.x + seg.w && seg.y < r.y + r.h - 2 && r.y + 2 < seg.y + seg.h) add(e.id, 150);
+        // Grazing a box is nearly as bad: the line reads as its edge.
+        else if (seg.x < r.x + r.w + EDGE_ROOM && r.x - EDGE_ROOM < seg.x + seg.w && seg.y < r.y + r.h + EDGE_ROOM && r.y - EDGE_ROOM < seg.y + seg.h) add(e.id, 60);
+      }
     }
     for (const seg of segmentsOf(pts)) runs.push({ id: e.id, ...seg });
   }
@@ -346,6 +353,9 @@ function tangles(doc: Doc): Map<string, number> {
 
 /** How far out of its way a line may go (round the back of a box, out of a port and in) at no cost. */
 const DETOUR_FREE = 80;
+
+/** What a bend in a line costs, against a crossing's 100. */
+const BEND_COST = 55;
 
 /** Lines closer side by side than this, running along together, read as one. */
 const BESIDE = 9;
@@ -803,6 +813,84 @@ function turnPorts(doc: Doc): Doc {
   return doc;
 }
 
+/** How far tidying may nudge a box, up or down, to straighten out the lines round it. */
+const NUDGES = [-20, -10, 10, 20];
+/** The most rounds of nudging, one box moved in each. */
+const NUDGE_ROUNDS = 4;
+
+/**
+ * Small moves levelling never makes: a box nudged up or down a little, so a line that grazes it,
+ * steps round it or winds past it can run clear. Only the boxes at the ends of such lines, or in
+ * their way, are tried; each round the one move that leaves the wiring least tangled is kept.
+ */
+function nudge(doc: Doc): Doc {
+  if (doc.edges.length >= WEIGH_UP_TO) return doc;
+  // A box moved leaves the bends tidying laid for its lines where they were: any small step that
+  // leaves in them reads as a slip of the hand, and counts as much as a crossing.
+  const weigh = (d: Doc) => {
+    let steps = 0;
+    for (const pts of routeEdges(d).values()) for (let i = 2; i < pts.length - 1; i++) if (Math.abs(pts[i].x - pts[i - 1].x) + Math.abs(pts[i].y - pts[i - 1].y) < JOG) steps++;
+    return tangle(d) + steps * 100;
+  };
+  let best = weigh(doc);
+  for (let round = 0; round < NUDGE_ROUNDS; round++) {
+    const routes = routeEdges(doc);
+    const awkward = (pts: { x: number; y: number }[]) =>
+      pts.length > 4 || pts.slice(2, -1).some((p, i) => Math.abs(p.x - pts[i + 1].x) + Math.abs(p.y - pts[i + 1].y) < JOG);
+    const boxes = doc.nodes.filter((n) => n.type === 'device');
+    const tried = new Set<string>();
+    for (const e of doc.edges) {
+      const pts = routes.get(e.id);
+      if (!pts || isTagged(doc, e) || (e.route && !e.tidied) || !awkward(pts)) continue;
+      tried.add(e.from.node);
+      tried.add(e.to.node);
+      // And the boxes it passes close by.
+      for (const q of segmentsOf(pts)) {
+        for (const n of boxes) {
+          const r = nodeRect(n);
+          const near = q.flat
+            ? q.at > r.y - 30 && q.at < r.y + r.h + 30 && q.hi > r.x && q.lo < r.x + r.w
+            : q.at > r.x - 30 && q.at < r.x + r.w + 30 && q.hi > r.y && q.lo < r.y + r.h;
+          if (near) tried.add(n.id);
+        }
+      }
+    }
+    let pick: { doc: Doc; score: number } | null = null;
+    for (const id of tried) {
+      const n = doc.nodes.find((m) => m.id === id);
+      if (!n || n.type !== 'device') continue;
+      for (const dy of NUDGES) {
+        const nodes = new Map(doc.nodes.map((m) => [m.id, m]));
+        nodes.set(id, { ...n, y: n.y + dy });
+        refit(doc, nodes);
+        if (collision(doc, nodes)) continue;
+        // Bends tidying laid for its lines follow it where they run straight in: the last run across
+        // into the box moves with it, so no step is left at the port.
+        const was = routeEdges(doc);
+        const edges = comb(doc, nodes).map((x) => {
+          if (!x.tidied || !x.route || (x.from.node !== id && x.to.node !== id)) return x;
+          const pts = was.get(x.id) ?? [];
+          const level = new Set<number>();
+          if (x.from.node === id && pts.length) level.add(pts[0].y);
+          if (x.to.node === id && pts.length) level.add(pts[pts.length - 1].y);
+          const route = x.route.map((p, i, all) => {
+            const end = (x.from.node === id && all.slice(0, i + 1).every((q) => level.has(q.y))) || (x.to.node === id && all.slice(i).every((q) => level.has(q.y)));
+            return end ? { x: p.x, y: p.y + dy } : p;
+          });
+          return { ...x, route };
+        });
+        const trial = { ...doc, nodes: doc.nodes.map((m) => nodes.get(m.id)!), edges };
+        const score = weigh(trial);
+        if (score < (pick?.score ?? best)) pick = { doc: trial, score };
+      }
+    }
+    if (!pick) break;
+    best = pick.score;
+    doc = pick.doc;
+  }
+  return doc;
+}
+
 function pass(doc: Doc): Doc {
   const arranged = arrange(doc);
   const balanced = { ...doc, nodes: doc.nodes.map((n) => arranged.get(n.id)!), edges: comb(doc, arranged) };
@@ -845,7 +933,7 @@ export function tidy(doc: Doc): Doc {
   // (Found without the bends an earlier tidy laid: those are laid afresh, not held up against.)
   if (tangle(next) > tangle(fresh)) next = fresh;
   // Lines routed afresh round the others can come in from another side: the ports follow them.
-  next = orderPorts(turnPorts(untangle(orderPorts(next))));
+  next = nudge(orderPorts(turnPorts(untangle(orderPorts(next)))));
   // Pressing tidy again never undoes a better wiring an earlier tidy found: if this one comes out
   // more tangled than the board it was given, the board stays as it was (but for the labels).
   if (doc.edges.length < WEIGH_UP_TO && tangle(next) > tangle(doc)) next = doc;

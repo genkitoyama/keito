@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { deviceTagRects } from '../src/model/badges';
-import { frameOf, frameTitles, isTagged, labelPoint, nodeRect, routeEdges, tagChips } from '../src/model/geometry';
+import { crossings, frameOf, frameTitles, isTagged, labelPoint, nodeRect, routeEdges, tagChips } from '../src/model/geometry';
 import { fromYaml, toYaml } from '../src/model/dsl';
 import { sampleBoards } from '../src/model/sample';
 import { tangle, tidy } from '../src/model/tidy';
@@ -40,7 +40,15 @@ describe('tidy', () => {
 
   it('routes lines knocked off line by hand round the others', () => {
     const doc = system();
-    for (const seed of [3, 11, 29]) expect(tangle(tidy(nudged(doc, seed)))).toBeLessThanOrEqual(tangle(doc) * 1.25);
+    const bends = (d: Doc) => [...routeEdges(d).values()].reduce((sum, pts) => sum + Math.max(0, pts.length - 2), 0);
+    const crossed = (d: Doc) => [...crossings(d).values()].reduce((sum, m) => sum + [...m.values()].reduce((s, v) => s + v.length, 0), 0);
+    for (const seed of [3, 11, 29]) {
+      const knocked = nudged(doc, seed);
+      const after = tidy(knocked);
+      // No more crossings than the board drawn by hand, and a good share of the bends knocking it gave taken out again.
+      expect(crossed(after)).toBeLessThanOrEqual(crossed(doc));
+      expect(bends(after) - bends(doc)).toBeLessThanOrEqual(((bends(knocked) - bends(doc)) * 2) / 3);
+    }
   });
 
   it('lines up the labels of lines running side by side', () => {

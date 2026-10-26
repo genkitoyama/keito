@@ -393,7 +393,7 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
 }
 
 /** A step this short between two turns reads as a kink in the line, not a way round anything. */
-const JOG = 20;
+export const JOG = 20;
 
 /**
  * Take out the small steps a search leaves where a line edges a few pixels aside (to keep off
