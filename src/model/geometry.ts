@@ -116,12 +116,16 @@ export function simplify(pts: Pt[]): Pt[] {
   return out;
 }
 
-/** Orthogonal route between two anchors. `lane` shifts the shared middle segment so parallel cables don't overlap. */
-export function route(a: Anchor, b: Anchor, lane = 0): Pt[] {
+/**
+ * Orthogonal route between two anchors. `lane` shifts the shared middle segment so parallel cables
+ * don't overlap; `outward` is how much further out a line goes when it must go round (it runs past
+ * the ends, or loops below), distinct for lines leaving one box so they lie side by side.
+ */
+export function route(a: Anchor, b: Anchor, lane = 0, outward = Math.abs(lane)): Pt[] {
   const ha = isH(a.dir);
   const hb = isH(b.dir);
-  if (!ha && !hb) return route(flip(a), flip(b), lane).map(flipPt);
-  if (!ha && hb) return route(b, a, lane).reverse();
+  if (!ha && !hb) return route(flip(a), flip(b), lane, outward).map(flipPt);
+  if (!ha && hb) return route(b, a, lane, outward).reverse();
   const s1 = stub(a);
   const s2 = stub(b);
   const pts: Pt[] = [a];
@@ -138,11 +142,11 @@ export function route(a: Anchor, b: Anchor, lane = 0): Pt[] {
         let my: number;
         if (aB + 2 * GRID < b.rect.y) my = (aB + b.rect.y) / 2;
         else if (bB + 2 * GRID < a.rect.y) my = (bB + a.rect.y) / 2;
-        else my = Math.max(aB, bB) + 24 + Math.abs(lane);
+        else my = Math.max(aB, bB) + 24 + outward;
         pts.push(s1, { x: s1.x, y: my }, { x: s2.x, y: my }, s2);
       }
     } else {
-      const ex = a.dir === 'right' ? Math.max(s1.x, s2.x) + Math.abs(lane) : Math.min(s1.x, s2.x) - Math.abs(lane);
+      const ex = a.dir === 'right' ? Math.max(s1.x, s2.x) + outward : Math.min(s1.x, s2.x) - outward;
       pts.push({ x: ex, y: a.y }, { x: ex, y: b.y });
     }
   } else {
@@ -251,6 +255,7 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
   for (const { e, index, a, b, pa, pb, ea, eb, tagged } of drawn) {
     const siblings = bySource.get(e.from.node)!;
     const lane = (siblings.indexOf(e) - (siblings.length - 1) / 2) * 8;
+    const outward = siblings.indexOf(e) * 8;
     if (manual(e) && !tagged) {
       // Hand-placed bends: the first and last follow their end so the outer segments stay square.
       const mid = e.route!.map((p) => ({ x: p.x, y: p.y }));
@@ -282,7 +287,7 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
       out.set(e.id, selfLoop(ea));
       continue;
     }
-    let pts = route(ea, to, lane);
+    let pts = route(ea, to, lane, outward);
     // The plain elbow would cut through a node: find a way around. Lines drawn as tags have no run to fix.
     if (a !== b && !tagged && collides(pts, obstacles)) {
       // Neighbouring lines keep slightly different clearances so they don't sit on top of each other.

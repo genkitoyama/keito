@@ -164,7 +164,7 @@ function overLines(segs: Seg[], flat: boolean, at: number, lo: number, hi: numbe
   return cost;
 }
 
-function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: Seg[] = []): Pt[] | null {
+function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: Seg[] = [], reach = Infinity): Pt[] | null {
   const out = (p: Anchor): Pt => ({ x: p.x + STEP[INDEX[p.dir]][0] * STUB, y: p.y + STEP[INDEX[p.dir]][1] * STUB });
   const s = out(a);
   const t = out(b);
@@ -172,11 +172,13 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
   // An end hemmed in by a neighbour leaves no room at this margin.
   if (inside(s.x, s.y) || inside(t.x, t.y)) return null;
 
-  // Grid lines: every inflated node edge, the two ends, and a lane around the outside.
-  // Kept clear of other lines, it may also run halfway between two box edges, out of their way.
+  // Grid lines: every inflated node edge within `reach` of the two ends, the ends themselves, and a
+  // lane around the outside. Kept clear of other lines, it may also run halfway between two box
+  // edges, out of their way. (Boxes beyond the reach still block: only fewer lines are tried.)
+  const near = (v: number[], p: number, q: number) => (reach === Infinity ? v : v.filter((x) => x >= Math.min(p, q) - reach && x <= Math.max(p, q) + reach));
   const halves = (v: number[]) => (segs.length ? [...v, ...v.slice(1).map((x, i) => (x + v[i]) / 2)].sort((p, q) => p - q) : v);
-  const xs = withLines(halves(xb), s.x, t.x);
-  const ys = withLines(halves(yb), s.y, t.y);
+  const xs = withLines(halves(near(xb, s.x, t.x)), s.x, t.x);
+  const ys = withLines(halves(near(yb, s.y, t.y)), s.y, t.y);
   const W = xs.length;
   const H = ys.length;
   if (W * H > 40000) return null;
@@ -269,17 +271,27 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
  */
 export function routeAround(a: Anchor, b: Anchor, obstacles: Rect[], margin: number): Pt[] | null {
   for (const m of [margin, 6, 2]) {
-    const pts = search(a, b, obstacles, m);
-    if (pts) return pts;
+    for (const reach of REACHES) {
+      const pts = search(a, b, obstacles, m, [], reach);
+      if (pts) return pts;
+    }
   }
   return null;
 }
 
+/**
+ * How far round the two ends a search looks, widening when nothing is found: on a large board the
+ * whole grid is too big to search (and would be refused), while a way round is nearly always close.
+ */
+const REACHES = [400, 1500, Infinity];
+
 /** The way round the obstacles that crosses and runs over the lines in `segs` least, or null. */
 export function routeClear(a: Anchor, b: Anchor, obstacles: Rect[], segs: Seg[]): Pt[] | null {
   for (const m of [12, 6]) {
-    const pts = search(a, b, obstacles, m, segs);
-    if (pts) return pts;
+    for (const reach of REACHES) {
+      const pts = search(a, b, obstacles, m, segs, reach);
+      if (pts) return pts;
+    }
   }
   return null;
 }
