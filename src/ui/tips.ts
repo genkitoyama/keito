@@ -12,6 +12,29 @@ function hide(): void {
   shown = null;
 }
 
+/** Room kept between a tip and the edge of the window. */
+const EDGE = 8;
+let ctx: CanvasRenderingContext2D | null | undefined;
+
+/**
+ * A tip is centred over its element; by a window's edge (a button at the end of the right-hand
+ * panel) it is slid in, so all of it shows. (Tips set beside their element, as in the toolbar,
+ * do not take the slide.)
+ */
+function keepInside(el: Element): void {
+  const tip = getComputedStyle(el, '::after');
+  (el as HTMLElement).style.removeProperty('--tip-shift');
+  if (ctx === undefined) ctx = document.createElement('canvas').getContext('2d');
+  if (!ctx) return;
+  ctx.font = `${tip.fontWeight} ${tip.fontSize} ${tip.fontFamily}`;
+  const width = ctx.measureText(el.getAttribute('data-tip') ?? '').width + parseFloat(tip.paddingLeft) + parseFloat(tip.paddingRight);
+  const box = el.getBoundingClientRect();
+  const left = box.left + box.width / 2 - width / 2;
+  const right = left + width;
+  const shift = right > window.innerWidth - EDGE ? window.innerWidth - EDGE - right : left < EDGE ? EDGE - left : 0;
+  if (shift) (el as HTMLElement).style.setProperty('--tip-shift', `${Math.round(shift)}px`);
+}
+
 document.addEventListener(
   'mousemove',
   (e) => {
@@ -19,6 +42,7 @@ document.addEventListener(
     if (el !== shown) {
       hide();
       shown = el;
+      if (el) keepInside(el);
       el?.setAttribute('data-tip-on', '');
     }
     clearTimeout(timer);

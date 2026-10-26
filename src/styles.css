@@ -471,7 +471,8 @@ textarea:focus {
   position: absolute;
   left: 50%;
   bottom: calc(100% + 8px);
-  transform: translateX(-50%);
+  /* Slid in from a window's edge by tips.ts, so none is cut off. */
+  transform: translateX(calc(-50% + var(--tip-shift, 0px)));
   padding: 5px 8px;
   border-radius: 6px;
   background: #0f172a;
