@@ -300,3 +300,28 @@ cables:
     expect(names(tidy(doc))).toEqual(['Webhook', 'HTTPS']);
   });
 });
+
+describe('a line between boxes one above the other', () => {
+  const doc = () =>
+    fromYaml(
+      `kind: software
+devices:
+  - { id: db, name: DB, out: [Copy:tcp], pos: [0, 0] }
+  - { id: replica, name: Replica, in: [Copy:tcp], pos: [0, 200] }
+cables:
+  - { id: copy, from: db.Copy, to: replica.Copy, type: tcp }
+`,
+      blank('stacked'),
+    );
+  const bends = (d: Doc) => routeEdges(d).get('copy')!.length - 2;
+
+  it('turns round in a U, its ports on one side, where ports may move', () => {
+    const before = doc();
+    // Out of the right of one and into the left of the other, it winds round in an S.
+    expect(bends(before)).toBe(4);
+    const after = tidy(before);
+    expect(bends(after)).toBe(2);
+    const sides = after.nodes.map((n) => (n.type === 'device' ? n.ports[0].side : null));
+    expect(sides[0]).toBe(sides[1]);
+  });
+});
