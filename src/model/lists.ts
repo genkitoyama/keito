@@ -213,6 +213,8 @@ export function ipIssues(doc: Doc): Map<string, 'dup' | 'bad'> {
       const ok = parts.length === 4 && parts.every((p) => Number(p) <= 255 && p.length <= 3) && (v4[2] == null || Number(v4[2]) <= 32);
       if (!ok) out.set(n.id, 'bad');
     }
+    // Only addresses can clash: words written in their place ("DHCP", "自動", "未定") never do.
+    if (!v4 && !ip.includes(':')) continue;
     // A prefix length does not make it another address: 10.0.0.5/24 and 10.0.0.5 clash.
     const key = ip.replace(/\/\d+$/, '').toLowerCase();
     owners.set(key, [...(owners.get(key) ?? []), n.id]);
@@ -525,13 +527,21 @@ export function powerLoads(doc: Doc): Map<string, PowerLoad> {
   const hit = loadCache.get(doc);
   if (hit) return hit;
   const byId = new Map(doc.nodes.map((n) => [n.id, n]));
+  const power = doc.edges.filter((e) => e.signal === 'power');
+  // A line into a junction dot goes on to everything the dot's lines lead to.
+  const beyond = (id: string, seen: Set<string>): string[] => {
+    if (byId.get(id)?.type !== 'junction') return byId.has(id) ? [id] : [];
+    if (seen.has(id)) return [];
+    seen.add(id);
+    return power.filter((e) => e.from.node === id || e.to.node === id).flatMap((e) => beyond(e.from.node === id ? e.to.node : e.from.node, seen));
+  };
   // What each device feeds directly, in the order the lines were drawn.
   const feeds = new Map<string, string[]>();
-  for (const e of doc.edges) {
-    if (e.signal !== 'power' || byId.get(e.from.node)?.type !== 'device' || !byId.has(e.to.node)) continue;
+  for (const e of power) {
+    if (byId.get(e.from.node)?.type !== 'device') continue;
     const list = feeds.get(e.from.node) ?? [];
-    if (!list.includes(e.to.node)) list.push(e.to.node);
-    feeds.set(e.from.node, list);
+    for (const to of beyond(e.to.node, new Set())) if (to !== e.from.node && !list.includes(to)) list.push(to);
+    if (list.length) feeds.set(e.from.node, list);
   }
   const out = new Map<string, PowerLoad>();
   for (const [id, ids] of feeds) {

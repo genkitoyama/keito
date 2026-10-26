@@ -132,14 +132,21 @@ async function input(file: string | undefined): Promise<string> {
  * Write a changed board. The board as it was goes into its history first (unless the history
  * already ends with it), so the change can always be undone; a board changed meanwhile is left alone.
  */
+/**
+ * The board's state before a change, kept in its history (unless the last state kept is the same):
+ * the history to write with the change, and the drawings it thins out, to remove once written.
+ */
+function keepBefore(before: Doc, extra: Partial<Revision>): { history: Revision[]; drop: string[] } {
+  const history = before.revisions ?? [];
+  if (history.at(-1)?.hash === fingerprint(before)) return { history, drop: [] };
+  const entry = entryFor(before, null, randomId(), { ...extra, summary: undefined });
+  boards.writeState(before.id, entry.id, drawingOf(before));
+  const { keep, drop } = thin([...history, entry]);
+  return { history: keep, drop };
+}
+
 function save(before: Doc, next: Doc, serial: number, extra: Partial<Revision> = { source: 'cli' }): number {
-  let history = before.revisions ?? [];
-  let drop: string[] = [];
-  if (history.at(-1)?.hash !== fingerprint(before)) {
-    const entry = entryFor(before, null, randomId(), { ...extra, summary: undefined });
-    boards.writeState(before.id, entry.id, drawingOf(before));
-    ({ keep: history, drop } = thin([...history, entry]));
-  }
+  const { history, drop } = keepBefore(before, extra);
   const done = commit({ ...next, revisions: history }, serial);
   // Drawings thinned out go only once the board no longer lists them: a refused write keeps them all.
   for (const id of drop) boards.removeState(before.id, id);
@@ -171,7 +178,10 @@ function shareOut(doc: Doc): void {
     const next = pull(other, mine);
     if (next === other) continue;
     try {
-      boards.write(next as never, readSerial(raw?.serial));
+      // Changed from another board, it keeps its state before in its own history too.
+      const { history, drop } = keepBefore(other, { source: 'cli' });
+      boards.write({ ...next, revisions: history } as never, readSerial(raw?.serial));
+      for (const id of drop) boards.removeState(other.id, id);
       process.stderr.write(`共有している項目を「${other.meta.title}」にも反映しました\n`);
     } catch (e) {
       process.stderr.write(`「${other.meta.title}」には反映できませんでした（開いたときに取り込まれます）: ${e instanceof Error ? e.message : e}\n`);
@@ -256,6 +266,8 @@ async function main(): Promise<void> {
       } catch (e) {
         fail(`YAML を反映できませんでした: ${e instanceof Error ? e.message : e}`);
       }
+      // Nothing changed: nothing written, nothing added to the history.
+      if (fingerprint(next) === fingerprint(fitLegends(current))) return void process.stderr.write('変更はありません（保存していません）\n');
       // Shared things edited in the YAML are the newest of them now, and go to the project's other boards.
       next = stamp(current, next, Date.now());
       save(doc, next, serial);
@@ -317,7 +329,10 @@ async function main(): Promise<void> {
         const { blob, report } = await updateWorkbook(doc, bytes(previous));
         const file = path.resolve(out ?? previous);
         // Written over the previous file: it is kept beside it first, should the update be unwanted.
-        const backup = file === path.resolve(previous) ? `${file.replace(/\.xlsx$/i, '')}.bak.xlsx` : null;
+        // A backup from an earlier update is kept too: this one takes a dated name beside it.
+        const base = file.replace(/\.xlsx$/i, '');
+        const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 13);
+        const backup = file !== path.resolve(previous) ? null : fs.existsSync(`${base}.bak.xlsx`) ? `${base}.bak-${stamp}.xlsx` : `${base}.bak.xlsx`;
         if (backup) fs.copyFileSync(file, backup);
         fs.writeFileSync(file, Buffer.from(await blob.arrayBuffer()));
         const kept = [report.extra.length && `引き継いだ列: ${report.extra.join('・')}`, report.manual && `手入力の行 ${report.manual}`, report.sheets.length && `残したシート: ${report.sheets.join('・')}`, report.renamed.length && `名前を変えたシート: ${report.renamed.join('・')}`].filter(Boolean);

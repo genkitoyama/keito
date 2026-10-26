@@ -245,6 +245,7 @@ export function toYaml(doc: Doc): string {
     out.flows = flows.map((e) => {
       const o: Obj = { id: e.id, from: refOf(doc, e.from), to: refOf(doc, e.to), ...sidesOf(e) };
       put(o, 'label', e.label);
+      put(o, 'note', e.note);
       if (e.stacked != null) o.stacked = e.stacked;
       if (e.fontSize) o.fontSize = e.fontSize;
       if (e.arrow !== 'end') o.arrow = e.arrow;
@@ -388,7 +389,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
       id,
       type: 'device',
       ...place(id, v.pos),
-      w: typeof v.width === 'number' ? v.width : old?.type === 'device' ? old.w : 180,
+      w: typeof v.width === 'number' && isFinite(v.width) && v.width >= 40 ? Math.min(v.width, 4000) : old?.type === 'device' ? old.w : 180,
       h: 0,
       text: str(v.name, preset?.name ?? id),
       maker: str(v.maker),
@@ -447,7 +448,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (!isObj(v)) throw new Error(`legends[${i}]: マップではありません`);
     const id = claim(v.id, 'legend', `legends[${i}]`);
     const names = isObj(v.names) ? Object.fromEntries(Object.entries(v.names).map(([k, name]) => [k.toLowerCase(), str(name)]).filter(([, name]) => name)) : {};
-    nodes.push({ id, type: 'legend', ...place(id, v.pos), w: typeof v.width === 'number' ? v.width : 200, h: 64, text: typeof v.title === 'string' ? v.title : '凡例', names: Object.keys(names).length ? names : undefined, hidden: arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean).length ? arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean) : undefined, devices: v.devices === true || undefined });
+    nodes.push({ id, type: 'legend', ...place(id, v.pos), w: typeof v.width === 'number' && isFinite(v.width) && v.width >= 120 ? Math.min(v.width, 4000) : 200, h: 64, text: typeof v.title === 'string' ? v.title : '凡例', names: Object.keys(names).length ? names : undefined, hidden: arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean).length ? arr(v.hidden).map((c) => str(c).toLowerCase()).filter(Boolean) : undefined, devices: v.devices === true || undefined });
   });
 
   list(root.sequences, 'sequences').forEach((v, i) => {
@@ -529,6 +530,8 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     const where = `cables[${i}]`;
     const typed = str(v.type).normalize('NFKC').trim().toLowerCase();
     if (typed && !isSignal(typed)) throw new Error(`${where}: 種別 "${typed}" は使えません`);
+    // A flow arrow is not a cable: it has no length or ID, and is listed under flows.
+    if (typed === 'flow') throw new Error(`${where}: フローの矢印（type: flow）は cables ではなく flows に書いてください`);
     // The old video types (type: sdi) are 映像, and the standard they named names any port added.
     const named = VIDEO_STANDARDS[typed] as string | undefined;
     const given = typed && currentSignal(typed);
@@ -575,6 +578,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     const e = makeEdge(taken, resolve(v.from, where, 'right', 'other'), resolve(v.to, where, 'left', 'other'), 'flow');
     keepId(e, v);
     e.label = str(v.label);
+    e.note = str(v.note);
     if (typeof v.stacked === 'boolean') e.stacked = v.stacked;
     if (typeof v.fontSize === 'number' && v.fontSize > 0) e.fontSize = v.fontSize;
     if (v.arrow === 'none' || v.arrow === 'both') e.arrow = v.arrow;
@@ -604,7 +608,8 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   const pendingAreas = new Set<string>();
   list(root.areas, 'areas').forEach((v) => {
     const name = isObj(v) ? str(v.name) : str(v);
-    if (!name) return;
+    // An area with no name has nothing to be found by, but kept where it was drawn it stays.
+    if (!name && !(isObj(v) && nums(v.rect, 4))) return;
     areaLook.set(name, {
       color: isObj(v) && str(v.color) in PALETTE ? (str(v.color) as ColorKey) : undefined,
       fontSize: isObj(v) && typeof v.fontSize === 'number' ? v.fontSize : undefined,
@@ -650,5 +655,10 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   // Revision history is not part of the text form; it stays with the board.
   // A kind known now, or an old one that is a free board now (see boardKind); anything else keeps the board's.
   const kind = typeof root.kind === 'string' && (Object.hasOwn(KINDS, root.kind) || ['layout', 'screen', 'flow'].includes(root.kind)) ? boardKind(root.kind) : prev.kind;
-  return { version: 1, id: prev.id, kind, meta, nodes: [...frames, ...nodes], edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, labelSize: typeof root.labelSize === 'number' && root.labelSize > 0 ? root.labelSize : prev.labelSize, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
+  // Drawn in the order they were before (what lies over what): the YAML lists them by kind. New
+  // ones go on top, a new area at the back.
+  const was = new Map(prev.nodes.map((n, i) => [n.id, i]));
+  const rank = (n: Node) => was.get(n.id) ?? (n.type === 'frame' ? -1 : Infinity);
+  const ordered = [...frames, ...nodes].map((n, i) => ({ n, i })).sort((a, b) => rank(a.n) - rank(b.n) || a.i - b.i).map((x) => x.n);
+  return { version: 1, id: prev.id, kind, meta, nodes: ordered, edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, labelSize: typeof root.labelSize === 'number' && root.labelSize > 0 ? root.labelSize : prev.labelSize, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
 }

@@ -126,3 +126,22 @@ cables:
     expect(powerLoads(doc).get('tap')?.watts).toBe(300);
   });
 });
+
+describe('YAML keeps what is less often written', () => {
+  it('keeps the order things are drawn in, a flow note and an area with no name', () => {
+    const d = sample();
+    const sticky = { id: 'memo', type: 'sticky' as const, x: 0, y: 0, w: 100, h: 60, text: 'メモ', color: 'yellow' as const };
+    const area = { id: 'a0', type: 'frame' as const, x: -500, y: -500, w: 200, h: 100, text: '' };
+    const [x, y] = d.nodes.filter((n) => n.type === 'device');
+    const flow = { id: 'f1', from: { node: x.id }, to: { node: y.id }, signal: 'flow', label: '', note: '確認する', arrow: 'end' as const };
+    // The note over everything, drawn last.
+    const doc = { ...d, nodes: [area, ...d.nodes, sticky], edges: [...d.edges, flow] };
+    const back = fromYaml(toYaml(doc), doc);
+    expect(back.nodes.map((n) => n.id)).toEqual(doc.nodes.map((n) => n.id));
+    expect(back.edges.find((e) => e.id === 'f1')?.note).toBe('確認する');
+  });
+
+  it('refuses a flow arrow written among the cables', () => {
+    expect(() => fromYaml('title: t\nshapes:\n  - { id: a, text: A }\n  - { id: b, text: B }\ncables:\n  - { from: a, to: b, type: flow }\n', blank())).toThrow(/flows に/);
+  });
+});
