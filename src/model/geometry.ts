@@ -26,7 +26,20 @@ export interface Anchor extends Pt {
 
 export const portsOn = (d: DeviceNode, side: PortSide): Port[] => d.ports.filter((p) => p.side === side);
 
+/** Sizes as worked out, per node: nodes are never changed in place, so a node keeps its size. */
+const sizes = new WeakMap<Node, { w: number; h: number }>();
+
 export function nodeSize(n: Node): { w: number; h: number } {
+  if (n.type !== 'device' && n.type !== 'sequence') return { w: n.w, h: n.h };
+  const hit = sizes.get(n);
+  if (hit) return hit;
+  const size = measuredSize(n);
+  sizes.set(n, size);
+  return size;
+}
+
+/** A device's height follows its name and ports, a sequence diagram's its messages. */
+function measuredSize(n: Node): { w: number; h: number } {
   if (n.type === 'device') {
     const rows = Math.max(1, portsOn(n, 'left').length, portsOn(n, 'right').length);
     return { w: n.w, h: deviceHead(n) + rows * DEV.row + DEV.pad };

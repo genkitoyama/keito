@@ -380,10 +380,16 @@ export function lanes(runs: Run[], obstacles: Rect[], frames: Rect[]): Map<strin
     const width = step * (list.length - 1);
     const mid = (lo + hi) / 2;
     const path = (u: Run, x: number): Pt[] => [u.l, { x, y: u.l.y }, { x, y: u.r.y }, u.r];
+    // Only the boxes these lines could pass are looked at, however large the board.
+    const x0 = Math.min(...list.map((u) => u.l.x));
+    const x1 = Math.max(...list.map((u) => u.r.x));
+    const y0 = Math.min(...list.flatMap((u) => [u.l.y, u.r.y]));
+    const y1 = Math.max(...list.flatMap((u) => [u.l.y, u.r.y]));
+    const near = obstacles.filter((r) => r.x <= x1 && r.x + r.w >= x0 && r.y <= y1 && r.y + r.h >= y0);
     let best: { score: number[]; first: number } | null = null;
     for (let c = Math.ceil((lo + width / 2) / 10) * 10; c <= hi - width / 2; c += 10) {
       const first = c - width / 2;
-      const blocked = order.some((u, k) => collides(path(u, first + k * step), obstacles));
+      const blocked = order.some((u, k) => collides(path(u, first + k * step), near));
       // Bends read best in the open corridor between areas rather than inside one or on its border.
       const framed = order.reduce((sum, u, k) => {
         const p = { x: first + k * step, y: (u.l.y + u.r.y) / 2 };

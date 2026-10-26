@@ -194,12 +194,22 @@ const overlap = (a: Rect, b: Rect) => a.x < b.x + b.w - 1 && b.x < a.x + a.w - 1
 
 /** The first pair of things that overlap now but did not before, or null when the layout is clean. */
 function collision(doc: Doc, nodes: Map<string, Node>): [Node, Node] | null {
-  for (const [i, a] of doc.nodes.entries()) {
-    for (const b of doc.nodes.slice(i + 1)) {
-      if (overlap(nodeRect(nodes.get(a.id)!), nodeRect(nodes.get(b.id)!)) && !overlap(nodeRect(a), nodeRect(b))) return [a, b];
+  const now = doc.nodes.map((n) => nodeRect(nodes.get(n.id)!));
+  // Swept left to right, so only boxes that reach each other across are compared; the pair given
+  // is the first in board order, as a plain loop over every pair would give.
+  const order = now.map((_, i) => i).sort((p, q) => now[p].x - now[q].x);
+  let first: [number, number] | null = null;
+  for (let k = 0; k < order.length; k++) {
+    const i = order[k];
+    for (let m = k + 1; m < order.length && now[order[m]].x < now[i].x + now[i].w - 1; m++) {
+      const j = order[m];
+      if (!overlap(now[i], now[j])) continue;
+      const [a, b] = i < j ? [i, j] : [j, i];
+      if (first && (a > first[0] || (a === first[0] && b >= first[1]))) continue;
+      if (!overlap(nodeRect(doc.nodes[a]), nodeRect(doc.nodes[b]))) first = [a, b];
     }
   }
-  return null;
+  return first && [doc.nodes[first[0]], doc.nodes[first[1]]];
 }
 
 /**
@@ -212,13 +222,22 @@ export function tangle(doc: Doc): number {
   return score;
 }
 
+/** A straight piece of a line: across (`flat`) at y = `at`, or down at x = `at`, from `lo` to `hi`. */
+interface Run {
+  id: string;
+  flat: boolean;
+  at: number;
+  lo: number;
+  hi: number;
+}
+
 /** The tangle laid at each line's door: its own bends and boxes, and half of every crossing or overlap it is in. */
 function tangles(doc: Doc): Map<string, number> {
   const routes = routeEdges(doc);
   const by = new Map<string, number>();
   const add = (id: string, v: number) => by.set(id, (by.get(id) ?? 0) + v);
   const boxes = doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'junction' && !isUnderlay(n)).map((n) => ({ id: n.id, r: nodeRect(n) }));
-  const runs: { id: string; flat: boolean; at: number; lo: number; hi: number }[] = [];
+  const runs: Run[] = [];
   for (const e of doc.edges) {
     const pts = routes.get(e.id);
     if (!pts || isTagged(doc, e)) continue;
@@ -232,21 +251,41 @@ function tangles(doc: Doc): Map<string, number> {
       else if (Math.abs(a.x - b.x) < 0.5) runs.push({ id: e.id, flat: false, at: a.x, lo: seg.y, hi: seg.y + seg.h });
     }
   }
-  for (const [i, p] of runs.entries()) {
-    for (const q of runs.slice(i + 1)) {
-      if (p.id === q.id) continue;
-      let v = 0;
-      if (p.flat !== q.flat) {
-        // A crossing anywhere along both, short of where either line ends or turns.
-        const [h, w] = p.flat ? [p, q] : [q, p];
-        if (w.at > h.lo + 1 && w.at < h.hi - 1 && h.at > w.lo + 1 && h.at < w.hi - 1) v = 100;
-      } else if (Math.abs(p.at - q.at) < 3) {
+  const pair = (p: Run, q: Run, v: number) => {
+    add(p.id, v / 2);
+    add(q.id, v / 2);
+  };
+  // Runs across and runs down, each in order of where they lie, so only the ones that can meet are
+  // compared (a board of a few hundred lines has thousands of runs).
+  const flat = runs.filter((r) => r.flat).sort((p, q) => p.at - q.at);
+  const tall = runs.filter((r) => !r.flat).sort((p, q) => p.at - q.at);
+  const from = (list: Run[], at: number) => {
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const m = (lo + hi) >> 1;
+      if (list[m].at < at) lo = m + 1;
+      else hi = m;
+    }
+    return lo;
+  };
+  // A crossing anywhere along both, short of where either line ends or turns.
+  for (const w of tall) {
+    for (let k = from(flat, w.lo + 1); k < flat.length && flat[k].at < w.hi - 1; k++) {
+      const h = flat[k];
+      if (h.id !== w.id && h.at > w.lo + 1 && w.at > h.lo + 1 && w.at < h.hi - 1) pair(h, w, 100);
+    }
+  }
+  // Two lines on top of each other for a stretch.
+  for (const list of [flat, tall]) {
+    for (let i = 0; i < list.length; i++) {
+      for (let j = i + 1; j < list.length && list[j].at - list[i].at < 3; j++) {
+        const p = list[i];
+        const q = list[j];
+        if (p.id === q.id) continue;
         const shared = Math.min(p.hi, q.hi) - Math.max(p.lo, q.lo);
-        if (shared > 4) v = shared / 4;
+        if (shared > 4) pair(p, q, shared / 4);
       }
-      if (!v) continue;
-      add(p.id, v / 2);
-      add(q.id, v / 2);
     }
   }
   return by;
