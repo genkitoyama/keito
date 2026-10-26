@@ -1,6 +1,7 @@
 import { isTagged, isUnderlay, nodeRect, routeEdges } from './geometry';
 import { cableIds } from './lists';
-import { signalOf } from './signals';
+import { lineColor, lineDashed } from './lineColor';
+import { deviceTint, signalOf } from './signals';
 import type { Doc, Rect } from './types';
 
 /** One thing on the board that matches: what it is, what it is called, and where the words were found. */
@@ -11,6 +12,8 @@ export interface Hit {
   /** The field the words were found in, and its value as written. */
   field: string;
   value: string;
+  /** How it looks on the board, for a small sample beside it: a line's colour, a device's tint. */
+  look?: { line: string; dashed: boolean } | { fill: string; stroke: string };
 }
 
 /**
@@ -24,6 +27,31 @@ export const fold = (s: string): string =>
     .replace(/[\s\-_./・:：‐−–—]/g, '');
 
 const oneLine = (s: string): string => s.replace(/\s*\n\s*/g, ' ').trim();
+
+/**
+ * Where the query falls in a text as written, for marking it: compared as fold() compares, so
+ * "lan03" marks "LAN-03" whole. Null when it is not there.
+ */
+export function matchRange(text: string, query: string): [number, number] | null {
+  const q = fold(query);
+  if (!q) return null;
+  // The folded text, and for each of its characters the original one it came from.
+  let folded = '';
+  const from: number[] = [];
+  const chars = [...text];
+  let at = 0;
+  for (const ch of chars) {
+    for (const f of fold(ch)) {
+      folded += f;
+      from.push(at);
+    }
+    at += ch.length;
+  }
+  const i = folded.indexOf(q);
+  if (i < 0) return null;
+  const end = from[i + q.length - 1];
+  return [from[i], end + (text.codePointAt(end)! > 0xffff ? 2 : 1)];
+}
 
 /**
  * Everything on the board whose words hold the query, the best first: matches at the start of a
@@ -47,7 +75,7 @@ export function searchDoc(doc: Doc, query: string): Hit[] {
   for (const n of doc.nodes) {
     if (n.type === 'junction' || n.type === 'legend' || isUnderlay(n)) continue;
     const name = oneLine(n.text) || n.id;
-    if (n.type === 'device') tryFields({ id: n.id, kind: '機材', name }, [['名前', n.text], ['型番', n.model], ['メーカー', n.maker], ['IP', n.ip], ['ホスト名', n.host], ['カテゴリ', n.category], ['手配先', n.vendor], ['備考', n.note]], 0);
+    if (n.type === 'device') tryFields({ id: n.id, kind: '機材', name, look: deviceTint(n.color ?? 'gray') }, [['名前', n.text], ['型番', n.model], ['メーカー', n.maker], ['IP', n.ip], ['ホスト名', n.host], ['カテゴリ', n.category], ['手配先', n.vendor], ['備考', n.note]], 0);
     else if (n.type === 'frame') tryFields({ id: n.id, kind: 'エリア', name }, [['名前', n.text]], 2);
     else if (n.type === 'sticky') tryFields({ id: n.id, kind: '付箋', name }, [['文', n.text]], 3);
     else if (n.type === 'text') tryFields({ id: n.id, kind: 'テキスト', name }, [['文', n.text]], 3);
@@ -60,7 +88,7 @@ export function searchDoc(doc: Doc, query: string): Hit[] {
     const to = oneLine(nodes.get(e.to.node)?.text ?? '');
     const id = cable ? ids.get(e.id) : undefined;
     const name = [id, `${from} → ${to}`].filter(Boolean).join('  ');
-    tryFields({ id: e.id, kind: cable ? 'ケーブル' : '線', name }, [['ケーブル ID', id], ['品名・規格', e.spec], ['ラベル', e.label], ['型番', e.model], ['備考', e.note]], 1);
+    tryFields({ id: e.id, kind: cable ? 'ケーブル' : '線', name, look: { line: lineColor(doc, e), dashed: lineDashed(e) } }, [['ケーブル ID', id], ['品名・規格', e.spec], ['ラベル', e.label], ['型番', e.model], ['備考', e.note]], 1);
   }
   return scored.sort((a, b) => a.score - b.score).map((s) => s.hit);
 }

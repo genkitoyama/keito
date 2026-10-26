@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { type Hit, hitRect, searchDoc } from '../model/search';
+import { type Hit, hitRect, matchRange, searchDoc } from '../model/search';
 import { showRect, useStore } from '../model/store';
 import { composing } from './keys';
 
@@ -8,6 +8,35 @@ export const openSearch = (): void => void window.dispatchEvent(new Event('keito
 
 /** At most this many hits are listed; the count says how many more there are. */
 const LISTED = 50;
+
+/** A text with the words looked for marked. */
+function Marked({ text, query }: { text: string; query: string }) {
+  const r = matchRange(text, query);
+  if (!r) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, r[0])}
+      <mark>{text.slice(r[0], r[1])}</mark>
+      {text.slice(r[1])}
+    </>
+  );
+}
+
+/** A small sample of how the hit looks on the board: a line in its colour, a device's header, else a dot. */
+function Sample({ hit }: { hit: Hit }) {
+  const look = hit.look;
+  return (
+    <svg className="sample" width={22} height={14} viewBox="0 0 22 14" aria-hidden>
+      {look && 'line' in look ? (
+        <line x1={1} y1={7} x2={21} y2={7} stroke={look.line} strokeWidth={2.4} strokeDasharray={look.dashed ? '4 3' : undefined} strokeLinecap={look.dashed ? undefined : 'round'} />
+      ) : look ? (
+        <rect x={2} y={2} width={18} height={10} rx={2.5} fill={look.fill} stroke={look.stroke} strokeWidth={1.3} />
+      ) : (
+        <circle cx={11} cy={7} r={3} fill="#94a3b8" />
+      )}
+    </svg>
+  );
+}
 
 /**
  * Find things on the board as you type: devices by name, model, IP …, cables by ID or spec,
@@ -105,17 +134,39 @@ export function SearchBar() {
                 pick(h);
               }}
             >
-              <span className="kind">{h.kind}</span>
-              <span className="name">{h.name}</span>
-              {/* What matched, unless the name already shows it. */}
-              {!h.name.includes(h.value) && (
+              <Sample hit={h} />
+              <span className="text">
+                <span className="name">
+                  <Marked text={h.name} query={typed} />
+                </span>
                 <small>
-                  {h.field}: {h.value}
+                  {h.kind}
+                  {/* What matched, unless the name already shows it. */}
+                  {!h.name.includes(h.value) && (
+                    <>
+                      {' · '}
+                      {h.field} <Marked text={h.value} query={typed} />
+                    </>
+                  )}
                 </small>
-              )}
+              </span>
             </button>
           ))}
           {hits.length > LISTED && <p className="hint">ほか {hits.length - LISTED} 件。言葉を足すと絞り込めます。</p>}
+        </div>
+      )}
+      {typed.trim() && (
+        <div className="search-keys">
+          <span>
+            <kbd>↑</kbd>
+            <kbd>↓</kbd> 選ぶ
+          </span>
+          <span>
+            <kbd>Enter</kbd> 決める
+          </span>
+          <span>
+            <kbd>Esc</kbd> 閉じる
+          </span>
         </div>
       )}
     </div>

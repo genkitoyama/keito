@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fold, searchDoc } from '../src/model/search';
+import { fold, matchRange, searchDoc } from '../src/model/search';
 import { sampleBoards } from '../src/model/sample';
 
 const system = () => sampleBoards()[0];
@@ -29,5 +29,16 @@ describe('search on the board', () => {
 
   it('finds nothing for nothing', () => {
     expect(searchDoc(system(), '  ')).toEqual([]);
+  });
+});
+
+describe('marking what matched', () => {
+  it('marks the words as written, however they were typed', () => {
+    const text = 'LAN-03  PoEスイッチ → プロジェクター 1';
+    const at = matchRange(text, 'lan03')!;
+    expect(text.slice(...at)).toBe('LAN-03');
+    const pj = matchRange(text, 'ﾌﾟﾛｼﾞｪｸﾀｰ')!;
+    expect(text.slice(...pj)).toBe('プロジェクター');
+    expect(matchRange(text, 'hdmi')).toBeNull();
   });
 });
