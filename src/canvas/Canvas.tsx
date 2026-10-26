@@ -595,7 +595,7 @@ export function Canvas() {
       // The guide shows the moment the segment is back in line.
       setGuides(snapped ? (d.horizontal ? { y: v } : { x: v }) : {});
       const route = d.route.map((q, i) => (i !== d.seg && i !== d.seg + 1 ? q : d.horizontal ? { x: q.x, y: v } : { x: v, y: q.y }));
-      s.updateEdge(d.id, { route }, false);
+      s.updateEdge(d.id, { route, tidied: undefined }, false);
       return;
     }
     let dx = p.x - d.start.x;
@@ -722,7 +722,7 @@ export function Canvas() {
       const pts = d.moved ? routeEdges(s.doc).get(d.id) : undefined;
       if (pts) {
         const route = simplify(pts).slice(1, -1);
-        s.updateEdge(d.id, { route: route.length >= 2 ? route : undefined }, false);
+        s.updateEdge(d.id, { route: route.length >= 2 ? route : undefined, tidied: undefined }, false);
       }
       return;
     }

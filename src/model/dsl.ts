@@ -63,6 +63,7 @@ cables:
     length: 10             # m、任意
     label: メイン映像      # 任意
     labelAt: 0.3           # 任意。ラベルの位置（線の始点 0 〜 終点 1、既定は中央）
+    # route: [[x, y], …] は手で付けた曲がり。tidied: true が付いたものは整頓が付けた曲がりで、次の整頓で引き直される
     color: "#dc2626"       # 任意。この線だけの色。種別ごとの色は先頭に colors: { video: "#eab308" } と書く
     # 電源(type: power)は線を省略し、両端に接続先だけ表示する。tag: true/false でケーブルごとに切替、
     # 全体は先頭の powerTags: false で線表示に。to をポートなしの機材IDにすると空きポートを自動で使う
@@ -221,6 +222,7 @@ export function toYaml(doc: Doc): string {
       if (e.tag != null) o.tag = e.tag;
       if (e.labelAt != null) o.labelAt = e.labelAt;
       if (e.route?.length) o.route = e.route.map((p) => [r(p.x), r(p.y)]);
+      if (e.route?.length && e.tidied) o.tidied = true;
       return o;
     });
   }
@@ -256,6 +258,7 @@ export function toYaml(doc: Doc): string {
       if (e.dash != null) o.dash = e.dash;
       if (e.labelAt != null) o.labelAt = e.labelAt;
       if (e.route?.length) o.route = e.route.map((p) => [r(p.x), r(p.y)]);
+      if (e.route?.length && e.tidied) o.tidied = true;
       return o;
     });
   }
@@ -571,6 +574,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     // Hand-placed bends only make sense while the layout they were drawn for is kept.
     const bends = relayout ? [] : arr(v.route).map((p) => nums(p, 2)).filter((p): p is number[] => !!p);
     if (bends.length >= 2) e.route = bends.map(([x, y]) => ({ x, y }));
+    if (e.route && v.tidied === true) e.tidied = true;
     // Turned round: its bends and its label's place run the other way too.
     if (turned) {
       if (e.route) e.route.reverse();
@@ -595,6 +599,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     // Hand-placed bends, as for cables (and dropped the same way by a fresh layout).
     const bends = relayout ? [] : arr(v.route).map((p) => nums(p, 2)).filter((p): p is number[] => !!p);
     if (bends.length >= 2) e.route = bends.map(([x, y]) => ({ x, y }));
+    if (e.route && v.tidied === true) e.tidied = true;
     holdSides(e, v);
     edges.push(e);
   });

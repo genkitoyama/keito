@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { fromYaml } from '../src/model/dsl';
-import { crossingGaps, isTagged, nodeRect, routeEdges } from '../src/model/geometry';
-import { collides, routeAround } from '../src/model/router';
+import { crossingGaps, crossings, isTagged, nodeRect, routeEdges } from '../src/model/geometry';
+import { collides, routeAround, unjog } from '../src/model/router';
 import { sampleBoards } from '../src/model/sample';
 import { tangle, tidy } from '../src/model/tidy';
 import type { Doc, Rect } from '../src/model/types';
@@ -131,5 +131,83 @@ cables:
         blank('beside'),
       );
     expect(tangle(pair(7))).toBeGreaterThan(tangle(pair(40)));
+  });
+});
+
+describe('crossings drawn with hops', () => {
+  it('break the line down where a crossing is too near a corner for a hop', () => {
+    // The line across turns just past where the line down crosses it: no room for a hop there.
+    const doc = fromYaml(
+      `kind: software
+hops: true
+devices:
+  - { id: a, name: A, out: [OUT:http], pos: [0, 100] }
+  - { id: b, name: B, in: [IN:http], pos: [500, 200] }
+  - { id: c, name: C, out: [OUT:http], pos: [0, -60] }
+  - { id: d, name: D, in: [IN:http], pos: [500, 300] }
+cables:
+  - { id: across, from: a.OUT, to: b.IN, type: http, route: [[330, 137], [330, 237]] }
+  - { id: down, from: c.OUT, to: d.IN, type: http, route: [[325, -23], [325, 337]] }
+`,
+      blank('near'),
+    );
+    expect(crossings(doc).get('across')?.size ?? 0).toBe(0);
+    expect(crossingGaps(doc).get('down')).toHaveLength(1);
+  });
+});
+
+describe('lines merging into one port', () => {
+  it('turn in at one place and join there together', () => {
+    const doc = fromYaml(
+      `kind: software
+devices:
+  - { id: a, name: A, out: [OUT:http], pos: [0, 0] }
+  - { id: b, name: B, out: [OUT:http], pos: [0, 200] }
+  - { id: c, name: C, out: [OUT:http], pos: [0, 400] }
+  - { id: db, name: DB, in: [IN:tcp], pos: [600, 260] }
+cables:
+  - { id: p, from: a.OUT, to: db.IN, type: tcp }
+  - { id: q, from: b.OUT, to: db.IN, type: tcp }
+  - { id: r, from: c.OUT, to: db.IN, type: tcp }
+`,
+      blank('merge'),
+    );
+    const routes = routeEdges(doc);
+    // Where each line goes down (or up) to the port's height: the same for all three.
+    const turn = (id: string) => routes.get(id)!.find((p, i, pts) => i > 0 && Math.abs(p.x - pts[i - 1].x) < 0.5 && Math.abs(p.y - pts[i - 1].y) > 0.5)?.x;
+    expect(new Set(['p', 'q', 'r'].map(turn)).size).toBe(1);
+  });
+});
+
+describe('small steps in a line', () => {
+  const nested = () => fromYaml(fs.readFileSync(new URL('./fixtures/web-nested.yaml', import.meta.url), 'utf8'), blank('nested'));
+  it('are taken out where the run beside them can move across', () => {
+    const pts = [[0, 100], [18, 100], [18, 96], [12, 96], [12, 20], [200, 20], [200, 60], [218, 60]].map(([x, y]) => ({ x, y }));
+    expect(unjog(pts, []).map((p) => [p.x, p.y])).toEqual([[0, 100], [18, 100], [18, 20], [200, 20], [200, 60], [218, 60]]);
+  });
+
+  it('are left where taking them out would run through a box', () => {
+    const pts = [[0, 100], [18, 100], [18, 96], [12, 96], [12, 20], [200, 20], [200, 60], [218, 60]].map(([x, y]) => ({ x, y }));
+    expect(unjog(pts, [{ x: 14, y: 40, w: 30, h: 30 }])).toHaveLength(pts.length);
+  });
+
+  it('are not left by tidying', () => {
+    const doc = tidy(nested());
+    const routes = routeEdges(doc);
+    const steps = doc.edges.flatMap((e) => {
+      const pts = routes.get(e.id) ?? [];
+      return pts.slice(2, -1).flatMap((p, i) => (Math.abs(p.x - pts[i + 1].x) + Math.abs(p.y - pts[i + 1].y) < 14 ? [`${e.id}: ${JSON.stringify([pts[i + 1], p])}`] : []));
+    });
+    expect(steps).toEqual([]);
+  });
+});
+
+describe('crossings after tidying', () => {
+  const nested = () => fromYaml(fs.readFileSync(new URL('./fixtures/web-nested.yaml', import.meta.url), 'utf8'), blank('nested'));
+
+  it('nearly all have room for a hop, not just by a corner', () => {
+    // Before lines were kept off corners, sixteen crossings here had no room for a hop.
+    const doc = { ...tidy(nested()), hops: true };
+    expect([...crossingGaps(doc).values()].flat().length).toBeLessThanOrEqual(1);
   });
 });
