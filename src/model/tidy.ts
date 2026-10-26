@@ -279,6 +279,10 @@ function tangles(doc: Doc): Map<string, number> {
     const pts = routes.get(e.id);
     if (!pts || isTagged(doc, e)) continue;
     add(e.id, Math.max(0, pts.length - 2) * 2);
+    // A long way round costs too: some 500 px out of the way and back is worse than a crossing.
+    const length = pts.slice(1).reduce((sum, p, i) => sum + Math.abs(p.x - pts[i].x) + Math.abs(p.y - pts[i].y), 0);
+    const direct = Math.abs(pts[pts.length - 1].x - pts[0].x) + Math.abs(pts[pts.length - 1].y - pts[0].y);
+    add(e.id, Math.max(0, length - direct - DETOUR_FREE) / 5);
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i - 1];
       const b = pts[i];
@@ -313,8 +317,7 @@ function tangles(doc: Doc): Map<string, number> {
     }
   }
   // Two lines on top of each other for a stretch, or so close beside each other they read as one.
-  // On top of each other is worse than a crossing, unless the two meet at an end on purpose (lines
-  // merging into one port, or leaving one together).
+  // On top of each other is worse than a crossing.
   const ends = new Map<string, string[]>();
   for (const [id, pts] of routes) if (pts.length) ends.set(id, [pts[0], pts[pts.length - 1]].map((p) => `${Math.round(p.x)},${Math.round(p.y)}`));
   const meet = (a: string, b: string) => ends.get(a)?.some((k) => ends.get(b)?.includes(k)) ?? false;
@@ -326,13 +329,18 @@ function tangles(doc: Doc): Map<string, number> {
         if (p.id === q.id) continue;
         const shared = Math.min(p.hi, q.hi) - Math.max(p.lo, q.lo);
         if (shared <= 4) continue;
+        // Lines that meet at an end run in (or out) together on purpose: that is no tangle.
+        if (meet(p.id, q.id)) continue;
         if (q.at - p.at >= 3) pair(p, q, shared / 10);
-        else pair(p, q, meet(p.id, q.id) ? shared / 4 : 200 + shared * 2);
+        else pair(p, q, 200 + shared * 2);
       }
     }
   }
   return by;
 }
+
+/** How far out of its way a line may go (round the back of a box, out of a port and in) at no cost. */
+const DETOUR_FREE = 80;
 
 /** Lines closer side by side than this, running along together, read as one. */
 const BESIDE = 9;

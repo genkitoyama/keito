@@ -197,3 +197,29 @@ cables:
     expect(onTop(tidy(board()))).toBe(0);
   });
 });
+
+describe('a line crossing another', () => {
+  // A line from below merges into one across; a websocket line from beside crosses its way up.
+  const board = () =>
+    fromYaml(
+      `kind: software
+protocolLabels: false
+devices:
+  - { id: browser, name: ブラウザ, out: [HTTPS:http, WSS:websocket], pos: [0, 0] }
+  - { id: app, name: アプリ, out: [HTTPS:http], pos: [0, 160] }
+  - { id: cdn, name: CDN, in: [HTTPS:http], pos: [330, 0] }
+  - { id: lb, name: LB, in: [WSS:websocket], pos: [700, 0] }
+cables:
+  - { id: page, from: browser.HTTPS, to: cdn.HTTPS, type: http }
+  - { id: api, from: app.HTTPS, to: cdn.HTTPS, type: http }
+  - { id: ws, from: browser.WSS, to: lb.WSS, type: websocket }
+`,
+      blank('detour'),
+    );
+  const length = (pts: { x: number; y: number }[]) => pts.slice(1).reduce((sum, p, i) => sum + Math.abs(p.x - pts[i].x) + Math.abs(p.y - pts[i].y), 0);
+
+  it('keeps crossing it rather than go far out of its way round the boxes', () => {
+    const before = length(routeEdges(board()).get('api')!);
+    expect(length(routeEdges(tidy(board())).get('api')!)).toBeLessThanOrEqual(before + 80);
+  });
+});
