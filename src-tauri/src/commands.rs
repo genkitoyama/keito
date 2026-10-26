@@ -319,8 +319,10 @@ struct BoardNews {
 pub fn watch(app: AppHandle) {
     use notify::{RecursiveMode, Watcher};
     let boards = app.state::<Boards>();
-    let root = boards.store().root.clone();
     let mine = boards.watching.fetch_add(1, Ordering::SeqCst) + 1;
+    // The system reports changes by real path: a folder reached through a link (or named in another
+    // letter case) is watched and matched as what it really is, or no change would ever be heard.
+    let Ok(root) = boards.store().root.canonicalize() else { return };
     if !root.is_dir() {
         return;
     }
