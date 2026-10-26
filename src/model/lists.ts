@@ -599,6 +599,23 @@ export function powerTable(doc: Doc): Table {
   return { title: '電源系統', head: ['電源元', '接続機器', '消費電力(W)', '容量(W)', '判定'], widths: [22, 28, 14, 12, 24], rows, refs, rowClass, numeric: ['消費電力(W)', '容量(W)'] };
 }
 
+/**
+ * The rows shaded to help the eye along a wide row, in the order they are shown: every other
+ * row, or every other group where rows come in groups closed by a sum (the power list), so a
+ * group reads as one. The total row stands apart on its own.
+ */
+export function bands(t: Table, order: number[] = t.rows.map((_, i) => i)): Set<number> {
+  const grouped = !!t.rowClass?.some((c) => c?.startsWith('subtotal'));
+  const out = new Set<number>();
+  let n = 0;
+  for (const i of order) {
+    if (t.total && i === t.rows.length - 1) continue;
+    if (n % 2 === 1) out.add(i);
+    if (!grouped || t.rowClass?.[i]?.startsWith('subtotal')) n++;
+  }
+  return out;
+}
+
 /** The table without the columns nothing is written in, for print: an unused "URL" or "備考" only costs width. */
 export function compact(t: Table): Table {
   const body = t.total ? t.rows.slice(0, -1) : t.rows;

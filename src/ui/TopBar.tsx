@@ -1,3 +1,4 @@
+import { ProjectMenu } from './ProjectMenu';
 import { fromYaml } from '../model/dsl';
 import { randomId } from '../model/presets';
 import { type Panel, emptyDoc, useStore } from '../model/store';
@@ -52,11 +53,8 @@ export function TopBar() {
     <header className="topbar">
       <b className="logo">keito</b>
       <span className="sep" />
-      {/* The project on screen (its boards are the tabs below); every project's boards open from here. */}
-      <button className="board-switch" onClick={() => openBoards()} data-tip="ボード一覧（ほかの案件も）">
-        <span>{doc.meta.project?.trim() || '案件なし'}</span>
-        <i>▾</i>
-      </button>
+      {/* The project on screen (its boards are the tabs below), and the others to jump to. */}
+      <ProjectMenu />
       {/* Boards and files: made, copied, opened, deleted. */}
       <button className="ghost" onClick={() => openBoards(true)} data-tip="新しいボード（種類を選ぶ）">
         {ICON.plus}
