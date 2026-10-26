@@ -756,6 +756,53 @@ function orderPorts(doc: Doc): Doc {
   return doc;
 }
 
+/**
+ * On a board whose ports may move (software), a line between two boxes one above the other, out
+ * of the right side of one and into the left side of the other, has to wind round in an S. With
+ * one of its ports moved to the other side the two face the same way, and the line turns round
+ * in a U with half the bends. Either end may move; the move is kept only when it leaves the wiring
+ * less tangled. Ports with bends drawn by hand stay where they are.
+ */
+function turnPorts(doc: Doc): Doc {
+  if (!kindOf(doc).freePorts || doc.edges.length >= WEIGH_UP_TO) return doc;
+  let best = tangle(doc);
+  for (const e of doc.edges) {
+    if (isTagged(doc, e) || e.from.node === e.to.node) continue;
+    const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
+    const a = nodes.get(e.from.node);
+    const b = nodes.get(e.to.node);
+    if (a?.type !== 'device' || b?.type !== 'device') continue;
+    const pa = a.ports.find((p) => p.id === e.from.port);
+    const pb = b.ports.find((p) => p.id === e.to.port);
+    if (!pa || !pb || pa.side === pb.side) continue;
+    // One above the other: the boxes share some of their width.
+    const ra = nodeRect(a);
+    const rb = nodeRect(b);
+    if (Math.min(ra.x + ra.w, rb.x + rb.w) - Math.max(ra.x, rb.x) <= 0) continue;
+    const handDrawn = (node: string, port: string) => doc.edges.some((x) => x.route && !x.tidied && ((x.from.node === node && x.from.port === port) || (x.to.node === node && x.to.port === port)));
+    let pick: Doc | null = null;
+    for (const [n, port, side] of [
+      [a, pa, pb.side],
+      [b, pb, pa.side],
+    ] as const) {
+      if (handDrawn(n.id, port.id)) continue;
+      // The moved port goes last on its new side: ordering the ports afterwards finds it its place.
+      const ports = [...n.ports.filter((p) => p.id !== port.id), { ...port, side }];
+      // Bends tidying laid for lines on the moved port are laid afresh from its new place.
+      const on = (x: Edge) => (x.from.node === n.id && x.from.port === port.id) || (x.to.node === n.id && x.to.port === port.id);
+      const edges = doc.edges.map((x) => (on(x) && x.tidied ? (({ route: _r, tidied: _t, ...rest }) => rest)(x) : x));
+      const trial = { ...doc, nodes: doc.nodes.map((m) => (m.id === n.id ? { ...n, ports } : m)), edges };
+      const score = tangle(trial);
+      if (score < best) {
+        best = score;
+        pick = trial;
+      }
+    }
+    if (pick) doc = pick;
+  }
+  return doc;
+}
+
 function pass(doc: Doc): Doc {
   const arranged = arrange(doc);
   const balanced = { ...doc, nodes: doc.nodes.map((n) => arranged.get(n.id)!), edges: comb(doc, arranged) };
@@ -798,7 +845,10 @@ export function tidy(doc: Doc): Doc {
   // (Found without the bends an earlier tidy laid: those are laid afresh, not held up against.)
   if (tangle(next) > tangle(fresh)) next = fresh;
   // Lines routed afresh round the others can come in from another side: the ports follow them.
-  next = orderPorts(untangle(orderPorts(next)));
+  next = orderPorts(turnPorts(untangle(orderPorts(next))));
+  // Pressing tidy again never undoes a better wiring an earlier tidy found: if this one comes out
+  // more tangled than the board it was given, the board stays as it was (but for the labels).
+  if (doc.edges.length < WEIGH_UP_TO && tangle(next) > tangle(doc)) next = doc;
   // Last, with everything where it ends up: each label slid along its line to where it is clear.
   next = placeLabels(next);
   return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;
