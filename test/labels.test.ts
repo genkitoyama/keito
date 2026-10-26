@@ -43,7 +43,21 @@ describe('placing labels on tidy', () => {
   const doc = readBoard(crowded)!;
 
   it('moves crowded labels apart', () => {
-    expect(clashes(labelBoxes(doc))).toBeGreaterThan(0);
+    // Three cables side by side, each label two rows high: in the middle of their lines they overlap.
+    const crowd = fromYaml(
+      `devices:
+  - { id: a, name: A, out: [V1:video, V2:video, V3:video], pos: [0, 0] }
+  - { id: b, name: B, in: [V1:video, V2:video, V3:video], pos: [600, 0] }
+cables:
+  - { from: a.V1, to: b.V1, type: video, spec: 光 HDMI AOC, length: 15, stacked: true }
+  - { from: a.V2, to: b.V2, type: video, spec: 光 HDMI AOC, length: 15, stacked: true }
+  - { from: a.V3, to: b.V3, type: video, spec: 光 HDMI AOC, length: 15, stacked: true }
+`,
+      blank('crowd'),
+    );
+    expect(clashes(labelBoxes(crowd))).toBeGreaterThan(0);
+    expect(clashes(labelBoxes(placeLabels(crowd)))).toBe(0);
+    // The board of many lines fanning out keeps its labels apart too.
     expect(clashes(labelBoxes(placeLabels(doc)))).toBe(0);
   });
 

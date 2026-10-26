@@ -154,3 +154,46 @@ cables:
     expect(names(tidy(crossed('system')))).toEqual(['A', 'B']);
   });
 });
+
+describe('lines on top of each other', () => {
+  // The CDN's second output and the WAF's second input stand at one height, between them a narrow
+  // gap; one line goes on from the first far down, the other comes up into the second.
+  const board = () =>
+    fromYaml(
+      `kind: software
+protocolLabels: false
+devices:
+  - { id: cdn, name: CDN, in: [IN:http], out: [動的:http, 静的:http], pos: [300, 0] }
+  - { id: waf, name: WAF, in: [HTTPS:http, 管理:http], out: [OUT:http], pos: [560, 0] }
+  - { id: admin, name: 管理画面, out: [HTTPS:http], pos: [0, 300] }
+  - { id: s3, name: ストレージ, in: [HTTPS:http], pos: [1100, 600] }
+cables:
+  - { from: cdn.動的, to: waf.HTTPS, type: http }
+  - { from: cdn.静的, to: s3.HTTPS, type: http }
+  - { from: admin.HTTPS, to: waf.管理, type: http }
+`,
+      blank('top'),
+    );
+  /** Stretches where two lines without an end in common run within a pixel or two of each other. */
+  const onTop = (doc: Doc): number => {
+    const routes = routeEdges(doc);
+    const ends = (id: string) => [routes.get(id)![0], routes.get(id)!.at(-1)!].map((p) => `${Math.round(p.x)},${Math.round(p.y)}`);
+    const runs = doc.edges.flatMap((e) =>
+      routes.get(e.id)!.slice(1).map((b, i) => ({ id: e.id, a: routes.get(e.id)![i], b })),
+    );
+    let n = 0;
+    for (const [i, p] of runs.entries())
+      for (const q of runs.slice(i + 1)) {
+        if (p.id === q.id || ends(p.id).some((k) => ends(q.id).includes(k))) continue;
+        const flat = (r: typeof p) => Math.abs(r.a.y - r.b.y) < 0.5;
+        if (!flat(p) || !flat(q) || Math.abs(p.a.y - q.a.y) > 2) continue;
+        const shared = Math.min(Math.max(p.a.x, p.b.x), Math.max(q.a.x, q.b.x)) - Math.max(Math.min(p.a.x, p.b.x), Math.min(q.a.x, q.b.x));
+        if (shared > 4) n++;
+      }
+    return n;
+  };
+
+  it('are laid apart, a crossing being clearer than one line hiding another', () => {
+    expect(onTop(tidy(board()))).toBe(0);
+  });
+});

@@ -195,6 +195,25 @@ export function hugCost(pts: Pt[], borders: Seg[]): number {
   return segmentsOf(pts).reduce((sum, q) => sum + alongBorders(borders, q.flat, q.at, q.lo, q.hi), 0);
 }
 
+/** A piece of a line given its bend, and that line's two ends. */
+interface Laid extends Seg {
+  ends: Pt[];
+}
+
+/**
+ * How far run `u`'s piece `q` runs right on top of the pieces in `laid` (within a few pixels, the
+ * same way). Lines with an end in common meet on purpose, and are let be.
+ */
+function overLaid(laid: Laid[], u: Run, q: Seg): number {
+  const same = (a: Pt, b: Pt) => Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5;
+  let sum = 0;
+  for (const w of laid) {
+    if (w.flat !== q.flat || Math.abs(w.at - q.at) >= 3 || w.ends.some((p) => same(p, u.l) || same(p, u.r))) continue;
+    sum += Math.max(0, Math.min(w.hi, q.hi) - Math.max(w.lo, q.lo));
+  }
+  return sum;
+}
+
 /** The boxes a little larger than drawn, except those of the line's own two ends, which it must meet. */
 export function roomAround(obstacles: Rect[], ends: Rect[]): Rect[] {
   const own = (r: Rect) => ends.some((e) => e.x === r.x && e.y === r.y && e.w === r.w && e.h === r.h);
@@ -377,8 +396,11 @@ export function chip(at: Pt & { dir: Dir }, text: string): Rect {
 
 const span = (u: Run): [number, number] => [Math.min(u.l.y, u.r.y), Math.max(u.l.y, u.r.y)];
 const inside = (y: number, [lo, hi]: [number, number]) => y > lo + 0.5 && y < hi - 0.5;
-/** Crossings between two runs when `u` bends to the left of `v`. */
-const crossed = (u: Run, v: Run) => (inside(v.l.y, span(u)) ? 1 : 0) + (inside(u.r.y, span(v)) ? 1 : 0);
+/**
+ * Crossings between two runs when `u` bends to the left of `v`. Worse than a crossing: `u` going
+ * on from its bend at the very height `v` comes in at, the two then run on top of each other.
+ */
+const crossed = (u: Run, v: Run) => (inside(v.l.y, span(u)) ? 1 : 0) + (inside(u.r.y, span(v)) ? 1 : 0) + (Math.abs(u.r.y - v.l.y) < 0.5 ? 2 : 0);
 
 function permutations<T>(list: T[]): T[][] {
   if (list.length < 2) return [list];
@@ -404,6 +426,8 @@ const holds = (f: Rect, p: Pt) => p.x > f.x && p.x < f.x + f.w && p.y > f.y && p
 export function lanes(runs: Run[], obstacles: Rect[], frames: Rect[]): Map<string, number> {
   const out = new Map<string, number>();
   const walls = bordersOf(frames);
+  // The pieces of the lines given their bends so far.
+  const laid: Laid[] = [];
   const group = runs.map((_, i) => i);
   const find = (i: number): number => (group[i] === i ? i : (group[i] = find(group[i])));
   for (const [i, u] of runs.entries()) {
@@ -464,12 +488,17 @@ export function lanes(runs: Run[], obstacles: Rect[], frames: Rect[]): Map<strin
       }, 0);
       // Worst of all short of a box is a bend running down an area's border.
       const hugging = order.reduce((sum, u, k) => sum + alongBorders(walls, false, first + k * step, Math.min(u.l.y, u.r.y), Math.max(u.l.y, u.r.y)), 0);
-      const score = [blocked ? 1 : 0, hugging, framed, Math.abs(c - mid)];
+      // Nor on top of a line laid already, running along the same height into or out of its bend.
+      const onTop = order.reduce((sum, u, k) => sum + segmentsOf(path(u, first + k * step)).reduce((t, q) => t + overLaid(laid, u, q), 0), 0);
+      const score = [blocked ? 1 : 0, onTop, hugging, framed, Math.abs(c - mid)];
       const at = best ? score.findIndex((v, i) => v !== best!.score[i]) : 0;
       if (!best || (at >= 0 && score[at] < best.score[at])) best = { score, first };
     }
     if (!best || best.score[0]) continue;
-    for (const [k, u] of order.entries()) out.set(u.id, best.first + k * step);
+    for (const [k, u] of order.entries()) {
+      out.set(u.id, best.first + k * step);
+      laid.push(...segmentsOf(path(u, best.first + k * step)).map((q) => ({ ...q, ends: [u.l, u.r] })));
+    }
   }
   return out;
 }

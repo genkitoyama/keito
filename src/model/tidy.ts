@@ -313,6 +313,11 @@ function tangles(doc: Doc): Map<string, number> {
     }
   }
   // Two lines on top of each other for a stretch, or so close beside each other they read as one.
+  // On top of each other is worse than a crossing, unless the two meet at an end on purpose (lines
+  // merging into one port, or leaving one together).
+  const ends = new Map<string, string[]>();
+  for (const [id, pts] of routes) if (pts.length) ends.set(id, [pts[0], pts[pts.length - 1]].map((p) => `${Math.round(p.x)},${Math.round(p.y)}`));
+  const meet = (a: string, b: string) => ends.get(a)?.some((k) => ends.get(b)?.includes(k)) ?? false;
   for (const list of [flat, tall]) {
     for (let i = 0; i < list.length; i++) {
       for (let j = i + 1; j < list.length && list[j].at - list[i].at < BESIDE; j++) {
@@ -320,7 +325,9 @@ function tangles(doc: Doc): Map<string, number> {
         const q = list[j];
         if (p.id === q.id) continue;
         const shared = Math.min(p.hi, q.hi) - Math.max(p.lo, q.lo);
-        if (shared > 4) pair(p, q, shared / (q.at - p.at < 3 ? 4 : 10));
+        if (shared <= 4) continue;
+        if (q.at - p.at >= 3) pair(p, q, shared / 10);
+        else pair(p, q, meet(p.id, q.id) ? shared / 4 : 200 + shared * 2);
       }
     }
   }
