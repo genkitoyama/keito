@@ -1,5 +1,5 @@
 import { deviceTagRects } from './badges';
-import { anchorOf, captionBox, center, frameOf, isTagged, isUnderlay, nodeRect, routeEdges, simplify, tagChips } from './geometry';
+import { anchorOf, captionBox, center, frameOf, isTagged, isUnderlay, nodeRect, obstaclesOf, routeEdges, simplify, tagChips } from './geometry';
 import { placeLabels } from './labels';
 import { CLEAR, type Seg, routeClear } from './router';
 import type { Doc, Edge, Node, Rect } from './types';
@@ -554,7 +554,7 @@ function segments(pts: { x: number; y: number }[]): Seg[] {
 function untangle(doc: Doc): Doc {
   if (doc.edges.length >= WEIGH_UP_TO) return doc;
   const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
-  const obstacles = [...doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'text' && n.type !== 'junction').map(nodeRect), ...tagChips(doc)];
+  const obstacles = [...obstaclesOf(doc), ...tagChips(doc)];
   const own = tangles(doc);
   let best = [...own.values()].reduce((sum, v) => sum + v, 0);
   // A crossing is shared between its two lines; the worst few are tried, as each try weighs the board.
@@ -604,6 +604,16 @@ function pass(doc: Doc): Doc {
  * lines' labels clear of each other.
  */
 export function tidy(doc: Doc): Doc {
+  // Pictures laid under the drawing (floor plans) are not part of it: no area holds them and
+  // nothing lines up with them. They are set aside, and come back where they were.
+  if (doc.nodes.some(isUnderlay)) {
+    const without = { ...doc, nodes: doc.nodes.filter((n) => !isUnderlay(n)) };
+    const drawing = tidy(without);
+    if (drawing === without) return doc;
+    const moved = new Map(drawing.nodes.map((n) => [n.id, n]));
+    const next = { ...drawing, nodes: doc.nodes.map((n) => (isUnderlay(n) ? n : moved.get(n.id)!)) };
+    return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;
+  }
   let next = doc;
   // One pass can open up room for the next; a handful settles any board.
   for (let i = 0; i < 6; i++) {

@@ -179,6 +179,13 @@ function meetingPoint(end: Anchor): Anchor {
   return { x, y, dir: end.dir, rect: { x: x0, y: y0, w: Math.max(r.x + r.w, x) - x0, h: Math.max(r.y + r.h, y) - y0 } };
 }
 
+/**
+ * What a line must not run through: every node except area frames (lines belong inside those),
+ * free text (captions are meant to sit next to lines), junctions (lines meet there) and pictures
+ * laid under the drawing (a floor plan is under everything, not in the way).
+ */
+export const obstaclesOf = (doc: Doc): Rect[] => doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'text' && n.type !== 'junction' && !isUnderlay(n)).map(nodeRect);
+
 /** Routed polyline for every edge of the doc (memoised per doc snapshot). */
 export function routeEdges(doc: Doc): Map<string, Pt[]> {
   const hit = routeCache.get(doc);
@@ -190,9 +197,7 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
     if (list) list.push(e);
     else bySource.set(e.from.node, [e]);
   }
-  // What a line must not run through: every node except area frames (lines belong inside those)
-  // and free text (captions are meant to sit next to lines).
-  const obstacles = doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'text' && n.type !== 'junction').map(nodeRect);
+  const obstacles = obstaclesOf(doc);
   const out = new Map<string, Pt[]>();
   // First the attachment points of every line, then one pass that hands jogging lines their bends.
   const drawn = doc.edges.flatMap((e, index) => {

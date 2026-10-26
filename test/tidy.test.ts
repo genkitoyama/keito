@@ -63,3 +63,25 @@ describe('tidy', () => {
     }
   });
 });
+
+describe('a floor plan laid under the drawing', () => {
+  const plan = { id: 'plan', type: 'image' as const, x: -200, y: -200, w: 3000, h: 2000, text: '平面図', src: 'data:image/png;base64,', under: true };
+
+  it('is not in the way of lines', () => {
+    const doc = system();
+    const under = { ...doc, nodes: [plan, ...doc.nodes] };
+    expect(tangle(under)).toBe(tangle(doc));
+    const r1 = routeEdges(doc);
+    const r2 = routeEdges(under);
+    for (const e of doc.edges) expect(r2.get(e.id)).toEqual(r1.get(e.id));
+  });
+
+  it('stays where it is, and out of every area, when the board is tidied', () => {
+    const doc = system();
+    const under = { ...doc, nodes: [plan, ...doc.nodes] };
+    const after = tidy(under);
+    expect(after.nodes.find((n) => n.id === 'plan')).toEqual(plan);
+    const plain = tidy(doc);
+    for (const n of plain.nodes) expect(after.nodes.find((m) => m.id === n.id)).toEqual(n);
+  });
+});
