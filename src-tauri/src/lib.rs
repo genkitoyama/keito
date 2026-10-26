@@ -18,7 +18,7 @@ fn quit(app: AppHandle) {
     app.exit(0);
 }
 
-/// The menu bar: the app's own menu (with 設定…), editing (so ⌘C / ⌘V reach text fields), the window.
+/// The menu bar: the app's own menu (with 設定…), editing (so ⌘C / ⌘V reach text fields), reloading, the window.
 fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let settings = MenuItem::with_id(app, "settings", "設定…", true, Some("CmdOrCtrl+,"))?;
     // Quitting is the app's own, not the system's: the page writes what it has first.
@@ -46,13 +46,16 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         true,
         &[&PredefinedMenuItem::cut(app, Some("カット"))?, &PredefinedMenuItem::copy(app, Some("コピー"))?, &PredefinedMenuItem::paste(app, Some("ペースト"))?, &PredefinedMenuItem::select_all(app, Some("すべてを選択"))?],
     )?;
+    // Reloading is the page's own too: it writes what it has before it goes.
+    let reload = MenuItem::with_id(app, "reload", "再読み込み", true, Some("CmdOrCtrl+R"))?;
+    let view = Submenu::with_items(app, "表示", true, &[&reload])?;
     let window = Submenu::with_items(
         app,
         "ウインドウ",
         true,
         &[&PredefinedMenuItem::minimize(app, Some("しまう"))?, &PredefinedMenuItem::fullscreen(app, Some("フルスクリーン"))?, &PredefinedMenuItem::separator(app)?, &PredefinedMenuItem::close_window(app, Some("閉じる"))?],
     )?;
-    Menu::with_items(app, &[&keito, &edit, &window])
+    Menu::with_items(app, &[&keito, &edit, &view, &window])
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -99,6 +102,9 @@ pub fn run() {
                 }
                 "quit" => {
                     let _ = app.emit("quit-requested", ());
+                }
+                "reload" => {
+                    let _ = app.emit("reload-requested", ());
                 }
                 _ => {}
             });
