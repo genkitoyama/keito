@@ -2332,3 +2332,95 @@ body.row-dragging .lists td.editable:hover {
   padding: 6px 8px;
   word-break: break-all;
 }
+
+/* The project menu: the projects last opened, a key for each, the full list at the foot. */
+.project-switch {
+  position: relative;
+  display: flex;
+}
+.project-menu-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+.project-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 41;
+  min-width: 280px;
+  max-width: 420px;
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.project-menu-head {
+  padding: 8px 10px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sub);
+}
+.project-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+button.project-item {
+  cursor: pointer;
+}
+.project-item.on {
+  background: var(--accent-soft);
+}
+.project-item.here {
+  border-bottom: 1px solid var(--line);
+  border-radius: 7px 7px 0 0;
+  padding-bottom: 9px;
+}
+.project-item .name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.project-item small {
+  color: var(--sub);
+  white-space: nowrap;
+}
+.project-item kbd {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: 600 10.5px/1 var(--mono, ui-monospace, monospace);
+  color: var(--sub);
+  background: #f8fafc;
+}
+.project-item kbd.none {
+  visibility: hidden;
+}
+.project-item.all {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 7px 7px;
+  color: var(--sub);
+  font-size: 12.5px;
+}
