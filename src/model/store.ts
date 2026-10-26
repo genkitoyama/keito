@@ -442,7 +442,10 @@ async function run(fn: (b: Backend) => Promise<void>): Promise<void> {
     // Written elsewhere since it was read here: the user settles it (see resolveConflict).
     if (e instanceof Conflict) return void enterConflict('conflict');
     console.error(e);
-    useStore.setState({ saving: 'error' });
+    // Something done alongside the board (a preset, a state of its history, opening another)
+    // failed: said so, without calling a board that is saved unsaved.
+    if (useStore.getState().doc !== stored) useStore.setState({ saving: 'error' });
+    void tell(`うまくいきませんでした: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -523,7 +526,13 @@ function keepBase(b: Backend): Promise<void> {
     // Described against the last state kept, which may be from long before (or from elsewhere).
     const previous = last ? await b.loadRevision(base.id, last.id).catch(() => null) : null;
     await snapshot(b, base, {}, previous);
-  })().finally(() => (keeping = null));
+  })()
+    // Not kept after all (the board not yet written, storage full …): tried again at the next edit.
+    .catch((e) => {
+      if (snapBase === base) baseKept = false;
+      throw e;
+    })
+    .finally(() => (keeping = null));
   return keeping;
 }
 
@@ -609,8 +618,11 @@ export function centerOn(nodeId: string): void {
  * board, and the second be refused as if the board had been changed elsewhere.
  */
 let writing: Promise<void> = Promise.resolve();
+/** Writes sent and not yet answered. */
+let inFlight = 0;
 function persist(doc: Doc): Promise<void> {
-  const next = writing.then(() => write(doc));
+  inFlight++;
+  const next = writing.then(() => write(doc)).finally(() => inFlight--);
   writing = next.catch(() => {});
   return next;
 }
@@ -1007,7 +1019,9 @@ window.addEventListener('beforeunload', (e) => {
   const doc = unsaved();
   if (!doc || !backend) return;
   const stuck = ['conflict', 'gone', 'error'].includes(useStore.getState().saving);
-  if (!stuck && backend.fitsExitSave(doc)) return;
+  // A write still under way: the one sent on leaving would be made on the version before it and be
+  // refused, the last edits lost. The page asks, and finishes writing meanwhile.
+  if (!stuck && !inFlight && backend.fitsExitSave(doc)) return;
   if (!stuck) void flush();
   e.preventDefault();
   e.returnValue = '';
