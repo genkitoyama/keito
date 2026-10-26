@@ -223,3 +223,35 @@ cables:
     expect(length(routeEdges(tidy(board())).get('api')!)).toBeLessThanOrEqual(before + 80);
   });
 });
+
+describe('an area round a network and more', () => {
+  // The cloud holds the edge and a network; the network's middle falls inside one of its own subnets.
+  const board = () =>
+    fromYaml(
+      `kind: software
+areas:
+  - { name: クラウド, rect: [0, 0, 1000, 640] }
+  - { name: エッジ, rect: [30, 80, 220, 200] }
+  - { name: VPC, rect: [290, 50, 680, 560] }
+  - { name: 公開, rect: [320, 100, 340, 470] }
+  - { name: データ, rect: [690, 100, 250, 470] }
+devices:
+  - { id: cdn, name: CDN, area: エッジ, out: [OUT:http], pos: [60, 140] }
+  - { id: lb, name: LB, area: 公開, in: [IN:http], out: [OUT:tcp], pos: [360, 160] }
+  - { id: db, name: DB, area: データ, in: [IN:tcp], pos: [730, 160] }
+cables:
+  - { from: cdn.OUT, to: lb.IN, type: http }
+  - { from: lb.OUT, to: db.IN, type: tcp }
+`,
+      blank('cloud'),
+    );
+  const holds = (o: Rect, f: Rect) => o.x <= f.x && o.y <= f.y && o.x + o.w >= f.x + f.w && o.y + o.h >= f.y + f.h;
+
+  it('still holds the network after tidying', () => {
+    const after = tidy(board());
+    const frame = (name: string) => nodeRect(after.nodes.find((n) => n.type === 'frame' && n.text === name)!);
+    expect(holds(frame('クラウド'), frame('VPC'))).toBe(true);
+    expect(holds(frame('クラウド'), frame('エッジ'))).toBe(true);
+    expect(holds(frame('VPC'), frame('公開'))).toBe(true);
+  });
+});

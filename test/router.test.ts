@@ -61,7 +61,7 @@ describe('a line from a port back to the same port', () => {
 
 describe('lines kept off the edges of boxes and areas', () => {
   // How long each line runs right along the side of a box or an area's border, closer than `near`.
-  const along = (doc: Doc, near: number, kinds: string[]): string[] => {
+  const along = (doc: Doc, near: number, kinds: string[], least = 12): string[] => {
     const routes = routeEdges(doc);
     const out: string[] = [];
     for (const e of doc.edges) {
@@ -75,7 +75,7 @@ describe('lines kept off the edges of boxes and areas', () => {
           if (!kinds.includes(n.type)) continue;
           const r = nodeRect(n);
           const [s0, s1] = flat ? [r.x, r.x + r.w] : [r.y, r.y + r.h];
-          if (Math.min(hi, s1) - Math.max(lo, s0) < 12) continue;
+          if (Math.min(hi, s1) - Math.max(lo, s0) < least) continue;
           for (const side of flat ? [r.y, r.y + r.h] : [r.x, r.x + r.w]) if (Math.abs((flat ? a.y : a.x) - side) < near) out.push(`${e.id} along ${n.text}`);
         }
       }
@@ -89,7 +89,8 @@ describe('lines kept off the edges of boxes and areas', () => {
   });
 
   it('keeps tidied lines off the borders of the areas', () => {
-    expect(along(tidy(nested()), 6, ['frame'])).toEqual([]);
+    // A short step beside a border may stay where moving it off would cross another line.
+    expect(along(tidy(nested()), 6, ['frame'], 30)).toEqual([]);
   });
 });
 

@@ -148,12 +148,17 @@ function free(doc: Doc, members: Map<string, string[]>, frame: string): boolean 
   return !doc.edges.some((e) => ids.has(e.from.node) !== ids.has(e.to.node));
 }
 
-/** The frames inside each frame, directly: an area within an area (subnets in a network). */
+/**
+ * The frames inside each frame, directly: an area within an area (subnets in a network). A frame is
+ * within another when the whole of it is, not just its middle: a wide network's middle can fall
+ * inside one of its own subnets.
+ */
 const nestedIn = (doc: Doc): Map<string, string[]> => {
+  const frames = doc.nodes.filter((n) => n.type === 'frame');
+  const holds = (o: Node, f: Node) => o.x <= f.x && o.y <= f.y && o.x + o.w >= f.x + f.w && o.y + o.h >= f.y + f.h;
   const inner = new Map<string, string[]>();
-  for (const f of doc.nodes) {
-    if (f.type !== 'frame') continue;
-    const outer = frameOf(doc, f);
+  for (const f of frames) {
+    const outer = frames.filter((o) => o !== f && holds(o, f)).sort((p, q) => p.w * p.h - q.w * q.h)[0];
     if (outer) inner.set(outer.id, [...(inner.get(outer.id) ?? []), f.id]);
   }
   return inner;
