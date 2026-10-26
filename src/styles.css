@@ -462,16 +462,15 @@ textarea:focus {
   border-width: 2.5px;
 }
 
-/* Instant tooltips: every icon explains itself on hover, without the browser's one-second delay. */
+/* Instant tooltips: every icon explains itself on hover, without the browser's one-second delay.
+   tips.ts lays one tip over the page and puts it by the hovered element. */
 [data-tip] {
   position: relative;
 }
-[data-tip]::after {
-  content: attr(data-tip);
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + 8px);
-  transform: translateX(-50%);
+.tip {
+  position: fixed;
+  left: 0;
+  top: 0;
   padding: 5px 8px;
   border-radius: 6px;
   background: #0f172a;
@@ -483,25 +482,10 @@ textarea:focus {
   pointer-events: none;
   opacity: 0;
   transition: opacity 0.12s;
-  z-index: 40;
+  z-index: 2000;
 }
-[data-tip][data-tip-on]::after {
+.tip.on {
   opacity: 1;
-}
-.tips-down [data-tip]::after,
-.topbar [data-tip]::after {
-  bottom: auto;
-  top: calc(100% + 8px);
-}
-.toolbar [data-tip]::after {
-  left: calc(100% + 8px);
-  bottom: auto;
-  top: 50%;
-  transform: translateY(-50%);
-}
-/* An open menu already says what its button does. */
-.qb-drop.open > [data-tip]::after {
-  display: none;
 }
 
 .fills {
