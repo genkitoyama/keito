@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { isTagged } from '../../model/geometry';
 import { safeUrl } from '../../model/url';
 import { LINE_COLORS, lineColor, lineDashed, paintLine } from '../../model/lineColor';
-import { cableIds, idShown, labelStacked, lengthShown } from '../../model/lists';
+import { cableIds, idShown, labelStacked, lengthShown, protocolShown } from '../../model/lists';
 import { kindOf } from '../../model/kinds';
 import { signalOf } from '../../model/signals';
 import { linkClick } from '../../platform/io';
@@ -16,6 +16,7 @@ export function EdgePanel({ e }: { e: Edge }) {
   const shown = useStore((s) => idShown(s.doc, e));
   const lenShown = useStore((s) => lengthShown(s.doc, e));
   const stacked = useStore((s) => labelStacked(s.doc, e));
+  const protoShown = useStore((s) => protocolShown(s.doc, e));
   // What the ID would be if left to the automatic numbering.
   const autoId = useStore((s) => cableIds({ ...s.doc, edges: s.doc.edges.map((x) => (x.id === e.id ? { ...x, cableId: undefined } : x)) }).get(e.id) ?? '');
   const color = useStore((s) => lineColor(s.doc, e));
@@ -88,10 +89,16 @@ export function EdgePanel({ e }: { e: Edge }) {
           </>
         )}
         {protocol && (
-          <label className="check">
-            <input type="checkbox" checked={stacked} onChange={(ev) => patch({ stacked: ev.target.checked }, true)} />
-            種別・ポートと文を 1 行ずつに分ける
-          </label>
+          <>
+            <label className="check">
+              <input type="checkbox" checked={protoShown} onChange={(ev) => patch({ showProtocol: ev.target.checked }, true)} />
+              種別とポートをラベルに出す
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={stacked} onChange={(ev) => patch({ stacked: ev.target.checked }, true)} />
+              種別・ポートと文を 1 行ずつに分ける
+            </label>
+          </>
         )}
         <LabelSizeField edges={[e]} />
       </Section>

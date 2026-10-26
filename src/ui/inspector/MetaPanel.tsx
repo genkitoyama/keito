@@ -46,10 +46,11 @@ export function MetaPanel() {
   const idLabels = useStore((s) => s.doc.cableIdLabels !== false);
   const lenLabels = useStore((s) => s.doc.lengthLabels !== false);
   const stackLabels = useStore((s) => s.doc.stackedLabels === true);
+  const protocolLabels = useStore((s) => s.doc.protocolLabels !== false);
   const hops = useStore((s) => s.doc.hops === true);
   const labelSize = useStore((s) => s.doc.labelSize ?? LABEL_SIZE);
   // A board-wide choice applies to every line: per-line exceptions for it are cleared.
-  const boardLabel = (change: Partial<Doc>, clear: 'showLength' | 'stacked') =>
+  const boardLabel = (change: Partial<Doc>, clear: 'showLength' | 'stacked' | 'showProtocol') =>
     useStore.getState().mutate((d) => ({ ...d, ...change, edges: d.edges.map((x) => (x[clear] === undefined ? x : { ...x, [clear]: undefined })) }));
   const set = (k: keyof DocMeta) => (v: string) => useStore.getState().mutate((d) => ({ ...d, meta: { ...d.meta, [k]: v } }), false);
   return (
@@ -106,10 +107,18 @@ export function MetaPanel() {
           </>
         )}
         {kind.id === 'software' && (
-          <label className="check">
-            <input type="checkbox" checked={stackLabels} onChange={(e) => boardLabel({ stackedLabels: e.target.checked }, 'stacked')} />
-            通信の種別・ポートと文を 1 行ずつに分ける
-          </label>
+          <>
+            <span className="group-label">ラベルに出すもの</span>
+            <label className="check">
+              <input type="checkbox" checked={protocolLabels} onChange={(e) => boardLabel({ protocolLabels: e.target.checked }, 'showProtocol')} />
+              通信の種別とポート（HTTP 443/tcp など）
+            </label>
+            <p className="hint">外しても、種別は線の色で、ポートは通信一覧でわかります。</p>
+            <label className="check">
+              <input type="checkbox" checked={stackLabels} onChange={(e) => boardLabel({ stackedLabels: e.target.checked }, 'stacked')} />
+              通信の種別・ポートと文を 1 行ずつに分ける
+            </label>
+          </>
         )}
         <label className="check">
           <input type="checkbox" checked={hops} onChange={(e) => useStore.getState().mutate((d) => ({ ...d, hops: e.target.checked || undefined }))} />

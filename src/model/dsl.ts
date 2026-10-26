@@ -57,6 +57,7 @@ cables:
                            # 映像の規格(HDMI / SDI …)や音声のコネクタ(XLR / TRS …)、「光」「Dante」などの中身は spec かポート名で。
                            # ケーブルIDは HDMI-01 / XLR-01 のようにそこから付く
                            # ソフトウェア構成図（kind: software）では http websocket osc mqtt tcp udp ndi file data。ポートは spec に（例 7000/udp）
+                           # 線のラベルの「HTTP 443/tcp」は showProtocol: false で隠す（全体は先頭の protocolLabels: false。ポートは通信一覧に残る）
     cableId: V-01          # 任意。ケーブルIDを手で決める（省略で自動採番）。showId / showLength: false でラベルから隠す。stacked: true で項目を 1 行ずつに。fontSize でこの線のラベルの文字サイズ（px）
     spec: 光 HDMI AOC      # 任意。品名・規格（線のラベルに出る）。maker / model / url も書ける
     length: 10             # m、任意
@@ -155,6 +156,7 @@ export function toYaml(doc: Doc): string {
   if (doc.cableIdLabels === false) out.cableIdLabels = false;
   if (doc.lengthLabels === false) out.lengthLabels = false;
   if (doc.stackedLabels) out.stackedLabels = true;
+  if (doc.protocolLabels === false) out.protocolLabels = false;
   if (doc.hops) out.hops = true;
   if (doc.labelSize) out.labelSize = doc.labelSize;
   if (doc.listOrder && Object.keys(doc.listOrder).length) out.listOrder = doc.listOrder;
@@ -205,6 +207,7 @@ export function toYaml(doc: Doc): string {
       if (e.showId != null) o.showId = e.showId;
       if (e.showLength != null) o.showLength = e.showLength;
       if (e.stacked != null) o.stacked = e.stacked;
+      if (e.showProtocol != null) o.showProtocol = e.showProtocol;
       if (e.fontSize) o.fontSize = e.fontSize;
       put(o, 'spec', e.spec);
       put(o, 'maker', e.maker);
@@ -550,6 +553,7 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     if (typeof v.showId === 'boolean') e.showId = v.showId;
     if (typeof v.showLength === 'boolean') e.showLength = v.showLength;
     if (typeof v.stacked === 'boolean') e.stacked = v.stacked;
+    if (typeof v.showProtocol === 'boolean') e.showProtocol = v.showProtocol;
     if (typeof v.fontSize === 'number' && v.fontSize > 0) e.fontSize = v.fontSize;
     e.spec = str(v.spec) || undefined;
     if (named && !e.spec && !cableKind(nodes, e)) e.spec = named;
@@ -660,5 +664,5 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
   const was = new Map(prev.nodes.map((n, i) => [n.id, i]));
   const rank = (n: Node) => was.get(n.id) ?? (n.type === 'frame' ? -1 : Infinity);
   const ordered = [...frames, ...nodes].map((n, i) => ({ n, i })).sort((a, b) => rank(a.n) - rank(b.n) || a.i - b.i).map((x) => x.n);
-  return { version: 1, id: prev.id, kind, meta, nodes: ordered, edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, labelSize: typeof root.labelSize === 'number' && root.labelSize > 0 ? root.labelSize : prev.labelSize, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
+  return { version: 1, id: prev.id, kind, meta, nodes: ordered, edges, powerTags, signalColors, signals: signals?.length ? signals : undefined, cableIdLabels: typeof root.cableIdLabels === 'boolean' ? root.cableIdLabels : prev.cableIdLabels, lengthLabels: typeof root.lengthLabels === 'boolean' ? root.lengthLabels : prev.lengthLabels, stackedLabels: typeof root.stackedLabels === 'boolean' ? root.stackedLabels : prev.stackedLabels, protocolLabels: typeof root.protocolLabels === 'boolean' ? root.protocolLabels : prev.protocolLabels, hops: typeof root.hops === 'boolean' ? root.hops || undefined : prev.hops, labelSize: typeof root.labelSize === 'number' && root.labelSize > 0 ? root.labelSize : prev.labelSize, listOrder: readOrder(root.listOrder) ?? prev.listOrder, revisions: prev.revisions };
 }

@@ -195,6 +195,8 @@ export interface Edge {
   showLength?: boolean;
   /** Label items (ID, spec, text, length) each on a line of their own; unset = the board's setting. */
   stacked?: boolean;
+  /** Whether a protocol line's type and port ("HTTP 443/tcp") are part of its label; unset = the board's setting. */
+  showProtocol?: boolean;
   /** What the cable is: product name or standard ("光 HDMI AOC", "Cat6A STP"). Shown in its label. */
   spec?: string;
   maker?: string;
@@ -279,6 +281,8 @@ export interface Doc {
   lengthLabels?: boolean;
   /** Label items one per line instead of side by side (default off); a line's own `stacked` wins. */
   stackedLabels?: boolean;
+  /** Protocol lines' type and port in their labels (default on); a line's own `showProtocol` wins. */
+  protocolLabels?: boolean;
   /** Size of the lines' labels in px (default 10.5; see labels.ts). */
   labelSize?: number;
   /** Draw a small hop where one line crosses another on screen (default off; drawings always hop). */
