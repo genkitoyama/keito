@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { CAPTION_SIZE, DEV, DEVICE_NAME, captionBox, crossings, deviceHead, deviceNameWidth, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { CAPTION_SIZE, DEV, DEVICE_NAME, captionBox, crossingGaps, crossings, deviceHead, deviceNameWidth, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { edgeLabel, labelFont, labelSize, tagFont } from '../model/labels';
 import { LEGEND, legendLayout } from '../model/legend';
 import { lineColor, lineDashed, mix, signalColor } from '../model/lineColor';
@@ -719,6 +719,9 @@ function TaggedEdge({ doc, e, theme }: { doc: Doc; e: Edge; theme: Theme }) {
   );
 }
 
+/** Half the break in a line down where a line across crosses it, drawn without hops. */
+const GAP_HALF = 4.5;
+
 export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; theme: Theme; hideLabel?: boolean }) {
   const pts = routeEdges(doc).get(e.id);
   if (!pts || pts.length < 2) return null;
@@ -744,9 +747,22 @@ export function EdgeView({ doc, e, theme, hideLabel }: { doc: Doc; e: Edge; them
     const len = Math.hypot(q.x - pts[i].x, q.y - pts[i].y);
     return back && len > back + head ? { x: pts[i].x + ((q.x - pts[i].x) / len) * back, y: pts[i].y + ((q.y - pts[i].y) / len) * back } : pts[i];
   };
+  // Without hops, a line down breaks for a moment where a line across crosses it.
+  const gaps = doc.hops ? undefined : crossingGaps(doc).get(e.id);
+  const mask = gaps && `gap-${doc.id}-${e.id}`;
+  const xs = pts.map((p) => p.x);
+  const ys = pts.map((p) => p.y);
   return (
     <g>
-      <path d={d} fill="none" stroke={stroke} strokeWidth={width} strokeDasharray={dash} strokeLinejoin="round" strokeLinecap={flow ? 'round' : undefined} />
+      {mask && (
+        <mask id={mask} maskUnits="userSpaceOnUse" x={Math.min(...xs) - 20} y={Math.min(...ys) - 20} width={Math.max(...xs) - Math.min(...xs) + 40} height={Math.max(...ys) - Math.min(...ys) + 40}>
+          <rect x={Math.min(...xs) - 20} y={Math.min(...ys) - 20} width={Math.max(...xs) - Math.min(...xs) + 40} height={Math.max(...ys) - Math.min(...ys) + 40} fill="#fff" />
+          {gaps.map((g, i) => (
+            <rect key={i} x={g.x - 6} y={g.y - GAP_HALF} width={12} height={GAP_HALF * 2} fill="#000" />
+          ))}
+        </mask>
+      )}
+      <path d={d} fill="none" stroke={stroke} strokeWidth={width} strokeDasharray={dash} strokeLinejoin="round" strokeLinecap={flow ? 'round' : undefined} mask={mask && `url(#${mask})`} />
       {e.arrow !== 'none' && !intoJunction && <polygon points={arrowHead(tip(n - 1, -1, !!e.to.port), distinct(pts, n - 1, -1), head)} fill={stroke} />}
       {e.arrow === 'both' && <polygon points={arrowHead(tip(0, 1, !!e.from.port), distinct(pts, 0, 1), head)} fill={stroke} />}
       {label && (

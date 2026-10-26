@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { fromYaml } from '../src/model/dsl';
-import { isTagged, nodeRect, routeEdges } from '../src/model/geometry';
+import { crossingGaps, isTagged, nodeRect, routeEdges } from '../src/model/geometry';
 import { collides, routeAround } from '../src/model/router';
 import { sampleBoards } from '../src/model/sample';
-import { tidy } from '../src/model/tidy';
+import { tangle, tidy } from '../src/model/tidy';
 import type { Doc, Rect } from '../src/model/types';
 import { blank } from './helpers';
 
@@ -90,5 +90,45 @@ describe('lines kept off the edges of boxes and areas', () => {
 
   it('keeps tidied lines off the borders of the areas', () => {
     expect(along(tidy(nested()), 6, ['frame'])).toEqual([]);
+  });
+});
+
+describe('crossings drawn without hops', () => {
+  it('break the line running down where a line across crosses it', () => {
+    const doc = fromYaml(
+      `kind: software
+devices:
+  - { id: a, name: A, out: [OUT:http], pos: [0, 100] }
+  - { id: b, name: B, in: [IN:http], pos: [500, 100] }
+  - { id: c, name: C, out: [OUT:http], pos: [0, -60] }
+  - { id: d, name: D, in: [IN:http], pos: [500, 260] }
+cables:
+  - { id: across, from: a.OUT, to: b.IN, type: http }
+  - { id: down, from: c.OUT, to: d.IN, type: http }
+`,
+      blank('gaps'),
+    );
+    const gaps = crossingGaps(doc);
+    expect(gaps.get('down')).toEqual([{ x: expect.any(Number), y: routeEdges(doc).get('across')![0].y }]);
+    expect(gaps.has('across')).toBe(false);
+  });
+});
+
+describe('lines close beside each other', () => {
+  it('count as tangled, as lines on top of each other do', () => {
+    const pair = (gap: number) =>
+      fromYaml(
+        `kind: software
+devices:
+  - { id: a, name: A, out: [P:http, Q:http], pos: [0, 0] }
+  - { id: b, name: B, in: [P:http], pos: [600, 400] }
+  - { id: c, name: C, in: [Q:http], pos: [600, 600] }
+cables:
+  - { id: p, from: a.P, to: b.P, type: http, route: [[300, 0], [300, 400]] }
+  - { id: q, from: a.Q, to: c.Q, type: http, route: [[${300 + gap}, 0], [${300 + gap}, 600]] }
+`,
+        blank('beside'),
+      );
+    expect(tangle(pair(7))).toBeGreaterThan(tangle(pair(40)));
   });
 });

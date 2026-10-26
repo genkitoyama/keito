@@ -312,20 +312,23 @@ function tangles(doc: Doc): Map<string, number> {
       if (h.id !== w.id && h.at > w.lo + 1 && w.at > h.lo + 1 && w.at < h.hi - 1) pair(h, w, 100);
     }
   }
-  // Two lines on top of each other for a stretch.
+  // Two lines on top of each other for a stretch, or so close beside each other they read as one.
   for (const list of [flat, tall]) {
     for (let i = 0; i < list.length; i++) {
-      for (let j = i + 1; j < list.length && list[j].at - list[i].at < 3; j++) {
+      for (let j = i + 1; j < list.length && list[j].at - list[i].at < BESIDE; j++) {
         const p = list[i];
         const q = list[j];
         if (p.id === q.id) continue;
         const shared = Math.min(p.hi, q.hi) - Math.max(p.lo, q.lo);
-        if (shared > 4) pair(p, q, shared / 4);
+        if (shared > 4) pair(p, q, shared / (q.at - p.at < 3 ? 4 : 10));
       }
     }
   }
   return by;
 }
+
+/** Lines closer side by side than this, running along together, read as one. */
+const BESIDE = 9;
 
 /** Lines this many and more are left as levelling makes them, as weighing every move would take too long. */
 const WEIGH_UP_TO = 300;
@@ -411,12 +414,12 @@ function stacks(frames: Node[], nodes: Map<string, Node>): Node[][] {
 
 /**
  * Apply a change, and take it back if it puts anything on top of something it was clear of, or
- * leaves the wiring more tangled than before.
+ * (unless told the wiring is no matter) leaves the wiring more tangled than before.
  */
-function attempt(doc: Doc, nodes: Map<string, Node>, change: () => void): void {
+function attempt(doc: Doc, nodes: Map<string, Node>, change: () => void, wiring = true): void {
   const before = new Map(nodes);
   const laid = (m: Map<string, Node>): Doc => ({ ...doc, nodes: doc.nodes.map((n) => m.get(n.id)!), edges: comb(doc, m) });
-  const weigh = doc.edges.length < WEIGH_UP_TO;
+  const weigh = wiring && doc.edges.length < WEIGH_UP_TO;
   const was = weigh ? tangle(laid(before)) : 0;
   change();
   if (!collision(doc, nodes) && (!weigh || tangle(laid(nodes)) <= was)) return;
@@ -506,7 +509,9 @@ function arrange(doc: Doc): Map<string, Node> {
   // innermost first, round what it holds and the areas within it.
   const contents = contentsOf(doc);
   const nested = doc.nodes.filter((f) => f.type === 'frame' && contents.has(f.id) && !frames.includes(f) && (inner.has(f.id) || frameOf(doc, f)));
-  for (const f of nested.sort((p, q) => p.w * p.h - q.w * q.h)) attempt(doc, nodes, () => fit(nodes.get(f.id)!));
+  // Only a frame moves, so nothing is weighed but what it would run into: the lines keep off its
+  // border wherever it ends up.
+  for (const f of nested.sort((p, q) => p.w * p.h - q.w * q.h)) attempt(doc, nodes, () => fit(nodes.get(f.id)!), false);
   return nodes;
 }
 

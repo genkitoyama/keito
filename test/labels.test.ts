@@ -83,3 +83,35 @@ cables:
     expect(back.edges[0].spec).toBe('443/tcp');
   });
 });
+
+describe('a label and a crossing', () => {
+  // A line straight across, and one stepping down across it halfway: their crossing is right where
+  // the first line's label would sit.
+  const board = () =>
+    fromYaml(
+      `kind: software
+protocolLabels: false
+devices:
+  - { id: a, name: A, out: [OUT:http], pos: [0, 100] }
+  - { id: b, name: B, in: [IN:http], pos: [500, 100] }
+  - { id: c, name: C, out: [OUT:http], pos: [0, -60] }
+  - { id: d, name: D, in: [IN:http], pos: [500, 260] }
+cables:
+  - { id: across, from: a.OUT, to: b.IN, type: http, label: とても長い横切る線のラベルです }
+  - { id: down, from: c.OUT, to: d.IN, type: http }
+`,
+      blank('cross'),
+    );
+
+  it('is not put over the crossing, where it would hide which way the lines go', () => {
+    const doc = board();
+    const routes = routeEdges(doc);
+    const down = routes.get('down')!;
+    const x = down.find((p, i) => i > 0 && Math.abs(p.x - down[i - 1].x) < 0.5 && Math.abs(p.y - down[i - 1].y) > 1)!.x;
+    const y = routes.get('across')![0].y;
+    const chip = (d: Doc) => labelBoxes(d)[0];
+    const covers = (r: Rect) => x > r.x && x < r.x + r.w && y > r.y && y < r.y + r.h;
+    expect(covers(chip(doc))).toBe(true);
+    expect(covers(chip(placeLabels(doc)))).toBe(false);
+  });
+});

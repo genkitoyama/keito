@@ -488,6 +488,7 @@ export function crossings(doc: Doc): Map<string, Map<number, number[]>> {
   }
   const out = new Map<string, Map<number, number[]>>();
   const over = new Map<string, Set<string>>();
+  const gaps = new Map<string, Pt[]>();
   for (const [id, pts] of routes) {
     if (tagged.has(id)) continue;
     for (let i = 1; i < pts.length; i++) {
@@ -501,14 +502,26 @@ export function crossings(doc: Doc): Map<string, Map<number, number[]>> {
       if (!out.has(id)) out.set(id, new Map());
       out.get(id)!.set(i - 1, [...new Set(under.map((v) => v.x))]);
       over.set(id, new Set([...(over.get(id) ?? []), ...under.map((v) => v.id)]));
+      for (const v of under) gaps.set(v.id, [...(gaps.get(v.id) ?? []), { x: v.x, y: a.y }]);
     }
   }
   hopCache.set(doc, out);
   overCache.set(doc, over);
+  gapCache.set(doc, gaps);
   return out;
 }
 
 const overCache = new WeakMap<Doc, Map<string, Set<string>>>();
+const gapCache = new WeakMap<Doc, Map<string, Pt[]>>();
+
+/**
+ * Where each line running down is crossed by one running across: drawn without hops, the line
+ * down breaks there for a moment, so a crossing does not read as the two lines joining.
+ */
+export function crossingGaps(doc: Doc): Map<string, Pt[]> {
+  crossings(doc);
+  return gapCache.get(doc)!;
+}
 
 /**
  * The lines in painting order when crossings are drawn as hops: a line that hops over another
