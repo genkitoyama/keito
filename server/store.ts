@@ -174,7 +174,18 @@ interface Stored {
 export function store(root: string) {
   const dirs = (): string[] => (fs.existsSync(root) ? fs.readdirSync(root).filter((d) => !d.startsWith('.') && fs.existsSync(path.join(root, d, 'board.json'))) : []);
   const dirOf = (id: string): string | null => {
-    const hit = dirs().find((d) => d === id || d.endsWith(`__${id}`));
+    const hits = dirs().filter((d) => d === id || d.endsWith(`__${id}`));
+    // Folders of "X" and of "_X" both end in "__X": the board inside says which is which.
+    const hit =
+      hits.length < 2
+        ? hits[0]
+        : hits.find((d) => {
+            try {
+              return JSON.parse(fs.readFileSync(path.join(root, d, 'board.json'), 'utf8')).id === id;
+            } catch {
+              return false;
+            }
+          });
     return hit ? path.join(root, hit) : null;
   };
   const readAt = (dir: string): Stored => JSON.parse(fs.readFileSync(path.join(dir, 'board.json'), 'utf8'));

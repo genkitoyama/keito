@@ -229,7 +229,12 @@ impl Store {
 
     pub fn dir_of(&self, id: &str) -> Option<PathBuf> {
         let tail = format!("__{id}");
-        self.dirs().into_iter().find(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n == id || n.ends_with(&tail)))
+        let hits: Vec<PathBuf> = self.dirs().into_iter().filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n == id || n.ends_with(&tail))).collect();
+        // Folders of "X" and of "_X" both end in "__X": the board inside says which is which.
+        if hits.len() < 2 {
+            return hits.into_iter().next();
+        }
+        hits.into_iter().find(|p| read_json(&p.join("board.json")).and_then(|v| v.get("id").and_then(Value::as_str).map(|s| s == id)).unwrap_or(false))
     }
 
     fn serial_at(&self, dir: Option<&PathBuf>) -> u64 {

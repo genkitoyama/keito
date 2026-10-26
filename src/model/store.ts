@@ -236,7 +236,10 @@ export const useStore = create<State>((set, get) => ({
     // History belongs to the board it was recorded on; a copy or an opened file starts without one.
     // An opened file may be of an older form: it is read the way a stored board is.
     // An id the storage cannot take (a file written by hand or another tool) is given a new one.
-    const id = BOARD_ID.test(doc.id) ? doc.id : randomId();
+    // An id already taken in the storage (a board made meanwhile elsewhere, not yet in the list) is
+    // never written over: the new board takes another.
+    const taken = BOARD_ID.test(doc.id) && !!(await b.load(doc.id).catch(() => null));
+    const id = BOARD_ID.test(doc.id) && !taken ? doc.id : randomId();
     const next = await externalize(readBoard({ ...doc, id, revisions: undefined }) ?? { ...doc, id, revisions: undefined }, b);
     show(next);
     await persist(next);
