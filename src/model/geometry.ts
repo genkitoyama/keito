@@ -1,5 +1,5 @@
 import { UI_FONT, measure, wrapText } from './text';
-import { type Run, type Seg, STUB, bordersOf, hugCost, roomAround, chip, collides, facing, isH, lanes, routeAround } from './router';
+import { type Run, type Seg, BEND, STUB, TRESPASS, bordersOf, hugCost, roomAround, chip, collides, facing, isH, lanes, routeAround, trespass } from './router';
 import { seqLayout, seqScale } from './sequence';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node, Port, PortSide, Pt, Rect } from './types';
 
@@ -195,6 +195,11 @@ export const isTagged = (doc: Doc, e: Edge): boolean => e.tag ?? (e.signal === '
 const orthogonal = (pts: Pt[]): boolean => pts.every((p, i) => i === 0 || Math.abs(p.x - pts[i - 1].x) < 0.5 || Math.abs(p.y - pts[i - 1].y) < 0.5);
 
 const routeCache = new WeakMap<Doc, Map<string, Pt[]>>();
+/** Ways round areas found lately, by what they were found from. */
+const asideCache = new Map<string, Pt[] | null>();
+const ASIDE_KEEP = 2000;
+/** A line cutting this little way through an area it has no end in (across its corner) is left as it is. */
+const SKIRT = 40;
 const chipCache = new WeakMap<Doc, Rect[]>();
 
 /** How far out from a shared end merging lines meet, before running in together. */
@@ -302,6 +307,27 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
   }
   const frames = doc.nodes.filter((n) => n.type === 'frame').map(nodeRect);
   const borders = bordersOf(frames);
+  const holds = (f: Rect, p: Pt) => p.x > f.x && p.x < f.x + f.w && p.y > f.y && p.y < f.y + f.h;
+  // What a way costs, as the search weighs it: its length and bends, and what it runs through or along.
+  const weigh = (p: Pt[], foreign: Rect[], room: Rect[]) => {
+    let cost = (collides(p, room) ? 1000 : 0) + hugCost(p, borders) + trespass(p, foreign) * TRESPASS + Math.max(0, p.length - 2) * BEND;
+    for (let i = 1; i < p.length; i++) cost += Math.abs(p[i].x - p[i - 1].x) + Math.abs(p[i].y - p[i - 1].y);
+    return cost;
+  };
+  // A way round the areas the line has no end in, kept only when it costs less than the way through.
+  const aside = (ea: Anchor, to: Anchor, pts: Pt[], foreign: Rect[], index: number): Pt[] | null => {
+    const room = roomAround(obstacles, [ea.rect, to.rect]);
+    // Tidying weighs a board many times over with most of it where it was: the same search comes up again and again.
+    const key = JSON.stringify([ea.x, ea.y, ea.dir, to.x, to.y, to.dir, index % 3, obstacles, frames, foreign]);
+    if (!asideCache.has(key)) {
+      if (asideCache.size >= ASIDE_KEEP) asideCache.clear();
+      asideCache.set(key, routeAround(ea, to, obstacles, 8 + (index % 3) * 4, borders, foreign));
+    }
+    const around = asideCache.get(key)!;
+    if (!around || collides(around, obstacles)) return null;
+    const way = simplify(around);
+    return weigh(way, foreign, room) < weigh(pts, foreign, room) ? way : null;
+  };
   const bends = lanes(runs, [...obstacles, ...chips], frames, portFronts(doc).map((f) => f.seg));
   for (const { e, index, a, b, pa, pb, ea, eb, tagged } of drawn) {
     const siblings = bySource.get(e.from.node)!;
@@ -327,9 +353,13 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
     const meet = meets.get(e.id);
     const to = meet ?? eb;
     const end = (pts: Pt[]): Pt[] => (meet ? simplify([...pts, { x: eb.x, y: eb.y }]) : pts);
+    // Areas the line has no end in: it goes round them rather than through, where that is not far.
+    const foreign = a === b || tagged ? [] : frames.filter((f) => !holds(f, center(nodeRect(a))) && !holds(f, center(nodeRect(b))));
     const x = bends.get(e.id);
     if (x !== undefined) {
-      out.set(e.id, end([{ x: ea.x, y: ea.y }, { x, y: ea.y }, { x, y: to.y }, { x: to.x, y: to.y }]));
+      const pts = [{ x: ea.x, y: ea.y }, { x, y: ea.y }, { x, y: to.y }, { x: to.x, y: to.y }];
+      const around = trespass(pts, foreign) > SKIRT ? aside(ea, to, pts, foreign, index) : null;
+      out.set(e.id, end(around ?? pts));
       continue;
     }
     // A line from a box back into the same place on it (a flow looping on itself) has no run of its
@@ -350,6 +380,7 @@ export function routeEdges(doc: Doc): Map<string, Pt[]> {
         const around = routeAround(ea, to, obstacles, 8 + (index % 3) * 4, borders);
         if (around && (blocked || unclear(around) < unclear(pts))) pts = simplify(around);
       }
+      if (trespass(pts, foreign) > SKIRT) pts = aside(ea, to, pts, foreign, index) ?? pts;
     }
     out.set(e.id, end(pts));
   }

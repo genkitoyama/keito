@@ -1,9 +1,9 @@
 import { deviceTagRects } from './badges';
 import { anchorOf, captionBox, center, frameOf, frameTitles, isTagged, isUnderlay, nodeRect, obstaclesOf, portFronts, routeEdges, simplify, tagChips } from './geometry';
 import { placeLabels } from './labels';
-import { EDGE_ROOM, JOG, bordersOf, facing, isH, roomAround, routeClear, segmentsOf, unjog } from './router';
+import { EDGE_ROOM, JOG, bordersOf, facing, isH, roomAround, routeClear, segmentsOf, trespass, unjog } from './router';
 import { kindOf } from './kinds';
-import type { Doc, Edge, Node, Port, Rect } from './types';
+import type { Doc, Edge, Node, Port, Pt, Rect } from './types';
 
 const COLUMN = 60; // nodes whose centres are this close in x share a column
 const FRAME_GAP = 60; // space between area frames stacked in a column
@@ -280,9 +280,12 @@ function tangles(doc: Doc): Map<string, number> {
   // An area's title is in the way as much as a box is.
   const boxes = [...doc.nodes.filter((n) => n.type !== 'frame' && n.type !== 'junction' && !isUnderlay(n)).map((n) => ({ id: n.id, r: nodeRect(n) })), ...frameTitles(doc).map((r) => ({ id: '', r }))];
   const runs: Run[] = [];
+  const away = foreignAreas(doc);
   for (const e of doc.edges) {
     const pts = routes.get(e.id);
     if (!pts || isTagged(doc, e)) continue;
+    // A line through an area it has no end in reads as part of what is in there.
+    add(e.id, trespass(pts, away(e)) * AREA_COST);
     // A bend costs some of a crossing: a crossing drawn with a hop reads well, a line winding about
     // does not, so a way round trades at most two bends or so for each crossing it saves.
     add(e.id, Math.max(0, pts.length - 2) * BEND_COST);
@@ -353,6 +356,17 @@ function tangles(doc: Doc): Map<string, number> {
 
 /** How far out of its way a line may go (round the back of a box, out of a port and in) at no cost. */
 const DETOUR_FREE = 80;
+
+/** What each pixel of a line through an area it has no end in costs, against a crossing's 100. */
+const AREA_COST = 1;
+
+/** The areas a line has neither end in, for each line. */
+function foreignAreas(doc: Doc): (e: Edge) => Rect[] {
+  const frames = doc.nodes.filter((n) => n.type === 'frame').map(nodeRect);
+  const at = new Map(doc.nodes.map((n) => [n.id, center(nodeRect(n))]));
+  const holds = (f: Rect, p?: { x: number; y: number }) => !!p && p.x > f.x && p.x < f.x + f.w && p.y > f.y && p.y < f.y + f.h;
+  return (e) => (e.from.node === e.to.node ? [] : frames.filter((f) => !holds(f, at.get(e.from.node)) && !holds(f, at.get(e.to.node))));
+}
 
 /** What a bend in a line costs, against a crossing's 100. */
 const BEND_COST = 55;
@@ -654,13 +668,15 @@ function comb(doc: Doc, nodes: Map<string, Node>): Edge[] {
  * Give automatic lines that cross others a way round them: each is routed afresh keeping clear of
  * the lines already there, and the way is kept, as bends of its own, when it leaves the board less
  * tangled. The worst lines go first; the router alone lays every line as if it were the only one.
+ * `earlier` holds the bends an earlier tidy laid, each line's tried again beside the new way.
  */
-function untangle(doc: Doc): Doc {
+function untangle(doc: Doc, earlier: Map<string, Pt[]> = new Map()): Doc {
   if (doc.edges.length >= WEIGH_UP_TO) return doc;
   const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
   const obstacles = [...obstaclesOf(doc), ...tagChips(doc), ...frameTitles(doc)];
   const borders = bordersOf(doc.nodes.filter((n) => n.type === 'frame').map(nodeRect));
   const fronts = portFronts(doc);
+  const away = foreignAreas(doc);
   const own = tangles(doc);
   let best = [...own.values()].reduce((sum, v) => sum + v, 0);
   // A crossing is shared between its two lines; the worst few are tried, as each try weighs the board.
@@ -674,30 +690,33 @@ function untangle(doc: Doc): Doc {
     const at = ends(nodes, e);
     if (!at) continue;
     const routes = routeEdges(doc);
+    let next = doc;
     // The other lines, and the ways into the other ports: a line kept off those does not leave a
     // neighbour to step round it at the last moment.
     const own = (f: { node: string; port: string }) => (f.node === e.from.node && f.port === e.from.port) || (f.node === e.to.node && f.port === e.to.port);
     const segs = [...doc.edges.filter((x) => x.id !== e.id && !isTagged(doc, x)).flatMap((x) => segmentsOf(routes.get(x.id) ?? [])), ...fronts.filter((f) => !own(f)).map((f) => f.seg)];
-    const found = routeClear(at.pa, at.pb, obstacles, segs, borders);
-    if (!found) continue;
+    const found = routeClear(at.pa, at.pb, obstacles, segs, borders, away(e));
     // Any small step left in it taken out, keeping off every box but its own ends'.
-    const pts = unjog(found, roomAround(obstacles, [nodeRect(at.a), nodeRect(at.b)]));
-    const route = simplify(pts).slice(1, -1);
-    if (route.length < 2) continue;
-    let trial = { ...doc, edges: doc.edges.map((x) => (x.id === e.id ? { ...x, route, tidied: true } : x)) };
-    // Lines laid side by side with it are laid afresh without it: those keep the way they had.
-    const after = routeEdges(trial);
-    const same = (p: { x: number; y: number }[], q: { x: number; y: number }[] = []) => p.length === q.length && p.every((v, i) => v.x === q[i].x && v.y === q[i].y);
-    trial = { ...trial, edges: trial.edges.map((x) => {
-      const was = routes.get(x.id) ?? [];
-      if (x.id === e.id || x.route || isTagged(doc, x) || was.length < 4 || same(was, after.get(x.id))) return x;
-      const ends = [nodes.get(x.from.node), nodes.get(x.to.node)].filter((n): n is Node => !!n).map(nodeRect);
-      return { ...x, route: simplify(unjog(was, roomAround(obstacles, ends))).slice(1, -1).map((p) => ({ x: p.x, y: p.y })), tidied: true };
-    }) };
-    const score = tangle(trial);
-    if (score >= best) continue;
-    best = score;
-    doc = trial;
+    const fresh = found && simplify(unjog(found, roomAround(obstacles, [nodeRect(at.a), nodeRect(at.b)]))).slice(1, -1);
+    // The way an earlier tidy laid it is tried too: the others laid afresh can leave it the better one.
+    const ways = [fresh, earlier.get(e.id)].filter((r): r is Pt[] => !!r && r.length >= 2);
+    for (const route of ways) {
+      let trial = { ...doc, edges: doc.edges.map((x) => (x.id === e.id ? { ...x, route, tidied: true } : x)) };
+      // Lines laid side by side with it are laid afresh without it: those keep the way they had.
+      const after = routeEdges(trial);
+      const same = (p: { x: number; y: number }[], q: { x: number; y: number }[] = []) => p.length === q.length && p.every((v, i) => v.x === q[i].x && v.y === q[i].y);
+      trial = { ...trial, edges: trial.edges.map((x) => {
+        const was = routes.get(x.id) ?? [];
+        if (x.id === e.id || x.route || isTagged(doc, x) || was.length < 4 || same(was, after.get(x.id))) return x;
+        const ends = [nodes.get(x.from.node), nodes.get(x.to.node)].filter((n): n is Node => !!n).map(nodeRect);
+        return { ...x, route: simplify(unjog(was, roomAround(obstacles, ends))).slice(1, -1).map((p) => ({ x: p.x, y: p.y })), tidied: true };
+      }) };
+      const score = tangle(trial);
+      if (score >= best) continue;
+      best = score;
+      next = trial;
+    }
+    doc = next;
   }
   return doc;
 }
@@ -708,7 +727,7 @@ function untangle(doc: Doc): Doc {
  * other in front of it. A box's new order is kept only when it leaves the wiring less
  * tangled; ports with nothing on them, or with bends drawn by hand, keep their places.
  */
-function orderPorts(doc: Doc): Doc {
+function orderPorts(doc: Doc, only?: Set<string>): Doc {
   if (!kindOf(doc).freePorts || doc.edges.length >= WEIGH_UP_TO) return doc;
   let best = tangle(doc);
   // A box moved can change the order best for the boxes it leads to: a second sweep sees to those.
@@ -717,7 +736,7 @@ function orderPorts(doc: Doc): Doc {
     for (const { id } of doc.nodes) {
       const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
       const self = nodes.get(id)!;
-      if (self.type !== 'device') continue;
+      if (self.type !== 'device' || (only && !only.has(id))) continue;
       const routes = routeEdges(doc);
       // Which way a port's lines come in, on average: the height they run at before their last turn
       // into it (a line round the top of the board comes in from above, wherever its far end is).
@@ -891,6 +910,103 @@ function nudge(doc: Doc): Doc {
   return doc;
 }
 
+/** The lines tangled in more than their own bends: crossing, on top of or grazing something, or out of their way. */
+function snarled(doc: Doc): Set<string> {
+  const routes = routeEdges(doc);
+  const out = new Set<string>();
+  for (const [id, v] of tangles(doc)) if (v - Math.max(0, (routes.get(id)?.length ?? 2) - 2) * BEND_COST > 0.5) out.add(id);
+  return out;
+}
+
+/** The most rounds of swapping boxes in a column, one swap kept in each. */
+const SWAP_ROUNDS = 2;
+/** How many of the swaps that look best are laid out in full each round, as that takes a while. */
+const HOPEFUL = 2;
+
+/**
+ * Boxes stacked in a column within one area (the servers in an app subnet) are put in the order
+ * their lines run, so the lines out of the box on top go to the boxes on top and do not cross the
+ * lines from the boxes below on their way. Two boxes trade places at a time, each keeping its own
+ * x, and the stack keeps its top and the gaps between its boxes. Each order is weighed with its
+ * ports put in order too, and kept only when it leaves the wiring less tangled. Columns whose lines
+ * are tangled in nothing but their bends are left alone, and so are boxes with lines bent by hand.
+ */
+function reorder(doc: Doc): Doc {
+  if (doc.edges.length >= WEIGH_UP_TO) return doc;
+  const handDrawn = new Set(doc.edges.filter((e) => e.route && !e.tidied).flatMap((e) => [e.from.node, e.to.node]));
+  const groups = new Map<string, Node[]>();
+  for (const n of doc.nodes) {
+    if (n.type !== 'device' || handDrawn.has(n.id)) continue;
+    const key = frameOf(doc, n)?.id ?? '';
+    groups.set(key, [...(groups.get(key) ?? []), n]);
+  }
+  const columns: string[][] = [];
+  for (const list of groups.values()) {
+    const cx = (n: Node) => center(nodeRect(n)).x;
+    let start = -Infinity;
+    for (const n of [...list].sort((p, q) => cx(p) - cx(q))) {
+      if (cx(n) - start > COLUMN) {
+        columns.push([]);
+        start = cx(n);
+      }
+      columns[columns.length - 1].push(n.id);
+    }
+  }
+  let ported = orderPorts(doc);
+  // An order is weighed as tidying goes on to lay it: ports in order, and lines routed round the
+  // others. Laying the ways round takes a while, so only orders that look better without them are.
+  const finished = (d: Doc) => tangle(untangle(d));
+  let quick = tangle(ported);
+  let best: number | null = null;
+  for (const ids of columns) {
+    if (ids.length < 2) continue;
+    for (let round = 0; round < SWAP_ROUNDS; round++) {
+      // Only a column with a line tangled in more than its bends is worth the weighing.
+      const tangled = snarled(ported);
+      if (!doc.edges.some((e) => tangled.has(e.id) && (ids.includes(e.from.node) || ids.includes(e.to.node)))) break;
+      const stack = ids.map((id) => doc.nodes.find((n) => n.id === id)!).sort((p, q) => p.y - q.y);
+      const gaps = stack.slice(1).map((n, i) => n.y - (stack[i].y + nodeRect(stack[i]).h));
+      // A stack whose boxes overlap in height is no stack.
+      if (gaps.some((g) => g < 0)) break;
+      const hopeful: { doc: Doc; ported: Doc; quick: number }[] = [];
+      for (let i = 0; i < stack.length; i++) {
+        for (let k = i + 1; k < stack.length; k++) {
+          const order = [...stack];
+          [order[i], order[k]] = [order[k], order[i]];
+          const nodes = new Map(doc.nodes.map((n) => [n.id, n]));
+          let y = stack[0].y;
+          for (const [j, n] of order.entries()) {
+            nodes.set(n.id, { ...n, y });
+            y += nodeRect(n).h + (gaps[j] ?? 0);
+          }
+          refit(doc, nodes);
+          if (collision(doc, nodes)) continue;
+          const moved = new Set(order.filter((n) => nodes.get(n.id)!.y !== n.y).map((n) => n.id));
+          const edges = comb(doc, nodes).map((e) => (e.tidied && (moved.has(e.from.node) || moved.has(e.to.node)) ? (({ route: _r, tidied: _t, ...rest }) => rest)(e) : e));
+          const trial = { ...doc, nodes: doc.nodes.map((n) => nodes.get(n.id)!), edges };
+          // Only the ports of the moved boxes, and of the boxes they are wired to, can want another order.
+          const near = new Set(doc.edges.flatMap((e) => (moved.has(e.from.node) || moved.has(e.to.node) ? [e.from.node, e.to.node] : [])));
+          const laid = orderPorts(trial, near);
+          const rough = tangle(laid);
+          if (rough < quick) hopeful.push({ doc: trial, ported: laid, quick: rough });
+        }
+      }
+      let pick: { doc: Doc; ported: Doc; quick: number; score: number } | null = null;
+      for (const h of hopeful.sort((p, q) => p.quick - q.quick).slice(0, HOPEFUL)) {
+        best ??= finished(ported);
+        const score = finished(h.ported);
+        if (score < (pick?.score ?? best)) pick = { ...h, score };
+      }
+      if (!pick) break;
+      best = pick.score;
+      quick = pick.quick;
+      doc = pick.doc;
+      ported = pick.ported;
+    }
+  }
+  return ported;
+}
+
 function pass(doc: Doc): Doc {
   const arranged = arrange(doc);
   const balanced = { ...doc, nodes: doc.nodes.map((n) => arranged.get(n.id)!), edges: comb(doc, arranged) };
@@ -922,7 +1038,7 @@ export function tidy(doc: Doc): Doc {
     return rest;
   };
   const fresh = doc.edges.some((e) => e.tidied) ? { ...doc, edges: doc.edges.map((e) => (e.tidied ? unlaid(e) : e)) } : doc;
-  let next = orderPorts(fresh);
+  let next = reorder(fresh);
   // One pass can open up room for the next; a handful settles any board.
   for (let i = 0; i < 6; i++) {
     const after = pass(next);
@@ -933,7 +1049,8 @@ export function tidy(doc: Doc): Doc {
   // (Found without the bends an earlier tidy laid: those are laid afresh, not held up against.)
   if (tangle(next) > tangle(fresh)) next = fresh;
   // Lines routed afresh round the others can come in from another side: the ports follow them.
-  next = nudge(orderPorts(turnPorts(untangle(orderPorts(next)))));
+  const earlier = new Map(doc.edges.flatMap((e) => (e.tidied && e.route ? [[e.id, e.route] as [string, Pt[]]] : [])));
+  next = nudge(orderPorts(turnPorts(untangle(orderPorts(next), earlier))));
   // Pressing tidy again never undoes a better wiring an earlier tidy found: if this one comes out
   // more tangled than the board it was given, the board stays as it was (but for the labels).
   if (doc.edges.length < WEIGH_UP_TO && tangle(next) > tangle(doc)) next = doc;
@@ -941,3 +1058,4 @@ export function tidy(doc: Doc): Doc {
   next = placeLabels(next);
   return JSON.stringify(next) === JSON.stringify(doc) ? doc : next;
 }
+

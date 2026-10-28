@@ -13,7 +13,7 @@ export const STUB = 18;
 export const isH = (d: Dir): boolean => d === 'left' || d === 'right';
 /** Two ends facing each other across a gap wide enough for a line to jog between them. */
 export const facing = (l: Anchor, r: Anchor): boolean => l.dir === 'right' && r.dir === 'left' && r.x - l.x >= CLEAR * 2;
-const BEND = 36;
+export const BEND = 36;
 /** Size of the cells obstacles are filed under for quick look-up (px). */
 const CELL = 160;
 const STEP: [number, number][] = [
@@ -190,6 +190,25 @@ export function alongBorders(borders: Seg[], flat: boolean, at: number, lo: numb
   return cost;
 }
 
+/** What each pixel of a line run through an area it has no end in costs a search, against a pixel of length. */
+export const TRESPASS = 2;
+
+/** How far a line runs through the areas in `areas` (areas it has no end in), in pixels. */
+export function trespass(pts: Pt[], areas: Rect[]): number {
+  return segmentsOf(pts).reduce((sum, q) => sum + inAreas(areas, q.flat, q.at, q.lo, q.hi), 0);
+}
+
+/** How much of the run from (lo, at) to (hi, at), or (at, lo) to (at, hi), lies inside the areas. */
+function inAreas(areas: Rect[], flat: boolean, at: number, lo: number, hi: number): number {
+  let sum = 0;
+  for (const f of areas) {
+    const [a0, a1, b0, b1] = flat ? [f.y, f.y + f.h, f.x, f.x + f.w] : [f.x, f.x + f.w, f.y, f.y + f.h];
+    if (at <= a0 + 1 || at >= a1 - 1) continue;
+    sum += Math.max(0, Math.min(hi, b1) - Math.max(lo, b0));
+  }
+  return sum;
+}
+
 /** What a whole polyline costs for running alongside the borders. */
 export function hugCost(pts: Pt[], borders: Seg[]): number {
   return segmentsOf(pts).reduce((sum, q) => sum + alongBorders(borders, q.flat, q.at, q.lo, q.hi), 0);
@@ -284,7 +303,7 @@ function overLines(segs: Seg[], flat: boolean, at: number, lo: number, hi: numbe
   return cost;
 }
 
-function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: Seg[] = [], reach = Infinity, borders: Seg[] = []): Pt[] | null {
+function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: Seg[] = [], reach = Infinity, borders: Seg[] = [], areas: Rect[] = []): Pt[] | null {
   const out = (p: Anchor): Pt => ({ x: p.x + STEP[INDEX[p.dir]][0] * STUB, y: p.y + STEP[INDEX[p.dir]][1] * STUB });
   const s = out(a);
   const t = out(b);
@@ -298,10 +317,12 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
   const near = (v: number[], p: number, q: number) => (reach === Infinity ? v : v.filter((x) => x >= Math.min(p, q) - reach && x <= Math.max(p, q) + reach));
   const halves = (v: number[]) => (segs.length ? [...v, ...v.slice(1).map((x, i) => (x + v[i]) / 2)].sort((p, q) => p - q) : v);
   // Lanes either side of each area border, clear of it, so a way along an area need not hug its edge.
-  const off = (flat: boolean) => borders.filter((q) => q.flat === flat).flatMap((q) => [q.at - HUG - 6, q.at + HUG + 6]);
+  // Areas the line has no end in are passed round outside their borders: those lanes are wanted too.
+  const off = (flat: boolean) => [...borders, ...bordersOf(areas)].filter((q) => q.flat === flat).flatMap((q) => [q.at - HUG - 6, q.at + HUG + 6]);
   const sorted = (v: number[]) => [...new Set(v)].sort((p, q) => p - q);
-  const xs = withLines(halves(near(borders.length ? sorted([...xb, ...off(false)]) : xb, s.x, t.x)), s.x, t.x);
-  const ys = withLines(halves(near(borders.length ? sorted([...yb, ...off(true)]) : yb, s.y, t.y)), s.y, t.y);
+  const bordered = borders.length > 0 || areas.length > 0;
+  const xs = withLines(halves(near(bordered ? sorted([...xb, ...off(false)]) : xb, s.x, t.x)), s.x, t.x);
+  const ys = withLines(halves(near(bordered ? sorted([...yb, ...off(true)]) : yb, s.y, t.y)), s.y, t.y);
   const W = xs.length;
   const H = ys.length;
   if (W * H > 40000) return null;
@@ -319,9 +340,9 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
     if (!down[c]) down[c] = inside(xs[i], (ys[j] + ys[j + 1]) / 2) ? -1 : 1;
     return down[c] === 1;
   };
-  // What running over other lines, or along an area's border, costs on the grid edge leaving (i, j)
-  // to the right / downwards.
-  const costly = segs.length > 0 || borders.length > 0;
+  // What running over other lines, along an area's border or through an area the line has no end in
+  // costs on the grid edge leaving (i, j) to the right / downwards.
+  const costly = segs.length > 0 || borders.length > 0 || areas.length > 0;
   const linesRight = costly ? new Float64Array(W * H).fill(-1) : null;
   const linesDown = costly ? new Float64Array(W * H).fill(-1) : null;
   const over = (nd: number, i: number, j: number, ni: number, nj: number): number => {
@@ -331,7 +352,10 @@ function search(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, segs: S
     const cj = Math.min(j, nj);
     const c = cj * W + ci;
     const cache = flat ? linesRight : linesDown;
-    if (cache[c] < 0) cache[c] = flat ? overLines(segs, true, ys[cj], xs[ci], xs[ci + 1]) + alongBorders(borders, true, ys[cj], xs[ci], xs[ci + 1]) : overLines(segs, false, xs[ci], ys[cj], ys[cj + 1]) + alongBorders(borders, false, xs[ci], ys[cj], ys[cj + 1]);
+    if (cache[c] < 0) {
+      const [at, lo, hi] = flat ? [ys[cj], xs[ci], xs[ci + 1]] : [xs[ci], ys[cj], ys[cj + 1]];
+      cache[c] = overLines(segs, flat, at, lo, hi) + alongBorders(borders, flat, at, lo, hi) + inAreas(areas, flat, at, lo, hi) * TRESPASS;
+    }
     return cache[c];
   };
 
@@ -452,10 +476,10 @@ function squeeze(pts: Pt[]): Pt[] {
  * Route from a to b keeping `margin` clear of every obstacle; in tight spots
  * the margin is reduced before giving up (null = no way through).
  */
-export function routeAround(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, borders: Seg[] = []): Pt[] | null {
+export function routeAround(a: Anchor, b: Anchor, obstacles: Rect[], margin: number, borders: Seg[] = [], areas: Rect[] = []): Pt[] | null {
   for (const m of [margin, 6, 2]) {
     for (const reach of REACHES) {
-      const pts = search(a, b, obstacles, m, [], reach, borders);
+      const pts = search(a, b, obstacles, m, [], reach, borders, areas);
       if (pts) return pts;
     }
   }
@@ -469,10 +493,10 @@ export function routeAround(a: Anchor, b: Anchor, obstacles: Rect[], margin: num
 const REACHES = [400, 1500, Infinity];
 
 /** The way round the obstacles that crosses and runs over the lines in `segs` least, or null. */
-export function routeClear(a: Anchor, b: Anchor, obstacles: Rect[], segs: Seg[], borders: Seg[] = []): Pt[] | null {
+export function routeClear(a: Anchor, b: Anchor, obstacles: Rect[], segs: Seg[], borders: Seg[] = [], areas: Rect[] = []): Pt[] | null {
   for (const m of [12, 6]) {
     for (const reach of REACHES) {
-      const pts = search(a, b, obstacles, m, segs, reach, borders);
+      const pts = search(a, b, obstacles, m, segs, reach, borders, areas);
       if (pts) return pts;
     }
   }

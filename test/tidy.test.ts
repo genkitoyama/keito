@@ -333,3 +333,77 @@ cables:
     expect(sides[0]).toBe(sides[1]);
   });
 });
+
+describe('boxes stacked in an area', () => {
+  // The server on top talks to the store at the bottom, the one below to the store on top: their lines cross.
+  const board = () =>
+    fromYaml(
+      `kind: software
+areas:
+  - { name: アプリ, rect: [0, 0, 260, 420] }
+  - { name: データ, rect: [500, 0, 260, 420] }
+devices:
+  - { id: web, name: Web, area: アプリ, out: [Store:tcp], pos: [40, 60] }
+  - { id: job, name: Job, area: アプリ, out: [Cache:tcp], pos: [40, 260] }
+  - { id: cache, name: Cache, area: データ, in: [IN:tcp], pos: [540, 60] }
+  - { id: store, name: Store, area: データ, in: [IN:tcp], pos: [540, 260] }
+cables:
+  - { id: s, from: web.Store, to: store.IN, type: tcp }
+  - { id: c, from: job.Cache, to: cache.IN, type: tcp }
+`,
+      blank('stacked'),
+    );
+  const y = (d: Doc, id: string) => d.nodes.find((n) => n.id === id)!.y;
+
+  it('trade places so their lines run straight across', () => {
+    const before = board();
+    const after = tidy(before);
+    expect(tangle(after)).toBe(0);
+    for (const id of ['s', 'c']) expect(routeEdges(after).get(id)!.length).toBe(2);
+    // Each box keeps its area.
+    for (const id of ['web', 'job', 'cache', 'store']) expect(frameOf(after, after.nodes.find((n) => n.id === id)!)!.text).toBe(frameOf(before, before.nodes.find((n) => n.id === id)!)!.text);
+  });
+
+  it('keep their order when a line on them is bent by hand', () => {
+    const before = board();
+    const routed = { ...before, edges: before.edges.map((e) => (e.id === 's' ? { ...e, route: routeEdges(before).get('s')!.slice(1, -1) } : e)) };
+    const after = tidy(routed);
+    expect(y(after, 'web')).toBeLessThan(y(after, 'job'));
+    expect(y(after, 'cache')).toBeLessThan(y(after, 'store'));
+  });
+});
+
+describe('an area between the two ends of a line', () => {
+  // The app's line to the gateway runs level with the data area in between.
+  const board = () =>
+    fromYaml(
+      `kind: software
+areas:
+  - { name: アプリ, rect: [0, 0, 260, 400] }
+  - { name: データ, rect: [400, 100, 260, 260] }
+  - { name: 出口, rect: [800, 100, 260, 260] }
+devices:
+  - { id: app, name: App, area: アプリ, out: [OUT:http], pos: [40, 180] }
+  - { id: db, name: DB, area: データ, in: [IN:tcp], pos: [440, 280] }
+  - { id: nat, name: NAT, area: 出口, in: [IN:http], pos: [840, 170] }
+cables:
+  - { id: out, from: app.OUT, to: nat.IN, type: http }
+`,
+      blank('aside'),
+    );
+  const through = (d: Doc) => {
+    const f = nodeRect(d.nodes.find((n) => n.type === 'frame' && n.text === 'データ')!);
+    const pts = routeEdges(d).get('out')!;
+    let sum = 0;
+    for (let i = 1; i < pts.length; i++) {
+      const [a, b] = [pts[i - 1], pts[i]];
+      if (Math.abs(a.y - b.y) < 0.5 && a.y > f.y && a.y < f.y + f.h) sum += Math.max(0, Math.min(Math.max(a.x, b.x), f.x + f.w) - Math.max(Math.min(a.x, b.x), f.x));
+      if (Math.abs(a.x - b.x) < 0.5 && a.x > f.x && a.x < f.x + f.w) sum += Math.max(0, Math.min(Math.max(a.y, b.y), f.y + f.h) - Math.max(Math.min(a.y, b.y), f.y));
+    }
+    return sum;
+  };
+
+  it('goes round the area rather than through it', () => {
+    expect(through(board())).toBe(0);
+  });
+});
