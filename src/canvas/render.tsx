@@ -433,6 +433,9 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
     case 'frame': {
       // A coloured area takes the tint as a light wash, with the outline and title in the full colour.
       const tint = n.color && n.color !== 'gray' ? { wash: PALETTE[n.color].fill, line: n.color === 'white' ? PALETTE.white.stroke : STRONG[n.color].fill } : null;
+      // Within another coloured area its wash is laid on thick, so the two tints do not mix into a third
+      // (a blue subnet in a purple network would read lilac).
+      const within = !!tint && !!doc?.nodes.some((o) => o.type === 'frame' && o.id !== n.id && o.color && o.color !== 'gray' && o.color !== 'white' && o.x <= n.x && o.y <= n.y && o.x + o.w >= n.x + w && o.y + o.h >= n.y + h);
       return (
         <g>
           <rect
@@ -442,7 +445,7 @@ export function NodeView({ n, theme, doc }: { n: Node; theme: Theme; doc?: Doc }
             height={h}
             rx={10}
             fill={(tint?.wash ?? 'rgba(100,116,139,0.06)')}
-            fillOpacity={tint ? 0.45 : undefined}
+            fillOpacity={tint ? (within ? 0.8 : 0.45) : undefined}
             stroke={(tint?.line ?? '#94a3b8')}
             strokeWidth={tint ? 1.5 : 1.2}
             strokeDasharray={'6 5'}
@@ -828,11 +831,19 @@ export function HopCaps({ doc, theme }: { doc: Doc; theme: Theme }) {
   );
 }
 
+/** Area frames in the order to draw them: an area within another after it, so its own tint lies on top; otherwise as on the board. */
+export function framesInOrder(doc: Doc): Node[] {
+  const frames = doc.nodes.filter((n) => n.type === 'frame');
+  const holds = (o: Node, f: Node) => o !== f && o.x <= f.x && o.y <= f.y && o.x + o.w >= f.x + f.w && o.y + o.h >= f.y + f.h;
+  const depth = new Map(frames.map((f) => [f.id, frames.filter((o) => holds(o, f)).length]));
+  return frames.map((f, i) => ({ f, i })).sort((p, q) => depth.get(p.f.id)! - depth.get(q.f.id)! || p.i - q.i).map(({ f }) => f);
+}
+
 export function DocView({ doc, theme }: { doc: Doc; theme: Theme }) {
   return (
     <g>
       {doc.nodes.filter(isUnderlay).map((n) => <NodeView key={n.id} n={n} theme={theme} doc={doc} />)}
-      {doc.nodes.filter((n) => n.type === 'frame').map((n) => <NodeView key={n.id} n={n} theme={theme} />)}
+      {framesInOrder(doc).map((n) => <NodeView key={n.id} n={n} theme={theme} doc={doc} />)}
       {(doc.hops ? hopOrder(doc) : doc.edges).map((e) => <EdgeView key={e.id} doc={doc} e={e} theme={theme} hideLabel />)}
       <HopCaps doc={doc} theme={theme} />
       <EdgeLabels doc={doc} theme={theme} />
