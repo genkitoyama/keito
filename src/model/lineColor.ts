@@ -2,7 +2,7 @@ import { signalOf } from './signals';
 import type { Doc, Edge, SignalId } from './types';
 
 /** Colours offered for lines: strong enough to read as a thin stroke on a light board. */
-export const LINE_COLORS = ['#475569', '#dc2626', '#ea580c', '#eab308', '#16a34a', '#0d9488', '#0891b2', '#2563eb', '#9333ea', '#db2777'];
+export const LINE_COLORS = ['#475569', '#dc2626', '#ea580c', '#eab308', '#16a34a', '#0d9488', '#0891b2', '#2563eb', '#a21caf', '#db2777'];
 
 /** Colour of a signal type on this board: its own choice if it has made one, else the built-in colour. */
 export const signalColor = (doc: Pick<Doc, 'signalColors'> | undefined, id: SignalId): string => doc?.signalColors?.[id] ?? signalOf(id).color;

@@ -9,7 +9,7 @@ import { type Placing, duplicateInPlace, storeImage, useStore } from '../model/s
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
 import { tell } from '../platform/io';
-import { EdgeView, HopCaps, INK, LabelChip, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, textHeightFor, textSize, textWeight, textWidth } from './render';
+import { EdgeView, HopCaps, INK, LabelChip, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, framesInOrder, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 import { composing, onControl } from '../ui/keys';
 import { type Corner, type Drag, type Ghost, type Plan, SIDES, ACCENT, canConnect, st } from './drag';
@@ -759,7 +759,7 @@ export function Canvas() {
   const routes = routeEdges(doc);
   // An underlay (a floor plan) lies beneath everything and lets the pointer through.
   const underlays = doc.nodes.filter(isUnderlay);
-  const frames = doc.nodes.filter((n) => n.type === 'frame');
+  const frames = framesInOrder(doc);
   const others = doc.nodes.filter((n) => n.type !== 'frame' && !isUnderlay(n));
   const single = selection.length === 1 ? doc.nodes.find((n) => n.id === selection[0]) : undefined;
   const selectedEdge = selection.length === 1 ? doc.edges.find((e) => e.id === selection[0]) : undefined;

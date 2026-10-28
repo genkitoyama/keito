@@ -44,7 +44,7 @@ export const SIGNALS: Signal[] = [
   { id: 'audio', label: '音声', prefix: 'AUD', color: '#db2777', dash: '5 3', cable: true, group: 'cable' },
   { id: 'power', label: '電源', prefix: 'PWR', color: '#dc2626', dash: '14 4', cable: true, group: 'cable' },
   { id: 'fiber', label: '光ファイバー', prefix: 'FBR', color: '#ea580c', dash: '14 3 4 3', cable: true, group: 'medium' },
-  { id: 'dmx', label: 'DMX', prefix: 'DMX', color: '#9333ea', dash: '6 2 1 2', cable: true, group: 'cable' },
+  { id: 'dmx', label: 'DMX', prefix: 'DMX', color: '#a21caf', dash: '6 2 1 2', cable: true, group: 'cable' },
   { id: 'serial', label: 'シリアル/GPIO', prefix: 'SER', color: '#65a30d', dash: '3 2', cable: true, group: 'cable' },
   // Genlock, LTC, word clock: what keeps devices in step, run on its own cable.
   { id: 'sync', label: '同期（Genlock・LTC）', prefix: 'SYNC', color: '#0d9488', dash: '12 2 2 2 2 2', cable: true, group: 'cable', late: true },
@@ -54,7 +54,7 @@ export const SIGNALS: Signal[] = [
   { id: 'other', label: 'その他ケーブル', prefix: 'CBL', color: '#1f2937', dash: '', cable: true, group: 'other' },
   // Software boards: how pieces of software talk. Not cables; their port goes in the line's spec.
   { id: 'http', label: 'HTTP(S)', prefix: 'HTTP', color: '#2563eb', dash: '', cable: false, protocol: true, group: 'protocol' },
-  { id: 'websocket', label: 'WebSocket', prefix: 'WS', color: '#7c3aed', dash: '', cable: false, protocol: true, group: 'protocol' },
+  { id: 'websocket', label: 'WebSocket', prefix: 'WS', color: '#0891b2', dash: '', cable: false, protocol: true, group: 'protocol' },
   { id: 'osc', label: 'OSC', prefix: 'OSC', color: '#db2777', dash: '5 3', cable: false, protocol: true, group: 'protocol' },
   { id: 'mqtt', label: 'MQTT', prefix: 'MQTT', color: '#0d9488', dash: '9 3', cable: false, protocol: true, group: 'protocol' },
   { id: 'tcp', label: 'TCP', prefix: 'TCP', color: '#d97706', dash: '', cable: false, protocol: true, group: 'protocol' },
@@ -100,15 +100,16 @@ export const allSignals = (): Signal[] => [...SIGNALS.filter((s) => !custom.has(
 export const groupSignals = (list: Signal[]): { label: string; items: Signal[] }[] =>
   SIGNAL_GROUPS.map((g) => ({ label: g.label, items: list.filter((s) => s.group === g.id) })).filter((g) => g.items.length);
 
+// Blue leans to sky and purple to magenta, so the two read apart, pale tints and areas within areas too.
 export const PALETTE: Record<ColorKey, { fill: string; stroke: string }> = {
   white: { fill: '#ffffff', stroke: '#b4bfcc' },
   gray: { fill: '#f1f5f9', stroke: '#64748b' },
-  blue: { fill: '#dbeafe', stroke: '#3b82f6' },
+  blue: { fill: '#d9efff', stroke: '#1f8ceb' },
   green: { fill: '#dcfce7', stroke: '#22c55e' },
   yellow: { fill: '#fef3c7', stroke: '#eab308' },
   orange: { fill: '#ffedd5', stroke: '#f97316' },
   red: { fill: '#fee2e2', stroke: '#ef4444' },
-  purple: { fill: '#fae8ff', stroke: '#c026d3' },
+  purple: { fill: '#fbdcf2', stroke: '#cc2e9a' },
 };
 /** A device with no colour: its header and outline. */
 export const PLAIN_DEVICE = { fill: '#e8edf3', stroke: '#334155' };
@@ -129,12 +130,12 @@ export const COLOR_NAME: Record<ColorKey, string> = {
 export const STRONG: Record<ColorKey, { fill: string; text: string }> = {
   white: { fill: '#64748b', text: '#ffffff' },
   gray: { fill: '#475569', text: '#ffffff' },
-  blue: { fill: '#1d6ff2', text: '#ffffff' },
+  blue: { fill: '#0b78e3', text: '#ffffff' },
   green: { fill: '#12a150', text: '#ffffff' },
   yellow: { fill: '#ffd60a', text: '#27323f' },
   orange: { fill: '#ff7a00', text: '#ffffff' },
   red: { fill: '#e60012', text: '#ffffff' },
-  purple: { fill: '#b5179e', text: '#ffffff' },
+  purple: { fill: '#b8188a', text: '#ffffff' },
 };
 
 /** Sticky notes use paper colours: more saturated than shapes, with a darker shade for the curl. */
