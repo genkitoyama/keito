@@ -50,14 +50,24 @@ Export to PDF (A4 / A3 landscape), image (PNG / SVG), lists (Excel / CSV) and da
 
 ## Getting started
 
-There are no prebuilt releases yet; run it from source.
+### Desktop app (macOS)
 
-### Requirements
+Download `keito_<version>_aarch64.dmg` from [Releases](https://github.com/genkitoyama/keito/releases/latest), open it, and drag keito into your Applications folder. It runs on Macs with Apple silicon (M1 or later) and macOS 11 or later. It is signed with a Developer ID and notarized by Apple, so it opens without a warning.
+
+On first launch, choose the folder for your boards (`Documents/keito`, or one you pick).
+
+To use it from the command line and Claude Code (see "Command line and Claude Code" below), keep the source on your machine too.
+
+### From source
+
+For the browser version, an Intel Mac, or development.
+
+#### Requirements
 
 - [Node.js](https://nodejs.org/) 22 or later
 - [Rust](https://www.rust-lang.org/tools/install), only to build the desktop app (tested on macOS)
 
-### In the browser
+#### In the browser
 
 ```bash
 git clone https://github.com/genkitoyama/keito.git
@@ -70,14 +80,15 @@ Open the URL shown in the terminal (usually http://localhost:5183, or another po
 
 Boards are saved in `keito/boards/`. To save them elsewhere, set the `KEITO_BOARDS` environment variable, or `"boards"` in `~/.config/keito/config.json`.
 
-### As a desktop app
+#### Running and building the desktop app
 
 ```bash
-npm run app        # run in development mode
-npm run app:build  # build the .app and .dmg (in src-tauri/target/release/bundle/)
+npm run app          # run in development mode
+npm run app:build    # build the .app and .dmg (in src-tauri/target/release/bundle/)
+npm run app:release  # build a signed and notarized .dmg to hand out (see docs/development.md)
 ```
 
-On first launch, choose the folder for your boards (`Documents/keito`, or one you pick). Point it at the same folder as the command line or the browser version and they share the same boards.
+Point the desktop app's boards folder at the same folder as the command line or the browser version and they share the same boards.
 
 ## Command line and Claude Code
 
@@ -102,7 +113,7 @@ Instructions for Claude Code are in `.claude/skills/keito/`. Open Claude Code in
 ## Known limitations
 
 - No real-time collaboration or cloud sharing: boards are saved on your own computer only. To hand one over, send an exported `.keito.json` or the board's folder.
-- The desktop app has been tested on macOS only.
+- The desktop app is released for macOS (Apple silicon) only. Elsewhere, run it from source.
 
 ## License
 
