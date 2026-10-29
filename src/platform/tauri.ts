@@ -141,10 +141,12 @@ const system: Platform = {
       return true;
     },
   },
-  // The app's webview cannot print on macOS: the page opens in the user's browser, which can.
-  async print(html) {
-    await invoke('open_for_print', { html });
-    return 'ブラウザで開きました。そこで印刷（⌘P）を開き、送信先を「PDF に保存」にしてください（用紙は横向きで出ます）。';
+  // The app prints the page itself into the file picked, with no print dialog.
+  async print(html, name, paper) {
+    const path = await invoke<string | null>('pick_save', { name: `${name}.pdf`, extensions: ['pdf'], downloads: true });
+    if (!path) return '';
+    await invoke('save_pdf', { path, html, paper });
+    return 'PDF を保存しました。';
   },
 };
 
