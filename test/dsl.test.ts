@@ -133,7 +133,7 @@ describe('YAML keeps what is less often written', () => {
     const sticky = { id: 'memo', type: 'sticky' as const, x: 0, y: 0, w: 100, h: 60, text: 'メモ', color: 'yellow' as const };
     const area = { id: 'a0', type: 'frame' as const, x: -500, y: -500, w: 200, h: 100, text: '' };
     const [x, y] = d.nodes.filter((n) => n.type === 'device');
-    const flow = { id: 'f1', from: { node: x.id }, to: { node: y.id }, signal: 'flow', label: '', note: '確認する', arrow: 'end' as const };
+    const flow = { id: 'f1', from: { node: x.id }, to: { node: y.id }, signal: 'flow', label: '', length: null, note: '確認する', arrow: 'end' as const };
     // The note over everything, drawn last.
     const doc = { ...d, nodes: [area, ...d.nodes, sticky], edges: [...d.edges, flow] };
     const back = fromYaml(toYaml(doc), doc);

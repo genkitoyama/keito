@@ -35,8 +35,8 @@ describe('venue equipment', () => {
       device('p2', 'プロジェクター', [{ id: 'ac', name: 'AC', side: 'left', signal: 'power' }], { watts: 560 }),
     ],
     edges: [
-      { id: 'e1', from: { node: 'w1', port: 'o' }, to: { node: 'p1', port: 'ac' }, signal: 'power', label: '', arrow: 'none' },
-      { id: 'e2', from: { node: 'w2', port: 'o' }, to: { node: 'p2', port: 'ac' }, signal: 'power', label: '', arrow: 'none' },
+      { id: 'e1', from: { node: 'w1', port: 'o' }, to: { node: 'p1', port: 'ac' }, signal: 'power', label: '', length: null, note: '', arrow: 'none' },
+      { id: 'e2', from: { node: 'w2', port: 'o' }, to: { node: 'p2', port: 'ac' }, signal: 'power', label: '', length: null, note: '', arrow: 'none' },
     ],
   });
 
@@ -159,7 +159,7 @@ describe('cable IDs typed by hand', () => {
     const d: Doc = {
       ...blank(),
       nodes: [device('a', 'A', [{ id: 'o', name: 'HDMI', side: 'right', signal: 'video' }]), device('b', 'B', [{ id: 'i', name: 'HDMI', side: 'left', signal: 'video' }])],
-      edges: [0, 1, 2].map((i) => ({ id: `e${i}`, from: { node: 'a', port: 'o' }, to: { node: 'b', port: 'i' }, signal: 'video', label: '', arrow: 'none' as const, ...(i === 0 ? { cableId: 'HDMI-02' } : {}) })),
+      edges: [0, 1, 2].map((i) => ({ id: `e${i}`, from: { node: 'a', port: 'o' }, to: { node: 'b', port: 'i' }, signal: 'video', label: '', length: null, note: '', arrow: 'none' as const, ...(i === 0 ? { cableId: 'HDMI-02' } : {}) })),
     };
     const ids = [...cableIds(d).values()];
     expect(new Set(ids).size).toBe(3);
@@ -178,9 +178,9 @@ describe('power and addresses in less usual drawings', () => {
         device('b', 'B', [{ id: 'i', name: 'AC', side: 'left', signal: 'power' }], { watts: 80 }),
       ],
       edges: [
-        { id: 'e1', from: { node: 'ups', port: 'o' }, to: { node: 'j' }, signal: 'power', label: '', arrow: 'none' },
-        { id: 'e2', from: { node: 'j' }, to: { node: 'a', port: 'i' }, signal: 'power', label: '', arrow: 'none' },
-        { id: 'e3', from: { node: 'j' }, to: { node: 'b', port: 'i' }, signal: 'power', label: '', arrow: 'none' },
+        { id: 'e1', from: { node: 'ups', port: 'o' }, to: { node: 'j' }, signal: 'power', label: '', length: null, note: '', arrow: 'none' },
+        { id: 'e2', from: { node: 'j' }, to: { node: 'a', port: 'i' }, signal: 'power', label: '', length: null, note: '', arrow: 'none' },
+        { id: 'e3', from: { node: 'j' }, to: { node: 'b', port: 'i' }, signal: 'power', label: '', length: null, note: '', arrow: 'none' },
       ],
     };
     expect(powerLoads(d).get('ups')).toMatchObject({ watts: 160, over: true });
@@ -198,7 +198,7 @@ describe('WebSocket on an HTTPS port', () => {
       ...blank(),
       kind: 'software',
       nodes: [device('b', 'ブラウザ', [{ id: 'o', name: 'WSS', side: 'right', signal: 'websocket' }]), device('lb', 'ALB', [{ id: 'i', name: 'HTTPS', side: 'left', signal: 'http' }])],
-      edges: [{ id: 'e', from: { node: 'b', port: 'o' }, to: { node: 'lb', port: 'i' }, signal: 'websocket', label: '', arrow: 'end' }],
+      edges: [{ id: 'e', from: { node: 'b', port: 'o' }, to: { node: 'lb', port: 'i' }, signal: 'websocket', label: '', length: null, note: '', arrow: 'end' }],
     };
     expect(checkTable(d).rows.some((r) => r.join(' ').includes('種別の不一致'))).toBe(false);
   });

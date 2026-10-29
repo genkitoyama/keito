@@ -140,7 +140,8 @@ export function writeWhole(file: string, data: string | Buffer): void {
   try {
     const fd = fs.openSync(tmp, 'w');
     try {
-      fs.writeSync(fd, data);
+      if (typeof data === 'string') fs.writeSync(fd, data);
+      else fs.writeSync(fd, data);
       fs.fsyncSync(fd);
     } finally {
       fs.closeSync(fd);

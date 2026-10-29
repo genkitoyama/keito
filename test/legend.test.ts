@@ -5,7 +5,7 @@ import { blank } from './helpers';
 
 const device = (id: string, p: Partial<DeviceNode> = {}): DeviceNode => ({ id, type: 'device', x: 0, y: 0, w: 160, h: 0, text: id, maker: '', model: '', category: '', note: '', ports: [], ...p });
 const legend = (p: Partial<LegendNode> = {}): LegendNode => ({ id: 'lg', type: 'legend', x: 0, y: -400, w: 200, h: 0, text: '凡例', devices: true, ...p });
-const board = (nodes: Node[]): Doc => ({ ...blank(), nodes, edges: [{ id: 'e', from: { node: 'a' }, to: { node: 'b' }, signal: 'video', label: '', arrow: 'none' }] });
+const board = (nodes: Node[]): Doc => ({ ...blank(), nodes, edges: [{ id: 'e', from: { node: 'a' }, to: { node: 'b' }, signal: 'video', label: '', length: null, note: '', arrow: 'none' }] });
 // A colour key drawn by hand: free-standing shapes named after who supplies each colour.
 const key = (id: string, color: 'blue' | 'orange', text: string): Node => ({ id, type: 'shape', shape: 'rect', x: 0, y: -600, w: 100, h: 40, text, color, fill: 'tint' });
 
@@ -42,9 +42,9 @@ describe('legend of lines', () => {
       ...blank(),
       nodes: [device('a'), device('b')],
       edges: [
-        { id: 'w', from: { node: 'a' }, to: { node: 'b' }, signal: 'wireless', label: '', arrow: 'none' },
-        { id: 'p', from: { node: 'a' }, to: { node: 'b' }, signal: 'power', label: '', arrow: 'none' },
-        { id: 'v', from: { node: 'a' }, to: { node: 'b' }, signal: 'video', label: '', arrow: 'none' },
+        { id: 'w', from: { node: 'a' }, to: { node: 'b' }, signal: 'wireless', label: '', length: null, note: '', arrow: 'none' },
+        { id: 'p', from: { node: 'a' }, to: { node: 'b' }, signal: 'power', label: '', length: null, note: '', arrow: 'none' },
+        { id: 'v', from: { node: 'a' }, to: { node: 'b' }, signal: 'video', label: '', length: null, note: '', arrow: 'none' },
       ],
     };
     const rows = new Map(legendRows(doc, legend()).map((r) => [r.usual, r]));
