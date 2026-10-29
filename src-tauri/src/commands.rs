@@ -215,22 +215,11 @@ pub async fn write_file(boards: State<'_, Boards>, request: tauri::ipc::Request<
     std::fs::write(path, bytes).map_err(|e| e.to_string())
 }
 
-/// A page made for print, opened in the user's browser (the app's own webview cannot print on macOS).
+/// A page made for print, written as a PDF where the user chose in a save dialog.
 #[tauri::command]
-pub fn open_for_print(app: AppHandle, html: String) -> Result<(), String> {
-    use tauri_plugin_opener::OpenerExt;
-    let dir = std::env::temp_dir().join("keito-print");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    // Earlier pages are let go once a newer one is made.
-    if let Ok(old) = std::fs::read_dir(&dir) {
-        for f in old.flatten() {
-            let _ = std::fs::remove_file(f.path());
-        }
-    }
-    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0);
-    let file = dir.join(format!("keito-{stamp}.html"));
-    std::fs::write(&file, html).map_err(|e| e.to_string())?;
-    app.opener().open_path(file.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
+pub async fn save_pdf(app: AppHandle, boards: State<'_, Boards>, path: String, html: String, paper: String) -> Result<(), String> {
+    let path = boards.take(&path)?;
+    crate::pdf::write(app, html, paper, path).await
 }
 
 /// Read a file the user picked in an open dialog.

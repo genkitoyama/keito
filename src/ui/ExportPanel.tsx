@@ -364,7 +364,7 @@ export function ExportPanel() {
                 </p>
                 <button
                   className="primary wide"
-                  onClick={run(() => printPage(all ? bookletHtml(project, parts, paper) : pdfHtml(drawn(doc), { paper, version, tables: chosen })), '')}
+                  onClick={run(() => (all ? printPage(bookletHtml(project, parts, paper), pack, paper) : printPage(pdfHtml(drawn(doc), { paper, version, tables: chosen }), name, paper)), '')}
                 >
                   {all ? `${boards.length} 枚まとめて PDF にする（${paper} 横）` : `PDF にする（${paper} 横）`}
                 </button>
