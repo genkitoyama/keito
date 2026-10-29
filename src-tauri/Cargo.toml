@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "keito: system diagrams for exhibitions and installations"
 authors = []
 license = "MIT"
-repository = ""
+repository = "https://github.com/genkitoyama/keito"
 edition = "2024"
 rust-version = "1.90"
 
