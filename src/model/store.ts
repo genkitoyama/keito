@@ -1063,12 +1063,14 @@ window.addEventListener('pagehide', () => {
 /** What was copied, and from which board (and project). */
 let clipboard: { nodes: Node[]; edges: Edge[]; board: string; project: string } | null = null;
 
-export function copySelection(): void {
+/** Copy the selected nodes (and the lines between them); false when no node is selected. */
+export function copySelection(): boolean {
   const { doc, selection } = useStore.getState();
   const ids = new Set(selection);
   const nodes = doc.nodes.filter((n) => ids.has(n.id));
-  if (!nodes.length) return;
+  if (!nodes.length) return false;
   clipboard = { nodes, edges: doc.edges.filter((e) => ids.has(e.from.node) && ids.has(e.to.node)), board: doc.id, project: doc.meta.project?.trim() ?? '' };
+  return true;
 }
 
 /**

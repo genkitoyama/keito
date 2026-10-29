@@ -21,10 +21,18 @@ import { kindOf } from './model/kinds';
 import { isUnderlay } from './model/geometry';
 import { SettingsPanel } from './ui/Settings';
 
-/** Copy on the board, and clear any picture left on the system clipboard so the next paste is this copy. */
+/**
+ * Copy on the board, and clear any picture left on the system clipboard so the next paste is this
+ * copy. With nothing copied (only lines selected), the system clipboard is left as it was.
+ */
 function copyOut() {
-  copySelection();
-  if (useStore.getState().selection.length) copyText('').catch(() => {});
+  if (copySelection()) copyText('').catch(() => {});
+}
+
+/** Text picked out on the page (a list cell, a hint): ⌘C and ⌘X are the system's for it, not the board's. */
+function pageText(): boolean {
+  const picked = window.getSelection();
+  return !!picked && !picked.isCollapsed && picked.toString().trim() !== '';
 }
 
 /** Arrow-key moves this close together (ms) are one step to undo. */
@@ -71,20 +79,22 @@ function useHotkeys() {
       const onlyNode = s.doc.nodes.find((n) => n.id === only);
       const editable = !!only && (!onlyNode || hasText(onlyNode));
       // Typing on a selected shape starts editing: mount and focus the editor synchronously and
-      // let this very keystroke flow into it. With the IME on, keys arrive as "Process": the
-      // shortcuts below are still matched by the physical key first, as with it off, and Space
-      // stays the hand for panning.
+      // let this very keystroke flow into it. With the IME on, keys arrive as "Process", and Space
+      // stays the hand for panning. A letter goes to the text before it is taken as a tool's key:
+      // a name typed in romaji ("sousinki", "tenji" …) would otherwise switch tools on its first letter.
       const typeToEdit = () => flushSync(() => s.setEditing(only));
+      const typing = editable && !mod && !e.altKey && (ime ? e.code !== 'Space' : e.key.length === 1 && e.key !== ' ');
       let handled = true;
       if (mod && key === 'z') e.shiftKey ? s.redo() : s.undo();
       else if (mod && key === 'y') s.redo();
+      else if (mod && (key === 'c' || key === 'x') && pageText()) return;
       else if (mod && key === 'c') copyOut();
       else if (mod && key === 'x') {
         copyOut();
         s.removeIds(s.selection);
       } else if (mod && key === 'v') return; // handled by the paste event, which can see images
       else if (mod && key === 'd') duplicateSelection();
-      else if (mod && key === 'a') s.select(s.doc.nodes.filter((n) => !isUnderlay(n)).map((n) => n.id));
+      else if (mod && key === 'a') s.select([...s.doc.nodes.filter((n) => !isUnderlay(n)).map((n) => n.id), ...s.doc.edges.map((ed) => ed.id)]);
       else if (mod && key === 's') void saveBoardFile();
       else if (mod && key === 'k') toggleProjectMenu();
       else if (mod && key === 'f') openSearch();
@@ -93,14 +103,17 @@ function useHotkeys() {
       else if (mod && key.startsWith('arrow') && nodeIds.length === 1) spawnFrom(nodeIds[0], key === 'arrowleft' ? 'left' : key === 'arrowright' ? 'right' : key === 'arrowup' ? 'top' : 'bottom');
       else if (mod) handled = false;
       else if (key === 'backspace' || key === 'delete') s.removeIds(s.selection);
+      // Escape lets go of the nearest thing first: what waits to be placed, the tool, the selection,
+      // and only then a panel left open to work beside.
       else if (key === 'escape') {
         if (s.placing) s.setPlacing(null);
-        else if (s.panel) s.setPanel(null);
         else if (s.tool !== 'select') s.setTool('select');
-        else s.select([]);
+        else if (s.selection.length) s.select([]);
+        else if (s.panel) s.setPanel(null);
       } else if (key === 'enter' && editable) s.setEditing(only);
+      // A pixel a press, ten with Shift, as in other drawing tools.
       else if (key.startsWith('arrow') && nodeIds.length) {
-        const step = e.shiftKey ? 1 : 10;
+        const step = e.shiftKey ? 10 : 1;
         const dx = key === 'arrowleft' ? -step : key === 'arrowright' ? step : 0;
         const dy = key === 'arrowup' ? -step : key === 'arrowdown' ? step : 0;
         const ids = new Set(nodeIds);
@@ -109,10 +122,10 @@ function useHotkeys() {
         lastNudge = e.timeStamp;
         s.mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (ids.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n)) }), fresh);
       } else if (e.shiftKey && e.code === 'Digit1') s.fit();
+      else if (typing) return typeToEdit();
       // The library and the tools a board's kind offers; keys for others do nothing on it.
       else if (key === 'l' && kindOf(s.doc).library) s.setPanel(s.panel === 'library' ? null : 'library');
       else if (TOOL_KEYS[key] && !e.shiftKey && !e.altKey && kindOf(s.doc).tools.includes(TOOL_KEYS[key])) s.setTool(TOOL_KEYS[key]);
-      else if (editable && !e.altKey && (ime ? !mod && e.code !== 'Space' : e.key.length === 1 && e.key !== ' ')) return typeToEdit();
       else handled = false;
       if (handled) e.preventDefault();
     };

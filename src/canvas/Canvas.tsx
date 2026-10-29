@@ -5,6 +5,7 @@ import { hopOrder, DEVICE_NAME, deviceHead, type Dir, center, contains, intersec
 import { type CreateKind, allIds, makeEdge, makeImage, makeNode } from '../model/presets';
 import { SEQUENCE_SAMPLE, seqLayout, seqScale } from '../model/sequence';
 import { STRONG } from '../model/signals';
+import { kindOf } from '../model/kinds';
 import { type Placing, duplicateInPlace, storeImage, useStore } from '../model/store';
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
@@ -103,7 +104,7 @@ export function placeDrag(make: () => Placing, click?: () => void) {
  * Add a node centred on `at` (default: a free spot near the view centre) and start typing into
  * it; with `rect` it takes that place and size (drawn out with the tool).
  */
-export function insertNode(kind: CreateKind, at?: Pt, rect?: Rect): void {
+export function insertNode(kind: CreateKind, at?: Pt, rect?: Rect): string {
   const s = st();
   const p = at ?? viewCenter();
   const n = makeNode(kind, snap(p.x), snap(p.y), allIds(s.doc), kind === 'sequence' ? SEQUENCE_SAMPLE : '');
@@ -124,10 +125,19 @@ export function insertNode(kind: CreateKind, at?: Pt, rect?: Rect): void {
     fresh = n.id;
     s.setEditing(n.id);
   }
+  return n.id;
 }
 
 /** A box just put down and opened for its first text: that text belongs to the step that made it. */
 let fresh: string | null = null;
+/** A box a double-click dropped on the board, by the way: left with no text, it is called off. */
+let casual: string | null = null;
+
+/** Double-click on the board drops a box to type in, on a board whose tools have boxes. */
+function dropBox(p: Pt): void {
+  if (!kindOf(st().doc).tools.includes('rect')) return;
+  casual = insertNode('rect', p);
+}
 
 /** Embed pictures (PNG / JPEG / GIF / WebP / SVG), side by side around `at` or the view centre. */
 export async function insertImages(files: File[], at?: Pt): Promise<void> {
@@ -342,6 +352,13 @@ export function Canvas() {
     if (editing && !doc.nodes.some((n) => n.id === editing) && !doc.edges.some((e) => e.id === editing)) st().setEditing(null);
   }, [editing, doc]);
 
+  // A press on the board takes the keys back from a field left focused (the library's search, a
+  // panel's input): the next keys typed go to what is selected here, not into that field.
+  const letGoOfFields = () => {
+    const a = document.activeElement;
+    if (a instanceof HTMLElement && a !== document.body && !a.closest('.text-editor-box')) a.blur();
+  };
+
   const onBackgroundDown = (e: RPointerEvent) => {
     if (e.button === 1 || tool === 'pan' || space) {
       const v = st().view;
@@ -357,7 +374,7 @@ export function Canvas() {
     // A box tool: a click puts one there, a drag draws it out to the size wanted.
     if (placesBox(tool)) return begin(e, { kind: 'place', start: p });
     // Double-click on empty canvas drops a box and starts typing, like a whiteboard.
-    if (doubleClick('canvas')) return insertNode('rect', p);
+    if (doubleClick('canvas')) return dropBox(p);
     const base = e.shiftKey ? st().selection : [];
     st().select(base);
     begin(e, { kind: 'marquee', start: p, base });
@@ -371,7 +388,7 @@ export function Canvas() {
     if (doubleClick(n.id) && hasText(n)) {
       // Double-clicking the body of an area frame adds a box there; its title strip renames it.
       const p = world(e);
-      if (n.type === 'frame' && p.y > n.y + frameTitleHeight(n)) return insertNode('rect', p);
+      if (n.type === 'frame' && p.y > n.y + frameTitleHeight(n)) return dropBox(p);
       s.select([n.id]);
       s.setEditing(n.id);
       return;
@@ -801,7 +818,7 @@ export function Canvas() {
         void insertImages([...e.dataTransfer.files], world(e));
       }}
     >
-      <svg ref={svgRef} width="100%" height="100%" style={{ cursor }} onPointerDown={onBackgroundDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onCancel} onPointerLeave={() => setPointer(null)} onDoubleClick={onDoubleClick} onContextMenu={(e) => e.preventDefault()}>
+      <svg ref={svgRef} width="100%" height="100%" style={{ cursor }} onPointerDownCapture={letGoOfFields} onPointerDown={onBackgroundDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onCancel} onPointerLeave={() => setPointer(null)} onDoubleClick={onDoubleClick} onContextMenu={(e) => e.preventDefault()}>
         <defs>
           <pattern id="dots" width={20 * view.k} height={20 * view.k} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
             <circle cx={1} cy={1} r={1} fill="#cbd5e1" />
@@ -967,6 +984,7 @@ function TextEditor({ id }: { id: string }) {
   const edge = doc.edges.find((e) => e.id === id);
   const done = useRef(false);
   const grew = useRef(false);
+  const startH = useRef(node?.h);
 
   // Layout effect: focus must land synchronously so a keystroke that opened the
   // editor (including the first IME key) is typed into it.
@@ -1010,10 +1028,12 @@ function TextEditor({ id }: { id: string }) {
     const s = st();
     const text = read();
     const first = fresh === id;
+    const dropped = casual === id;
     fresh = null;
+    casual = null;
     if (edge) {
       if (text !== edge.label) s.updateEdge(id, { label: text });
-    } else if (node?.type === 'text' && !text) {
+    } else if (node && !text && (node.type === 'text' || (dropped && first))) {
       // A text box left empty would be an invisible, unselectable leftover. Just put down, it is
       // called off altogether: no undo step brings back an empty box.
       s.setEditing(null);
@@ -1023,6 +1043,17 @@ function TextEditor({ id }: { id: string }) {
       // The growth steps (or the box's own making) already opened an undo entry; fold the text into it.
       s.updateNode(id, h == null ? { text } : { text, h }, !grew.current && !first);
     }
+    s.setEditing(null);
+  };
+  // Escape calls the edit off: the text (and the box's height) as they were. A box just put down
+  // keeps its first text all the same, as on a whiteboard, unless it is still empty.
+  const cancel = () => {
+    if (done.current) return;
+    if (fresh === id) return commit();
+    done.current = true;
+    const s = st();
+    if (grew.current) s.dropStep();
+    else if (node && startH.current != null && node.h !== startH.current) s.updateNode(id, { h: startH.current }, false);
     s.setEditing(null);
   };
 
@@ -1071,7 +1102,10 @@ function TextEditor({ id }: { id: string }) {
           e.stopPropagation();
           // While the IME is composing, Enter / Escape belong to the conversion, not to us.
           if (composing(e)) return;
-          if (e.key === 'Escape' || (e.key === 'Enter' && ((enterCommits && !e.shiftKey) || e.metaKey || e.ctrlKey))) {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            cancel();
+          } else if (e.key === 'Enter' && ((enterCommits && !e.shiftKey) || e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             commit();
           }
