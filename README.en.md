@@ -8,6 +8,10 @@ The user interface is in Japanese.
 
 ![Drawing a system diagram: the diagram on the left, the selected device's details on the right](docs/images/hero.png)
 
+Intro video (1:25, on YouTube, narrated in Japanese):
+
+<a href="https://youtu.be/bZpOZyQM5ak"><img src="docs/images/video.jpg" width="480" alt="Watch the keito intro video on YouTube"></a>
+
 ## Features
 
 - **Lines route themselves**: drag from port to port and the line finds its way around the equipment, with a cable ID (`HDMI-01` and so on) given automatically. Move a device and its lines are re-routed as you drag.
