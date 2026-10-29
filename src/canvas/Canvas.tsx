@@ -139,6 +139,13 @@ export function insertText(text: string): void {
   const p = viewCenter();
   const n = makeNode('text', snap(p.x), snap(p.y), allIds(s.doc), text);
   n.h = Math.max(n.h, textHeightFor(n, text));
+  // Like a toolbar insert, it steps down until it no longer covers what is drawn there (with room
+  // for the tags beside ports and above boxes).
+  const taken = s.doc.nodes.filter((m) => m.type !== 'frame' && !isUnderlay(m)).map((m) => {
+    const r = nodeRect(m);
+    return { x: r.x - 24, y: r.y - 24, w: r.w + 48, h: r.h + 48 };
+  });
+  for (let i = 0; i < 30 && taken.some((r) => intersects(r, nodeRect(n))); i++) n.y += 40;
   s.mutate((d) => ({ ...d, nodes: [...d.nodes, n] }));
   s.select([n.id]);
 }
