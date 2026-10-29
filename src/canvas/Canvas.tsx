@@ -393,6 +393,16 @@ export function Canvas() {
       s.setEditing(n.id);
       return;
     }
+    // Inside an area, a drag picks out what is there by a marquee, as on the bare board; the area
+    // itself is taken by its title strip (or anywhere, once it is selected).
+    if (n.type === 'frame' && !s.selection.includes(n.id)) {
+      const p = world(e);
+      if (p.y > n.y + frameTitleHeight(n)) {
+        const base = e.shiftKey ? s.selection : [];
+        s.select(base);
+        return begin(e, { kind: 'marquee', start: p, base, area: { id: n.id, sx: e.clientX, sy: e.clientY } });
+      }
+    }
     let sel = s.selection;
     if (e.shiftKey) sel = sel.includes(n.id) ? sel.filter((id) => id !== n.id) : [...sel, n.id];
     else if (!sel.includes(n.id)) sel = [n.id];
@@ -731,6 +741,11 @@ export function Canvas() {
       const rect = { x: Math.min(d.start.x, p.x), y: Math.min(d.start.y, p.y), w: Math.abs(p.x - d.start.x), h: Math.abs(p.y - d.start.y) };
       const sized = tool !== 'sequence' && (rect.w > 8 / st().view.k || rect.h > 8 / st().view.k);
       if (placesBox(tool)) insertNode(tool, sized ? center(rect) : d.start, sized ? rect : undefined);
+      return;
+    }
+    if (d?.kind === 'marquee' && d.area && Math.hypot(e.clientX - d.area.sx, e.clientY - d.area.sy) <= 4) {
+      const id = d.area.id;
+      st().select(e.shiftKey ? (d.base.includes(id) ? d.base.filter((x) => x !== id) : [...d.base, id]) : [id]);
       return;
     }
     if (d?.kind === 'segment') {
