@@ -98,6 +98,13 @@ describe('YAML keeps what lines are', () => {
     const a = d.nodes.find((n): n is DeviceNode => n.id === 'a')!;
     expect(a.ports.map((p) => p.name)).toEqual(['AUD 1']);
   });
+
+  it('puts a cable with no type or start port on a free port of the signal it goes into', () => {
+    const d = fromYaml(['devices:', '  - { id: hub, name: Hub, out: ["LAN 1:lan"] }', '  - { id: pc, name: PC, in: ["LAN:lan"] }', '  - { id: pc2, name: PC 2, in: ["LAN:lan"] }', 'cables:', '  - { from: hub, to: pc.LAN }', '  - { from: hub, to: pc2.LAN }'].join('\n'), blank());
+    const hub = d.nodes.find((n): n is DeviceNode => n.id === 'hub')!;
+    expect(hub.ports.map((p) => [p.name, p.side])).toEqual([['LAN 1', 'right'], ['LAN 2', 'right']]);
+    expect(d.edges.map((e) => e.from.port)).toEqual(hub.ports.map((p) => p.id));
+  });
 });
 
 describe('YAML that does not give a list where one is needed', () => {
