@@ -220,10 +220,14 @@ export const useStore = create<State>((set, get) => ({
   },
   openBoard: (id) => void run(async (b) => {
     if (id === get().doc.id) return;
+    const was = get();
     const doc = await switchTo(b, id);
     if (doc === 'stayed') return showInUrl(get().doc.id);
     if (doc === 'superseded') return;
-    if (doc) return show(doc);
+    if (doc) {
+      if (!was.viewing) kept.set(was.doc.id, { past: was.past, future: was.future, view: was.view, print: fingerprint(was.doc) });
+      return show(doc);
+    }
     // Deleted elsewhere (another tab, the command line), or its file broken: the list follows.
     set({ boards: await b.list() });
     showInUrl(get().doc.id);
@@ -586,14 +590,25 @@ function resetSession(doc: Doc, shown: Doc): void {
   clearTimeout(settleTimer);
 }
 
+/**
+ * Boards left for another tab in this window: their undo steps and where they were looked at, for
+ * coming back to them. They are taken up again only if the board is still the drawing it was
+ * (not changed meanwhile from the command line, say), where those steps still apply.
+ */
+const kept = new Map<string, { past: Doc[]; future: Doc[]; view: View; print: string }>();
+
 /** Put a freshly loaded (or created) board on screen. */
 function show(doc: Doc): void {
   // The base is the board as shown (legends fitted), so fitting alone never reads as an edit.
   const shown = fitLegends(doc);
   resetSession(doc, shown);
-  useStore.setState({ doc: shown, viewing: null, past: [], future: [], selection: [], editing: null, others: [], placing: null, saving: 'saved' });
+  const back = kept.get(doc.id);
+  kept.delete(doc.id);
+  const same = !!back && back.print === fingerprint(shown);
+  useStore.setState({ doc: shown, viewing: null, past: same ? back.past : [], future: same ? back.future : [], selection: [], editing: null, others: [], placing: null, saving: 'saved' });
   showInUrl(doc.id);
-  requestAnimationFrame(useStore.getState().fit);
+  if (same) useStore.setState({ view: back.view });
+  else requestAnimationFrame(useStore.getState().fit);
   void readProject();
 }
 
