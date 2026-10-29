@@ -23,8 +23,11 @@ export interface Platform {
   copyText(text: string): Promise<void>;
   /** Put a PNG on the clipboard, handed over while it is still being made (see web's). */
   copyPng(png: Promise<Blob>): Promise<void>;
-  /** Print a page made for print (to PDF, through the print dialog); what to tell the user. */
-  print(html: string): Promise<string>;
+  /**
+   * Make a PDF of a page made for print, named `name` (no extension) on `paper` landscape: through
+   * the print dialog in a browser, straight to a file in the desktop app. What to tell the user.
+   */
+  print(html: string, name: string, paper: 'A4' | 'A3'): Promise<string>;
   /**
    * The folder boards are kept in, where the user picks it (the desktop app): where it is, whether
    * it is fixed outside the app, and how to move to another (true once moved).
@@ -92,7 +95,7 @@ export const tell = (message: string): Promise<void> => platform.tell(message);
 export const openLink = (url: string): void => platform.openLink(url);
 export const copyText = (text: string): Promise<void> => platform.copyText(text);
 export const copyPng = (png: Promise<Blob>): Promise<void> => platform.copyPng(png);
-export const printPage = (html: string): Promise<string> => platform.print(html);
+export const printPage = (html: string, name: string, paper: 'A4' | 'A3'): Promise<string> => platform.print(html, name, paper);
 /** The boards folder's place and how to change it, where the user picks it; none in a browser. */
 export const boardsFolder = () => platform.boardsFolder;
 

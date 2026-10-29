@@ -1,6 +1,7 @@
 //! The keito desktop app: the web app in a window, with boards kept in a folder on this machine.
 
 mod commands;
+mod pdf;
 mod store;
 
 use commands::Boards;
@@ -92,6 +93,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .register_uri_scheme_protocol("keito-asset", |ctx, request| commands::serve_asset(ctx.app_handle(), request))
+        .register_uri_scheme_protocol("keito-print", |ctx, request| pdf::serve(ctx.app_handle(), request))
+        .manage(pdf::Pages::default())
         .invoke_handler(tauri::generate_handler![
             commands::boards_folder,
             commands::set_boards_folder,
@@ -112,7 +115,7 @@ pub fn run() {
             commands::pick_save,
             commands::pick_open,
             commands::pick_folder,
-            commands::open_for_print,
+            commands::save_pdf,
             quit,
             quit_heard,
         ])
