@@ -34,8 +34,8 @@ describe('lines leaving one box the same way round', () => {
       ...blank(),
       nodes: [dev('a', 0, 0, [{ id: 'o1', side: 'right' }, { id: 'o2', side: 'right' }]), dev('b', 400, 300, [{ id: 'r1', side: 'right' }, { id: 'r2', side: 'right' }])],
       edges: [
-        { id: 'e1', from: { node: 'a', port: 'o1' }, to: { node: 'b', port: 'r1' }, signal: 'video', label: '', arrow: 'none' as const },
-        { id: 'e2', from: { node: 'a', port: 'o2' }, to: { node: 'b', port: 'r2' }, signal: 'video', label: '', arrow: 'none' as const },
+        { id: 'e1', from: { node: 'a', port: 'o1' }, to: { node: 'b', port: 'r1' }, signal: 'video', label: '', length: null, note: '', arrow: 'none' as const },
+        { id: 'e2', from: { node: 'a', port: 'o2' }, to: { node: 'b', port: 'r2' }, signal: 'video', label: '', length: null, note: '', arrow: 'none' as const },
       ],
     };
     const r = routeEdges(doc);
@@ -51,7 +51,7 @@ describe('a line from a port back to the same port', () => {
     const doc = {
       ...blank(),
       nodes: [{ id: 'a', type: 'device' as const, x: 0, y: 0, w: 160, h: 0, text: 'A', maker: '', model: '', category: '', note: '', ports: [{ id: 'o', name: 'OUT', side: 'right' as const, signal: 'video' }] }],
-      edges: [{ id: 'e', from: { node: 'a', port: 'o' }, to: { node: 'a', port: 'o' }, signal: 'video', label: '', arrow: 'none' as const }],
+      edges: [{ id: 'e', from: { node: 'a', port: 'o' }, to: { node: 'a', port: 'o' }, signal: 'video', label: '', length: null, note: '', arrow: 'none' as const }],
     };
     const pts = routeEdges(doc).get('e')!;
     const length = pts.slice(1).reduce((s, p, i) => s + Math.hypot(p.x - pts[i].x, p.y - pts[i].y), 0);

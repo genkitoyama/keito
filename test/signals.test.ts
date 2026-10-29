@@ -13,7 +13,7 @@ describe('signal types', () => {
   });
 
   it('draws radio dashed unless the line says otherwise', () => {
-    const line = { id: 'e', from: { node: 'a' }, to: { node: 'b' }, label: '', arrow: 'none' as const };
+    const line = { id: 'e', from: { node: 'a' }, to: { node: 'b' }, label: '', length: null, note: '', arrow: 'none' as const };
     expect(lineDashed({ ...line, signal: 'wireless' })).toBe(true);
     expect(lineDashed({ ...line, signal: 'wireless', dash: false })).toBe(false);
     expect(lineDashed({ ...line, signal: 'lan' })).toBe(false);

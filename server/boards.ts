@@ -269,7 +269,7 @@ export function keitoBoards(root = boardsRoot()): Plugin {
     name: 'keito-boards',
     configureServer(server) {
       watch();
-      sayWhere(server.httpServer);
+      sayWhere(server.httpServer as Server | null);
       server.middlewares.use(handler);
     },
     configurePreviewServer(server) {
