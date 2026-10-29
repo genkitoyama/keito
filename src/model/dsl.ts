@@ -514,6 +514,14 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     const n = byId.get(end.node);
     return n?.type === 'device' ? n.ports.find((p) => p.id === end.port)?.signal : undefined;
   };
+  // The signal of a port named in a reference (pc.LAN), without adding one.
+  const namedSignal = (ref: unknown): string | undefined => {
+    const s = str(ref).normalize('NFKC').trim();
+    const dot = s.indexOf('.');
+    const node = dot < 0 ? undefined : byId.get(s.slice(0, dot));
+    const name = portKey(s.slice(dot + 1).trim());
+    return node?.type === 'device' ? node.ports.find((p) => portKey(p.name) === name)?.signal : undefined;
+  };
   const portSide = (end: EdgeEnd): 'left' | 'right' | undefined => {
     const n = byId.get(end.node);
     return n?.type === 'device' ? n.ports.find((p) => p.id === end.port)?.side : undefined;
@@ -544,7 +552,9 @@ function readYaml(src: string, prev: Doc, relayout: boolean): Doc {
     // The old video types (type: sdi) are 映像, and the standard they named names any port added.
     const named = VIDEO_STANDARDS[typed] as string | undefined;
     const given = typed && currentSignal(typed);
-    let from = resolve(v.from, where, 'right', given || 'other', named, !!v.fromSide);
+    // With no type, a port-less start takes the signal of the port the cable goes to (from: hub,
+    // to: pc.LAN is LAN): otherwise it would be held to the box itself, on whichever side is nearest.
+    let from = resolve(v.from, where, 'right', given || namedSignal(v.to) || 'other', named, !!v.fromSide);
     let to = resolve(v.to, where, 'left', given || portSignal(from) || 'other', named, !!v.toSide);
     // A cable runs output → input, as when drawn in the app: written from an input to an output,
     // it is turned round (power is counted from its source).
