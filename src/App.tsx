@@ -88,7 +88,8 @@ function useHotkeys() {
       // A single selected shape or connector takes text directly.
       const only = s.selection.length === 1 ? s.selection[0] : '';
       const onlyNode = s.doc.nodes.find((n) => n.id === only);
-      const editable = !!only && (!onlyNode || hasText(onlyNode));
+      // An old state from the history on screen is only looked at.
+      const editable = !!only && (!onlyNode || hasText(onlyNode)) && !s.viewing;
       // Typing on a selected shape starts editing: mount and focus the editor synchronously and
       // let this very keystroke flow into it. With the IME on, keys arrive as "Process", and Space
       // stays the hand for panning. A letter goes to the text before it is taken as a tool's key:

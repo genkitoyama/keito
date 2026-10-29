@@ -226,6 +226,7 @@ function neededHeight(n: Node, text: string): number | null {
 }
 
 export function Canvas() {
+  const viewing = useStore((s) => !!s.viewing);
   const svgRef = useRef<SVGSVGElement>(null);
   const doc = useStore((s) => s.doc);
   const view = useStore((s) => s.view);
@@ -400,9 +401,9 @@ export function Canvas() {
       return what.place(p);
     }
     // A box tool: a click puts one there, a drag draws it out to the size wanted.
-    if (placesBox(tool)) return begin(e, { kind: 'place', start: p });
+    if (placesBox(tool) && !st().viewing) return begin(e, { kind: 'place', start: p });
     // Double-click on empty canvas drops a box and starts typing, like a whiteboard.
-    if (doubleClick('canvas')) return dropBox(p);
+    if (doubleClick('canvas') && !st().viewing) return dropBox(p);
     const base = e.shiftKey ? st().selection : [];
     st().select(base);
     begin(e, { kind: 'marquee', start: p, base });
@@ -413,6 +414,8 @@ export function Canvas() {
     if (e.button !== 0 || tool !== 'select' || space || st().placing) return;
     e.stopPropagation();
     const s = st();
+    // On an old state, a click shows what it was (in the panel), and nothing moves.
+    if (s.viewing) return s.select(e.shiftKey ? (s.selection.includes(n.id) ? s.selection.filter((id) => id !== n.id) : [...s.selection, n.id]) : [n.id]);
     if (doubleClick(n.id) && hasText(n)) {
       // Double-clicking the body of an area frame adds a box there; its title strip renames it.
       const p = world(e);
@@ -463,17 +466,18 @@ export function Canvas() {
     if (e.button !== 0 || tool !== 'select' || space || st().placing) return;
     e.stopPropagation();
     const s = st();
-    if (doubleClick(id)) {
+    if (doubleClick(id) && !s.viewing) {
       s.select([id]);
       s.setEditing(id);
       return;
     }
-    s.select(e.shiftKey ? [...s.selection.filter((x) => x !== id), id] : [id]);
+    // Shift+click takes a line into the selection or out of it, as with shapes.
+    s.select(e.shiftKey ? (s.selection.includes(id) ? s.selection.filter((x) => x !== id) : [...s.selection, id]) : [id]);
   };
 
   const onDoubleClick = (e: RMouseEvent) => {
     const s = st();
-    if (s.editing || tool !== 'select') return;
+    if (s.editing || tool !== 'select' || s.viewing) return;
     const p = world(e);
     const n = nodeAt(s.doc, p);
     const tol = 8 / s.view.k;
@@ -491,13 +495,13 @@ export function Canvas() {
     if (e.button !== 0 || tool !== 'select' || space || st().placing) return;
     e.stopPropagation();
     const s = st();
-    if (doubleClick(id)) {
+    if (doubleClick(id) && !s.viewing) {
       s.select([id]);
       s.setEditing(id);
       return;
     }
-    s.select(e.shiftKey ? [...s.selection.filter((x) => x !== id), id] : [id]);
-    begin(e, { kind: 'label', id, start: world(e), moved: false });
+    s.select(e.shiftKey ? (s.selection.includes(id) ? s.selection.filter((x) => x !== id) : [...s.selection, id]) : [id]);
+    if (!s.viewing) begin(e, { kind: 'label', id, start: world(e), moved: false });
   };
 
   const onSegmentDown = (e: RPointerEvent, id: string, seg: number, horizontal: boolean, route: Pt[]) => {
@@ -825,7 +829,8 @@ export function Canvas() {
   const selectedEdge = selection.length === 1 ? doc.edges.find((e) => e.id === selection[0]) : undefined;
   const handleNode = doc.nodes.find((n) => n.id === hover && n.id !== hush && hasHandles(n)) ?? (single && hasHandles(single) ? single : undefined);
   const hs = 8 / view.k;
-  const idle = tool === 'select' && !editing && !busy;
+  // An old state from the history is only looked at: no handles, bar or dots to edit it with.
+  const idle = tool === 'select' && !editing && !busy && !viewing;
   const cursor = space || tool === 'pan' ? 'grab' : tool === 'select' && !placing ? 'default' : 'crosshair';
   // What waits to be placed, outlined under the pointer: a library item, or the box an armed tool makes.
   const waiting = placing ? { label: placing.label, size: placing.size } : placesBox(tool) && boxSize(tool) && !busy ? { label: '', size: boxSize(tool)! } : null;

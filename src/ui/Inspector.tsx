@@ -7,6 +7,7 @@ import { EdgePanel } from './inspector/EdgePanel';
 export function Inspector() {
   const doc = useStore((s) => s.doc);
   const selection = useStore((s) => s.selection);
+  const viewing = useStore((s) => !!s.viewing);
   const remove = () => useStore.getState().removeIds(selection);
   const lines = doc.edges.filter((e) => selection.includes(e.id)).length;
   let body;
@@ -35,6 +36,16 @@ export function Inspector() {
       </>
     );
   }
+  // An old state from the history, on screen, is for looking at: what is selected there is shown, not edited.
+  if (viewing && selection.length > 0)
+    return (
+      <aside className="inspector">
+        <p className="hint">履歴の版を表示中は編集できません。編集するには、上の帯で「この時点に戻す」か「現在の図に戻る」を選んでください。</p>
+        <fieldset className="plain" disabled>
+          {body}
+        </fieldset>
+      </aside>
+    );
   return (
     <aside className="inspector">
       {body}
