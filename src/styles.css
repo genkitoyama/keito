@@ -1061,9 +1061,31 @@ td.empty {
   color: #92400e;
   font-weight: 600;
 }
-.save-state.conflict button {
+.save-state.conflict button,
+.save-state.error button {
   font-size: 11px;
   padding: 2px 8px;
+}
+.save-state.error button {
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+/* A short word on what was just done, at the foot of the board */
+.notice {
+  position: absolute;
+  left: 50%;
+  bottom: 56px;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 7px 14px;
+  border-radius: 8px;
+  background: #1f2937;
+  color: #fff;
+  font-size: 12px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.22);
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 /* Line colour menu */
@@ -2533,4 +2555,86 @@ button.project-item {
   font-size: 10.5px;
   line-height: 16px;
   text-align: center;
+}
+
+/* Right-click menu on the board */
+.context-menu {
+  position: absolute;
+  z-index: 40;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--line, #d7dde5);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  font-size: 12.5px;
+}
+.context-menu button {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.context-menu button:hover:not(:disabled) {
+  background: #eef2f7;
+}
+.context-menu button:disabled {
+  color: #a3adba;
+  cursor: default;
+}
+.context-menu kbd {
+  font: inherit;
+  color: var(--sub);
+}
+.context-menu hr {
+  margin: 3px 2px;
+  border: 0;
+  border-top: 1px solid #e5e9ef;
+}
+
+/* A group of fields with no frame of its own (disabled together while an old state is shown) */
+fieldset.plain {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+fieldset.plain:disabled {
+  opacity: 0.6;
+}
+
+/* Side panels open together: the library and the comments end above the lists */
+.main.with-lists .library {
+  bottom: calc(var(--lists) + 14px);
+}
+.main.with-lists .comments-panel {
+  max-height: calc(100% - var(--lists) - 26px);
+}
+
+/* What to do first, on a board with nothing on it */
+.empty-hint {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: center;
+  color: var(--sub);
+  font-size: 12.5px;
+  line-height: 1.6;
+  pointer-events: none;
+}
+.empty-hint b {
+  color: #334155;
+  font-size: 14px;
 }

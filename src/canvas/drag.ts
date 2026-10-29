@@ -12,7 +12,8 @@ export type Drag =
   | { kind: 'segment'; id: string; seg: number; horizontal: boolean; start: Pt; route: Pt[]; moved: boolean }
   | { kind: 'reconnect'; id: string; end: 'from' | 'to'; other: Pt }
   | { kind: 'label'; id: string; start: Pt; moved: boolean }
-  | { kind: 'marquee'; start: Pt; base: string[] }
+  /** `area`: begun inside an area, which a mere click (no drag) selects. */
+  | { kind: 'marquee'; start: Pt; base: string[]; area?: { id: string; sx: number; sy: number } }
   | { kind: 'resize'; id: string; corner: Corner; start: Pt; orig: Rect; moved: boolean; lock?: number }
   | { kind: 'connect'; from: EdgeEnd; at: Pt; side?: Dir; sx: number; sy: number; trail: Pt[] }
   | { kind: 'place'; start: Pt };

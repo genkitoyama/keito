@@ -3,9 +3,49 @@ import { type BoardKind, KINDS, KIND_ORDER, kindOf } from '../../model/kinds';
 import { useStore } from '../../model/store';
 import { type Doc, type DocMeta, type Node } from '../../model/types';
 import { useShallow } from 'zustand/react/shallow';
+import { useState } from 'react';
+import { composing } from '../keys';
 import { Revisions } from '../Revisions';
 import { useBurst } from '../burst';
 import { Field, Section } from './fields';
+
+/**
+ * The project a board belongs to. Taken when the field is left (or on Enter), not at each key: the
+ * tabs follow the project, and would come and go while it is typed. The projects there are offered,
+ * so one is not split in two by a stray space or width of a letter.
+ */
+function ProjectField({ value }: { value: string }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const projects = useStore(useShallow((s) => [...new Set(s.boards.map((b) => b.project?.trim()).filter((p): p is string => !!p))].sort()));
+  const take = () => {
+    if (draft !== null && draft.trim() !== value.trim()) useStore.getState().mutate((d) => ({ ...d, meta: { ...d.meta, project: draft.trim() } }));
+    setDraft(null);
+  };
+  return (
+    <label className="field">
+      <span>案件名</span>
+      <input
+        list="keito-meta-projects"
+        value={draft ?? value}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={take}
+        onKeyDown={(e) => {
+          if (composing(e)) return;
+          if (e.key === 'Enter') take();
+          else if (e.key === 'Escape') {
+            e.preventDefault();
+            setDraft(null);
+          }
+        }}
+      />
+      <datalist id="keito-meta-projects">
+        {projects.map((p) => (
+          <option key={p} value={p} />
+        ))}
+      </datalist>
+    </label>
+  );
+}
 
 /** Pictures laid under the drawing (floor plans): they cannot be clicked, so they are managed here. */
 function Underlays() {
@@ -40,6 +80,7 @@ function Underlays() {
 
 export function MetaPanel() {
   const meta = useStore((s) => s.doc.meta);
+  const viewing = useStore((s) => !!s.viewing);
   const boardId = useStore((s) => s.doc.id);
   const kind = useStore((s) => kindOf(s.doc));
   const powerTags = useStore((s) => s.doc.powerTags !== false);
@@ -57,9 +98,11 @@ export function MetaPanel() {
     <>
       <h3>ボード設定</h3>
       <p className="hint board-lead">何も選んでいないときは、このボード全体の設定が出ます。</p>
+      {/* An old state from the history, on screen, is for looking at: its settings cannot be changed. */}
+      <fieldset className="plain" disabled={viewing}>
       <Section title="基本情報">
         <Field label="タイトル（図面名称）" value={meta.title} onChange={set('title')} />
-        <Field label="案件名" value={meta.project} onChange={set('project')} />
+        <ProjectField value={meta.project ?? ''} />
         <label className="field">
           <span>ボードの種類</span>
           {/* Changing the kind changes what the board offers; what is drawn on it stays. */}
@@ -127,6 +170,7 @@ export function MetaPanel() {
         <p className="hint">線ごとに変えたいときは、その線を選んで右パネルで設定できます（ここで変えると、線ごとの設定は解除されます）。</p>
       </Section>
       <Underlays />
+      </fieldset>
       {/* Its own per board: a name half typed for one board's state never lands on another's. */}
       <Revisions key={boardId} />
       <p className="hint">

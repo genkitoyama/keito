@@ -83,7 +83,10 @@ export function Revisions() {
                 if (naming.id) st().renameRevision(naming.id, naming.name);
                 else st().nameState(naming.name);
                 setNaming(null);
-              } else if (e.key === 'Escape') setNaming(null);
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                setNaming(null);
+              }
             }}
           />
           <div className="row">

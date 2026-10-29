@@ -114,7 +114,10 @@ export function SearchBar() {
             else if (e.key === 'Enter') {
               pick(hits[at]);
               close();
-            } else if (e.key === 'Escape') close();
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              close();
+            }
             else return;
             e.preventDefault();
           }}

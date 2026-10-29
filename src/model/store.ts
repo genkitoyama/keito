@@ -7,7 +7,7 @@ import { ask, tell } from '../platform/io';
 import { type BoardKind, KINDS, kindOf } from './kinds';
 import { SEQUENCE_SAMPLE } from './sequence';
 import { BOARD_ID, readBoard } from './load';
-import { docBounds, nodeRect } from './geometry';
+import { docBounds, nodeRect, snap } from './geometry';
 import { allIds, freshId, makeNode, randomId } from './presets';
 import { sampleBoards } from './sample';
 import { registerSignals } from './signals';
@@ -15,7 +15,10 @@ import { type Entry, type ShareNode, catalog, newKey, pull, stamp, takeFrom } fr
 import { type Doc, type Edge, type Node, type Rect, type Revision, type UserPreset, emptyMeta } from './types';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
-export type Panel = null | 'lists' | 'export' | 'library' | 'boards' | 'comments' | 'settings';
+/** A window over the board (one at a time). */
+export type Panel = null | 'export' | 'boards' | 'settings';
+/** Panels beside the board, open alongside one another: the library, the lists, the comments. */
+export type Dock = 'library' | 'lists' | 'comments';
 /**
  * Something picked from the toolbar or a library, waiting to be put where the user clicks (its
  * outline follows the pointer). `place` puts it centred on a point of the board.
@@ -70,6 +73,8 @@ interface State {
   view: View;
   editing: string | null;
   panel: Panel;
+  /** Which side panels are open. */
+  docks: Record<Dock, boolean>;
   /** False until the first board has been loaded from storage. */
   ready: boolean;
   /** Where boards are kept: a folder on disk (server) or this browser (local). */
@@ -82,6 +87,10 @@ interface State {
   saving: 'saved' | 'saving' | 'error' | 'conflict' | 'gone';
   /** Set while an old revision is on screen in place of the live board (which is not touched). */
   viewing: { entry: Revision; all: Revision[] } | null;
+  /** Why the last write failed, while `saving` is 'error'. */
+  saveError: string | null;
+  /** A short word on what was just done (what a delete took with it …), shown for a moment. */
+  notice: string | null;
 
   /** Push the current doc onto the undo stack (call before a drag or a burst of edits). */
   checkpoint(): void;
@@ -100,6 +109,8 @@ interface State {
   setView(view: View): void;
   setEditing(id: string | null): void;
   setPanel(panel: Panel): void;
+  /** Open or close a side panel (toggled when `on` is left out). */
+  setDock(dock: Dock, on?: boolean): void;
   fit(): void;
   openBoard(id: string): void;
   newBoard(doc?: Doc): void;
@@ -155,11 +166,14 @@ export const useStore = create<State>((set, get) => ({
   view: { x: 0, y: 0, k: 1 },
   editing: null,
   // `?panel=export` etc. opens a panel on load (handy for deep links).
-  panel: (new URLSearchParams(location.search).get('panel') as Panel) || null,
+  panel: (['export', 'boards', 'settings'].includes(new URLSearchParams(location.search).get('panel') ?? '') ? new URLSearchParams(location.search).get('panel') : null) as Panel,
+  docks: { library: false, lists: new URLSearchParams(location.search).get('panel') === 'lists', comments: new URLSearchParams(location.search).get('panel') === 'comments' },
   ready: false,
   mode: 'local',
   saving: 'saved',
   viewing: null,
+  saveError: null,
+  notice: null,
   presets: [],
   others: [],
   placing: null,
@@ -186,23 +200,28 @@ export const useStore = create<State>((set, get) => ({
   removeIds: (ids) => {
     if (!ids.length) return;
     const gone = new Set(ids);
+    const d = get().doc;
+    // Lines go with the things they join: said, since they were not among what was picked.
+    const along = d.edges.filter((e) => !gone.has(e.id) && (gone.has(e.from.node) || gone.has(e.to.node))).length;
     get().mutate((d) => ({
       ...d,
       nodes: d.nodes.filter((n) => !gone.has(n.id)),
       edges: d.edges.filter((e) => !gone.has(e.id) && !gone.has(e.from.node) && !gone.has(e.to.node)),
     }));
     set({ selection: [], editing: null });
+    if (along && !get().viewing) say(`つながっていた線 ${along} 本も一緒に消しました（⌘Z で戻せます）`);
   },
   // The board's history list is not part of the drawing: undo takes back drawing, never a kept state.
+  // What was selected stays selected where it is still there, to try the next change on it.
   undo: () =>
     set((s) => {
       const doc = s.past[s.past.length - 1];
-      return doc ? { doc: { ...doc, revisions: s.doc.revisions }, past: s.past.slice(0, -1), future: [s.doc, ...s.future], selection: [], editing: null } : s;
+      return doc ? { doc: { ...doc, revisions: s.doc.revisions }, past: s.past.slice(0, -1), future: [s.doc, ...s.future], selection: stillIn(doc, s.selection), editing: null } : s;
     }),
   redo: () =>
     set((s) => {
       const doc = s.future[0];
-      return doc ? { doc: { ...doc, revisions: s.doc.revisions }, past: [...s.past, s.doc], future: s.future.slice(1), selection: [], editing: null } : s;
+      return doc ? { doc: { ...doc, revisions: s.doc.revisions }, past: [...s.past, s.doc], future: s.future.slice(1), selection: stillIn(doc, s.selection), editing: null } : s;
     }),
   select: (selection) => set({ selection }),
   // Arming a tool puts away whatever was waiting to be placed.
@@ -210,6 +229,7 @@ export const useStore = create<State>((set, get) => ({
   setView: (view) => set({ view }),
   setEditing: (editing) => set({ editing }),
   setPanel: (panel) => set({ panel }),
+  setDock: (dock, on) => set((s) => ({ docks: { ...s.docks, [dock]: on ?? !s.docks[dock] } })),
   fit: () => {
     const el = document.getElementById('canvas');
     const box = docBounds(get().doc);
@@ -220,10 +240,14 @@ export const useStore = create<State>((set, get) => ({
   },
   openBoard: (id) => void run(async (b) => {
     if (id === get().doc.id) return;
+    const was = get();
     const doc = await switchTo(b, id);
     if (doc === 'stayed') return showInUrl(get().doc.id);
     if (doc === 'superseded') return;
-    if (doc) return show(doc);
+    if (doc) {
+      if (!was.viewing) kept.set(was.doc.id, { past: was.past, future: was.future, view: was.view, print: fingerprint(was.doc) });
+      return show(doc);
+    }
     // Deleted elsewhere (another tab, the command line), or its file broken: the list follows.
     set({ boards: await b.list() });
     showInUrl(get().doc.id);
@@ -586,14 +610,31 @@ function resetSession(doc: Doc, shown: Doc): void {
   clearTimeout(settleTimer);
 }
 
+/**
+ * Boards left for another tab in this window: their undo steps and where they were looked at, for
+ * coming back to them. They are taken up again only if the board is still the drawing it was
+ * (not changed meanwhile from the command line, say), where those steps still apply.
+ */
+const kept = new Map<string, { past: Doc[]; future: Doc[]; view: View; print: string }>();
+
+/** The ids of a selection that a state of the board still has. */
+function stillIn(doc: Doc, ids: string[]): string[] {
+  const here = new Set([...doc.nodes.map((n) => n.id), ...doc.edges.map((e) => e.id)]);
+  return ids.filter((id) => here.has(id));
+}
+
 /** Put a freshly loaded (or created) board on screen. */
 function show(doc: Doc): void {
   // The base is the board as shown (legends fitted), so fitting alone never reads as an edit.
   const shown = fitLegends(doc);
   resetSession(doc, shown);
-  useStore.setState({ doc: shown, viewing: null, past: [], future: [], selection: [], editing: null, others: [], placing: null, saving: 'saved' });
+  const back = kept.get(doc.id);
+  kept.delete(doc.id);
+  const same = !!back && back.print === fingerprint(shown);
+  useStore.setState({ doc: shown, viewing: null, past: same ? back.past : [], future: same ? back.future : [], selection: [], editing: null, others: [], placing: null, saving: 'saved' });
   showInUrl(doc.id);
-  requestAnimationFrame(useStore.getState().fit);
+  if (same) useStore.setState({ view: back.view });
+  else requestAnimationFrame(useStore.getState().fit);
   void readProject();
 }
 
@@ -606,6 +647,27 @@ export function showRect(r: Rect): void {
   const fits = Math.min((width - 120) / Math.max(1, r.w), (height - 120) / Math.max(1, r.h));
   const k = Math.min(Math.max(view.k, 0.8), Math.max(fits, 0.2), 1.5);
   useStore.setState({ view: { k, x: width / 2 - (r.x + r.w / 2) * k, y: height / 2 - (r.y + r.h / 2) * k } });
+}
+
+/**
+ * Bring things (nodes, or lines by their two ends) into view when any of them is out of it: the
+ * view moves to centre them, at the same zoom. Already in view, nothing moves.
+ */
+export function reveal(ids: string[]): void {
+  const { doc, view } = useStore.getState();
+  const want = new Set(ids);
+  for (const e of doc.edges) if (want.has(e.id)) want.add(e.from.node).add(e.to.node);
+  const rects = doc.nodes.filter((n) => want.has(n.id)).map(nodeRect);
+  const el = document.getElementById('canvas');
+  if (!rects.length || !el) return;
+  const x0 = Math.min(...rects.map((r) => r.x));
+  const y0 = Math.min(...rects.map((r) => r.y));
+  const x1 = Math.max(...rects.map((r) => r.x + r.w));
+  const y1 = Math.max(...rects.map((r) => r.y + r.h));
+  const { width, height } = el.getBoundingClientRect();
+  const inView = x0 * view.k + view.x >= 0 && y0 * view.k + view.y >= 0 && x1 * view.k + view.x <= width && y1 * view.k + view.y <= height;
+  if (inView) return;
+  useStore.setState({ view: { ...view, x: width / 2 - ((x0 + x1) / 2) * view.k, y: height / 2 - ((y0 + y1) / 2) * view.k } });
 }
 
 export function centerOn(nodeId: string): void {
@@ -671,16 +733,35 @@ async function write(doc: Doc): Promise<void> {
     retries = 0;
     clearTimeout(retryTimer);
     const info: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now(), project: doc.meta.project || undefined, kind: doc.kind };
-    useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], ...(here() ? { saving: s.doc === doc ? 'saved' : 'saving' } : {}) }));
+    useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], ...(here() ? { saving: s.doc === doc ? 'saved' : 'saving', saveError: null } : {}) }));
   } catch (e) {
     if (!here()) return console.error(e);
     // Written or deleted elsewhere since it was read here: the user settles it (see resolveConflict).
     if (e instanceof Conflict) return void enterConflict('conflict');
     if (e instanceof Gone) return void enterConflict('gone');
     console.error(e);
-    useStore.setState({ saving: 'error' });
+    useStore.setState({ saving: 'error', saveError: e instanceof Error ? e.message : String(e) });
     retryLater();
   }
+}
+
+/** ⌘S, or "もう一度" after a failed write: what is pending is written now (it is otherwise written by itself). */
+export async function saveNow(): Promise<void> {
+  clearTimeout(retryTimer);
+  retries = 0;
+  const s = useStore.getState();
+  const pending = s.doc !== stored;
+  if (s.saving === 'error' && s.ready && !s.viewing && pending) await persist(s.doc).catch(() => {});
+  else await flush();
+  if (useStore.getState().saving === 'saved') say(pending ? '保存しました' : '保存済みです（変更は自動で保存されます）');
+}
+
+let noticeTimer = 0;
+/** Show a short word for a moment. */
+export function say(text: string): void {
+  clearTimeout(noticeTimer);
+  useStore.setState({ notice: text });
+  noticeTimer = window.setTimeout(() => useStore.setState({ notice: null }), 4000);
 }
 
 /** Write any pending change now (before switching boards or leaving the page); whether it is all written. */
@@ -1063,12 +1144,14 @@ window.addEventListener('pagehide', () => {
 /** What was copied, and from which board (and project). */
 let clipboard: { nodes: Node[]; edges: Edge[]; board: string; project: string } | null = null;
 
-export function copySelection(): void {
+/** Copy the selected nodes (and the lines between them); false when no node is selected. */
+export function copySelection(): boolean {
   const { doc, selection } = useStore.getState();
   const ids = new Set(selection);
   const nodes = doc.nodes.filter((n) => ids.has(n.id));
-  if (!nodes.length) return;
+  if (!nodes.length) return false;
   clipboard = { nodes, edges: doc.edges.filter((e) => ids.has(e.from.node) && ids.has(e.to.node)), board: doc.id, project: doc.meta.project?.trim() ?? '' };
+  return true;
 }
 
 /**
@@ -1120,10 +1203,15 @@ export function duplicateSelection(offset = 30): void {
   }), false);
 }
 
-/** Paste (or duplicate) with fresh ids, keeping the cables between the copied nodes. */
-export function pasteClipboard(offset = 30): void {
+/**
+ * Paste (or duplicate) with fresh ids, keeping the cables between the copied nodes. The copies go a
+ * little down and right of the originals; where that is out of view (another board, a part scrolled
+ * away), they go to the middle of the view instead.
+ */
+export function pasteClipboard(): void {
   if (!clipboard) return;
   const s = useStore.getState();
+  const offset = pasteShift(clipboard.nodes, s.view);
   const taken = allIds(s.doc);
   const map = new Map<string, string>();
   // Pasted onto another board of the project, a shared thing stays the same thing; a copy on its
@@ -1135,18 +1223,51 @@ export function pasteClipboard(offset = 30): void {
     const id = freshId(taken, n.id.replace(/\d+$/, '') || 'n');
     map.set(n.id, id);
     const keep = same && 'shared' in n && !!n.shared && !here.has(n.shared);
-    return { ...n, id, x: n.x + offset, y: n.y + offset, ...('shared' in n && !keep ? { shared: undefined, sharedAt: undefined } : {}) } as Node;
+    return { ...n, id, x: n.x + offset.x, y: n.y + offset.y, ...('shared' in n && !keep ? { shared: undefined, sharedAt: undefined } : {}) } as Node;
   });
   const edges = clipboard.edges.map((e) => ({
     ...e,
     id: freshId(taken, 'e'),
     from: { ...e.from, node: map.get(e.from.node)! },
     to: { ...e.to, node: map.get(e.to.node)! },
-    route: e.route?.map((p) => ({ x: p.x + offset, y: p.y + offset })),
+    route: e.route?.map((p) => ({ x: p.x + offset.x, y: p.y + offset.y })),
   }));
   s.mutate((d) => ({ ...d, nodes: [...d.nodes, ...nodes], edges: [...d.edges, ...edges] }));
   s.select(nodes.map((n) => n.id));
   clipboard = { ...clipboard, nodes, edges };
+}
+
+/** How far pasted copies move from what was copied: 30 down and right, or into the middle of the view. */
+function pasteShift(nodes: Node[], view: View): { x: number; y: number } {
+  const step = { x: 30, y: 30 };
+  const el = document.getElementById('canvas');
+  if (!el || !nodes.length) return step;
+  const rects = nodes.map(nodeRect);
+  const x0 = Math.min(...rects.map((r) => r.x)) + step.x;
+  const y0 = Math.min(...rects.map((r) => r.y)) + step.y;
+  const x1 = Math.max(...rects.map((r) => r.x + r.w)) + step.x;
+  const y1 = Math.max(...rects.map((r) => r.y + r.h)) + step.y;
+  const { width, height } = el.getBoundingClientRect();
+  // In view if its middle is: a large copy may well stick out at the edges.
+  const cx = ((x0 + x1) / 2) * view.k + view.x;
+  const cy = ((y0 + y1) / 2) * view.k + view.y;
+  if (cx >= 0 && cx <= width && cy >= 0 && cy <= height) return step;
+  const mx = (width / 2 - view.x) / view.k;
+  const my = (height / 2 - view.y) / view.k;
+  return { x: snap(mx - (x0 + x1 - 2 * step.x) / 2), y: snap(my - (y0 + y1 - 2 * step.y) / 2) };
+}
+
+/**
+ * Bring the selected nodes in front of the others, or send them behind (the order they are drawn
+ * in). Areas stay behind what they hold whatever their order: this sorts areas among areas.
+ */
+export function restack(where: 'front' | 'back'): void {
+  const s = useStore.getState();
+  const ids = new Set(s.selection);
+  const picked = s.doc.nodes.filter((n) => ids.has(n.id));
+  if (!picked.length) return;
+  const rest = s.doc.nodes.filter((n) => !ids.has(n.id));
+  s.mutate((d) => ({ ...d, nodes: where === 'front' ? [...rest, ...picked] : [...picked, ...rest] }));
 }
 
 export function align(mode: 'left' | 'top' | 'hcenter' | 'vcenter' | 'hspace' | 'vspace'): void {

@@ -15,7 +15,7 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: ReactNode }[] = [
   { tool: 'select', label: '選択', key: 'V', icon: ico(<path d="M5 3l10 6-4.5 1.2L8.8 15z" />) },
   { tool: 'pan', label: '画面を動かす', key: 'H', icon: ICON.hand },
   { tool: 'rect', label: '四角', key: 'R', icon: shapeIcon('rect') },
-  { tool: 'round', label: '端子', key: 'E', icon: shapeIcon('round') },
+  { tool: 'round', label: '開始・終了（角丸）', key: 'E', icon: shapeIcon('round') },
   { tool: 'diamond', label: '判断', key: 'D', icon: shapeIcon('diamond') },
   { tool: 'ellipse', label: '楕円', key: 'O', icon: shapeIcon('ellipse') },
   { tool: 'cloud', label: '雲', key: 'C', icon: shapeIcon('cloud') },
@@ -204,7 +204,7 @@ function Library() {
 
 export function Toolbar() {
   const tool = useStore((s) => s.tool);
-  const panel = useStore((s) => s.panel);
+  const library = useStore((s) => s.docks.library);
   const kind = kindOf(useStore((s) => s.doc));
   const st = useStore.getState;
   return (
@@ -244,14 +244,14 @@ export function Toolbar() {
         {kind.library && (
           <>
             <hr />
-            <button className={panel === 'library' ? 'on' : ''} data-tip={`${kind.library.label}ライブラリ（L）`} aria-label={`${kind.library.label}ライブラリ`} onClick={() => st().setPanel(panel === 'library' ? null : 'library')}>
+            <button className={library ? 'on' : ''} data-tip={`${kind.library.label}ライブラリ（L）`} aria-label={`${kind.library.label}ライブラリ`} onClick={() => st().setDock('library')}>
               {ico(<path d="M3 6h14v8H3zM6 6V4m8 2V4M6 10h2m2 0h4" />)}
               <span>{kind.library.label}</span>
             </button>
           </>
         )}
       </nav>
-      {panel === 'library' && kind.library && <Library />}
+      {library && kind.library && <Library />}
     </>
   );
 }

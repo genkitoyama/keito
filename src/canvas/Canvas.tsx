@@ -5,12 +5,14 @@ import { hopOrder, DEVICE_NAME, deviceHead, type Dir, center, contains, intersec
 import { type CreateKind, allIds, makeEdge, makeImage, makeNode } from '../model/presets';
 import { SEQUENCE_SAMPLE, seqLayout, seqScale } from '../model/sequence';
 import { STRONG } from '../model/signals';
+import { kindOf } from '../model/kinds';
 import { type Placing, duplicateInPlace, storeImage, useStore } from '../model/store';
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
 import { tell } from '../platform/io';
 import { EdgeView, HopCaps, INK, LabelChip, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, framesInOrder, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
+import { ContextMenu } from './ContextMenu';
 import { composing, onControl } from '../ui/keys';
 import { type Corner, type Drag, type Ghost, type Plan, SIDES, ACCENT, canConnect, st } from './drag';
 import { planConnect, planReconnect, planSpawn, ConnectGhost } from './connect';
@@ -103,7 +105,7 @@ export function placeDrag(make: () => Placing, click?: () => void) {
  * Add a node centred on `at` (default: a free spot near the view centre) and start typing into
  * it; with `rect` it takes that place and size (drawn out with the tool).
  */
-export function insertNode(kind: CreateKind, at?: Pt, rect?: Rect): void {
+export function insertNode(kind: CreateKind, at?: Pt, rect?: Rect): string {
   const s = st();
   const p = at ?? viewCenter();
   const n = makeNode(kind, snap(p.x), snap(p.y), allIds(s.doc), kind === 'sequence' ? SEQUENCE_SAMPLE : '');
@@ -124,10 +126,40 @@ export function insertNode(kind: CreateKind, at?: Pt, rect?: Rect): void {
     fresh = n.id;
     s.setEditing(n.id);
   }
+  return n.id;
+}
+
+/**
+ * Text copied from elsewhere (a mail, a spreadsheet) and pasted on the board: a text box with it, in
+ * the middle of the view, on a board that has text boxes.
+ */
+export function insertText(text: string): void {
+  const s = st();
+  if (!kindOf(s.doc).tools.includes('text')) return;
+  const p = viewCenter();
+  const n = makeNode('text', snap(p.x), snap(p.y), allIds(s.doc), text);
+  n.h = Math.max(n.h, textHeightFor(n, text));
+  // Like a toolbar insert, it steps down until it no longer covers what is drawn there (with room
+  // for the tags beside ports and above boxes).
+  const taken = s.doc.nodes.filter((m) => m.type !== 'frame' && !isUnderlay(m)).map((m) => {
+    const r = nodeRect(m);
+    return { x: r.x - 24, y: r.y - 24, w: r.w + 48, h: r.h + 48 };
+  });
+  for (let i = 0; i < 30 && taken.some((r) => intersects(r, nodeRect(n))); i++) n.y += 40;
+  s.mutate((d) => ({ ...d, nodes: [...d.nodes, n] }));
+  s.select([n.id]);
 }
 
 /** A box just put down and opened for its first text: that text belongs to the step that made it. */
 let fresh: string | null = null;
+/** A box a double-click dropped on the board, by the way: left with no text, it is called off. */
+let casual: string | null = null;
+
+/** Double-click on the board drops a box to type in, on a board whose tools have boxes. */
+function dropBox(p: Pt): void {
+  if (!kindOf(st().doc).tools.includes('rect')) return;
+  casual = insertNode('rect', p);
+}
 
 /** Embed pictures (PNG / JPEG / GIF / WebP / SVG), side by side around `at` or the view centre. */
 export async function insertImages(files: File[], at?: Pt): Promise<void> {
@@ -201,6 +233,7 @@ function neededHeight(n: Node, text: string): number | null {
 }
 
 export function Canvas() {
+  const viewing = useStore((s) => !!s.viewing);
   const svgRef = useRef<SVGSVGElement>(null);
   const doc = useStore((s) => s.doc);
   const view = useStore((s) => s.view);
@@ -342,6 +375,26 @@ export function Canvas() {
     if (editing && !doc.nodes.some((n) => n.id === editing) && !doc.edges.some((e) => e.id === editing)) st().setEditing(null);
   }, [editing, doc]);
 
+  // A press on the board takes the keys back from a field left focused (the library's search, a
+  // panel's input): the next keys typed go to what is selected here, not into that field.
+  const letGoOfFields = () => {
+    const a = document.activeElement;
+    if (a instanceof HTMLElement && a !== document.body && !a.closest('.text-editor-box')) a.blur();
+  };
+
+  // Right-click: what is under the pointer is selected (unless it already is, with others) and a menu opens there.
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const onContextMenu = (e: RMouseEvent) => {
+    e.preventDefault();
+    if (inGesture() || st().editing) return;
+    const s = st();
+    const hit = nodeAt(s.doc, world(e));
+    if (hit && !s.selection.includes(hit.id)) s.select([hit.id]);
+    else if (!hit && !s.selection.some((id) => s.doc.edges.some((x) => x.id === id))) s.select([]);
+    const r = svgRef.current!.getBoundingClientRect();
+    setMenuAt({ x: e.clientX - r.left, y: e.clientY - r.top });
+  };
+
   const onBackgroundDown = (e: RPointerEvent) => {
     if (e.button === 1 || tool === 'pan' || space) {
       const v = st().view;
@@ -355,9 +408,9 @@ export function Canvas() {
       return what.place(p);
     }
     // A box tool: a click puts one there, a drag draws it out to the size wanted.
-    if (placesBox(tool)) return begin(e, { kind: 'place', start: p });
+    if (placesBox(tool) && !st().viewing) return begin(e, { kind: 'place', start: p });
     // Double-click on empty canvas drops a box and starts typing, like a whiteboard.
-    if (doubleClick('canvas')) return insertNode('rect', p);
+    if (doubleClick('canvas') && !st().viewing) return dropBox(p);
     const base = e.shiftKey ? st().selection : [];
     st().select(base);
     begin(e, { kind: 'marquee', start: p, base });
@@ -368,13 +421,25 @@ export function Canvas() {
     if (e.button !== 0 || tool !== 'select' || space || st().placing) return;
     e.stopPropagation();
     const s = st();
+    // On an old state, a click shows what it was (in the panel), and nothing moves.
+    if (s.viewing) return s.select(e.shiftKey ? (s.selection.includes(n.id) ? s.selection.filter((id) => id !== n.id) : [...s.selection, n.id]) : [n.id]);
     if (doubleClick(n.id) && hasText(n)) {
       // Double-clicking the body of an area frame adds a box there; its title strip renames it.
       const p = world(e);
-      if (n.type === 'frame' && p.y > n.y + frameTitleHeight(n)) return insertNode('rect', p);
+      if (n.type === 'frame' && p.y > n.y + frameTitleHeight(n)) return dropBox(p);
       s.select([n.id]);
       s.setEditing(n.id);
       return;
+    }
+    // Inside an area, a drag picks out what is there by a marquee, as on the bare board; the area
+    // itself is taken by its title strip (or anywhere, once it is selected).
+    if (n.type === 'frame' && !s.selection.includes(n.id)) {
+      const p = world(e);
+      if (p.y > n.y + frameTitleHeight(n)) {
+        const base = e.shiftKey ? s.selection : [];
+        s.select(base);
+        return begin(e, { kind: 'marquee', start: p, base, area: { id: n.id, sx: e.clientX, sy: e.clientY } });
+      }
     }
     let sel = s.selection;
     if (e.shiftKey) sel = sel.includes(n.id) ? sel.filter((id) => id !== n.id) : [...sel, n.id];
@@ -408,17 +473,18 @@ export function Canvas() {
     if (e.button !== 0 || tool !== 'select' || space || st().placing) return;
     e.stopPropagation();
     const s = st();
-    if (doubleClick(id)) {
+    if (doubleClick(id) && !s.viewing) {
       s.select([id]);
       s.setEditing(id);
       return;
     }
-    s.select(e.shiftKey ? [...s.selection.filter((x) => x !== id), id] : [id]);
+    // Shift+click takes a line into the selection or out of it, as with shapes.
+    s.select(e.shiftKey ? (s.selection.includes(id) ? s.selection.filter((x) => x !== id) : [...s.selection, id]) : [id]);
   };
 
   const onDoubleClick = (e: RMouseEvent) => {
     const s = st();
-    if (s.editing || tool !== 'select') return;
+    if (s.editing || tool !== 'select' || s.viewing) return;
     const p = world(e);
     const n = nodeAt(s.doc, p);
     const tol = 8 / s.view.k;
@@ -436,13 +502,13 @@ export function Canvas() {
     if (e.button !== 0 || tool !== 'select' || space || st().placing) return;
     e.stopPropagation();
     const s = st();
-    if (doubleClick(id)) {
+    if (doubleClick(id) && !s.viewing) {
       s.select([id]);
       s.setEditing(id);
       return;
     }
-    s.select(e.shiftKey ? [...s.selection.filter((x) => x !== id), id] : [id]);
-    begin(e, { kind: 'label', id, start: world(e), moved: false });
+    s.select(e.shiftKey ? (s.selection.includes(id) ? s.selection.filter((x) => x !== id) : [...s.selection, id]) : [id]);
+    if (!s.viewing) begin(e, { kind: 'label', id, start: world(e), moved: false });
   };
 
   const onSegmentDown = (e: RPointerEvent, id: string, seg: number, horizontal: boolean, route: Pt[]) => {
@@ -461,6 +527,20 @@ export function Canvas() {
     if (e.button !== 0 || space) return;
     e.stopPropagation();
     begin(e, { kind: 'connect', from, at, side, sx: e.clientX, sy: e.clientY, trail: [at] });
+  };
+
+  /** A press on a port's target: the port nearest the pointer starts the line (targets of close ports overlap). */
+  const takePort = (e: RPointerEvent, end: EdgeEnd, at: Pt) => {
+    const w = world(e);
+    let best = { end, at, d: Math.hypot(at.x - w.x, at.y - w.y) };
+    const n = st().doc.nodes.find((x) => x.id === end.node);
+    if (n?.type === 'device')
+      for (const q of n.ports) {
+        const p = portPos(n, q.id);
+        const d = p ? Math.hypot(p.x - w.x, p.y - w.y) : Infinity;
+        if (p && d < best.d) best = { end: { node: n.id, port: q.id }, at: p, d };
+      }
+    onHandleDown(e, best.end, best.at);
   };
 
   const onResizeDown = (e: RPointerEvent, n: Node, corner: Corner) => {
@@ -716,6 +796,11 @@ export function Canvas() {
       if (placesBox(tool)) insertNode(tool, sized ? center(rect) : d.start, sized ? rect : undefined);
       return;
     }
+    if (d?.kind === 'marquee' && d.area && Math.hypot(e.clientX - d.area.sx, e.clientY - d.area.sy) <= 4) {
+      const id = d.area.id;
+      st().select(e.shiftKey ? (d.base.includes(id) ? d.base.filter((x) => x !== id) : [...d.base, id]) : [id]);
+      return;
+    }
     if (d?.kind === 'segment') {
       // Bends that ended up on a straight run are dropped; a route with none left is automatic again.
       const s = st();
@@ -765,7 +850,8 @@ export function Canvas() {
   const selectedEdge = selection.length === 1 ? doc.edges.find((e) => e.id === selection[0]) : undefined;
   const handleNode = doc.nodes.find((n) => n.id === hover && n.id !== hush && hasHandles(n)) ?? (single && hasHandles(single) ? single : undefined);
   const hs = 8 / view.k;
-  const idle = tool === 'select' && !editing && !busy;
+  // An old state from the history is only looked at: no handles, bar or dots to edit it with.
+  const idle = tool === 'select' && !editing && !busy && !viewing;
   const cursor = space || tool === 'pan' ? 'grab' : tool === 'select' && !placing ? 'default' : 'crosshair';
   // What waits to be placed, outlined under the pointer: a library item, or the box an armed tool makes.
   const waiting = placing ? { label: placing.label, size: placing.size } : placesBox(tool) && boxSize(tool) && !busy ? { label: '', size: boxSize(tool)! } : null;
@@ -788,8 +874,8 @@ export function Canvas() {
       <NodeView n={editing === n.id && canConnect(n) ? { ...n, text: '' } : n} theme={SCREEN} doc={doc} />
     </g>
   );
-  const devicePorts = (render: (key: string, p: Pt, end: EdgeEnd) => ReactNode) =>
-    others.flatMap((n) => (n.type === 'device' ? n.ports.map((port) => render(`${n.id}/${port.id}`, portPos(n, port.id)!, { node: n.id, port: port.id })) : []));
+  const devicePorts = (render: (key: string, p: Pt, end: EdgeEnd, side: 'left' | 'right') => ReactNode) =>
+    others.flatMap((n) => (n.type === 'device' ? n.ports.map((port) => render(`${n.id}/${port.id}`, portPos(n, port.id)!, { node: n.id, port: port.id }, port.side)) : []));
 
   return (
     <div
@@ -801,7 +887,7 @@ export function Canvas() {
         void insertImages([...e.dataTransfer.files], world(e));
       }}
     >
-      <svg ref={svgRef} width="100%" height="100%" style={{ cursor }} onPointerDown={onBackgroundDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onCancel} onPointerLeave={() => setPointer(null)} onDoubleClick={onDoubleClick} onContextMenu={(e) => e.preventDefault()}>
+      <svg ref={svgRef} width="100%" height="100%" style={{ cursor }} onPointerDownCapture={letGoOfFields} onPointerDown={onBackgroundDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onCancel} onPointerLeave={() => setPointer(null)} onDoubleClick={onDoubleClick} onContextMenu={onContextMenu}>
         <defs>
           <pattern id="dots" width={20 * view.k} height={20 * view.k} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
             <circle cx={1} cy={1} r={1} fill="#cbd5e1" />
@@ -913,7 +999,15 @@ export function Canvas() {
               );
             })}
 
-          {idle && devicePorts((key, p, end) => <circle key={key} className="port-hit" cx={p.x} cy={p.y} r={9} onPointerDown={(e) => onHandleDown(e, end, p)} />)}
+          {idle &&
+            devicePorts((key, p, end, side) => {
+              // Never smaller on screen than a fingertip of a pointer, however far out the view is
+              // zoomed; set a little outside the box, so its edge still takes the box itself; and
+              // where the targets of close ports overlap, the port nearest the pointer is the one taken.
+              const out = side === 'left' ? -1 : 1;
+              const r = Math.max(9, 7 / view.k);
+              return <circle key={key} className="port-hit" cx={p.x + out * r * 0.35} cy={p.y} r={r} onPointerDown={(e) => takePort(e, end, p)} />;
+            })}
           {idle && selectedEdge && !isTagged(doc, selectedEdge) && (
             <EdgeHandles pts={routes.get(selectedEdge.id) ?? []} k={view.k} manual={!!selectedEdge.route} onSegment={(ev, seg, h, route) => onSegmentDown(ev, selectedEdge.id, seg, h, route)} onEnd={(ev, end, other) => onEndDown(ev, selectedEdge.id, end, other)} />
           )}
@@ -942,7 +1036,9 @@ export function Canvas() {
       </svg>
       {editing && <TextEditor key={editing} id={editing} />}
       {/* Keyed by the selection so an open menu never carries over to another object. */}
-      {idle && selection.length > 0 && <QuickBar key={selection.join(',')} />}
+      {idle && selection.length > 0 && !menuAt && <QuickBar key={selection.join(',')} />}
+      {menuAt && <ContextMenu at={menuAt} close={() => setMenuAt(null)} />}
+      {doc.nodes.length === 0 && !viewing && !placing && <EmptyHint doc={doc} />}
       {(placing || placesBox(tool)) && !busy && (
         <div className="place-hint">
           {placing ? `「${placing.label}」: 置きたい所をクリック` : tool === 'sequence' ? '置きたい所をクリック' : '置きたい所をクリック、ドラッグで大きさを決めて置く'}
@@ -959,6 +1055,27 @@ export function Canvas() {
   );
 }
 
+/** What to do first on a board with nothing on it yet, in the middle of it. */
+function EmptyHint({ doc }: { doc: Doc }) {
+  const lib = kindOf(doc).library;
+  return (
+    <div className="empty-hint">
+      {lib ? (
+        <>
+          <b>まず{lib.label}を置きましょう</b>
+          <span>
+            左の「{lib.label}」（L キー）から選んでクリックで置き、ポートの●どうしをドラッグで結ぶと線が引けます。
+          </span>
+        </>
+      ) : (
+        <b>左のツールで図形を選んで置くか、何もない所をダブルクリックして書き始めます</b>
+      )}
+      {lib?.set === 'equipment' && <span>エリア枠（F）で場所ごとに囲むと、機材リストの「設置場所」になります。</span>}
+      {lib?.set === 'software' && <span>エリア枠（F）で動いている PC ごとに囲むと見やすくなります。</span>}
+    </div>
+  );
+}
+
 function TextEditor({ id }: { id: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const doc = useStore((s) => s.doc);
@@ -967,6 +1084,7 @@ function TextEditor({ id }: { id: string }) {
   const edge = doc.edges.find((e) => e.id === id);
   const done = useRef(false);
   const grew = useRef(false);
+  const startH = useRef(node?.h);
 
   // Layout effect: focus must land synchronously so a keystroke that opened the
   // editor (including the first IME key) is typed into it.
@@ -1010,10 +1128,12 @@ function TextEditor({ id }: { id: string }) {
     const s = st();
     const text = read();
     const first = fresh === id;
+    const dropped = casual === id;
     fresh = null;
+    casual = null;
     if (edge) {
       if (text !== edge.label) s.updateEdge(id, { label: text });
-    } else if (node?.type === 'text' && !text) {
+    } else if (node && !text && (node.type === 'text' || (dropped && first))) {
       // A text box left empty would be an invisible, unselectable leftover. Just put down, it is
       // called off altogether: no undo step brings back an empty box.
       s.setEditing(null);
@@ -1023,6 +1143,17 @@ function TextEditor({ id }: { id: string }) {
       // The growth steps (or the box's own making) already opened an undo entry; fold the text into it.
       s.updateNode(id, h == null ? { text } : { text, h }, !grew.current && !first);
     }
+    s.setEditing(null);
+  };
+  // Escape calls the edit off: the text (and the box's height) as they were. A box just put down
+  // keeps its first text all the same, as on a whiteboard, unless it is still empty.
+  const cancel = () => {
+    if (done.current) return;
+    if (fresh === id) return commit();
+    done.current = true;
+    const s = st();
+    if (grew.current) s.dropStep();
+    else if (node && startH.current != null && node.h !== startH.current) s.updateNode(id, { h: startH.current }, false);
     s.setEditing(null);
   };
 
@@ -1071,7 +1202,10 @@ function TextEditor({ id }: { id: string }) {
           e.stopPropagation();
           // While the IME is composing, Enter / Escape belong to the conversion, not to us.
           if (composing(e)) return;
-          if (e.key === 'Escape' || (e.key === 'Enter' && ((enterCommits && !e.shiftKey) || e.metaKey || e.ctrlKey))) {
+          if (e.key === 'Escape') {
+            e.preventDefault();
+            cancel();
+          } else if (e.key === 'Enter' && ((enterCommits && !e.shiftKey) || e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             commit();
           }

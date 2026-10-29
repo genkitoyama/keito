@@ -127,8 +127,16 @@ export function QuickBar() {
     if (close) setMenu(null);
   };
   // Shapes, stickies, devices and area frames can be colour-coded; one without a colour shows as gray.
-  const tinted = one?.type === 'shape' || one?.type === 'sticky' || one?.type === 'device' || one?.type === 'frame' ? one : undefined;
-  const color: ColorKey = tinted ? (tinted.color ?? 'gray') : 'gray';
+  // Several selected take one colour together (ten devices of one supplier, say), in one step.
+  const tintable = (n: Node): n is Extract<Node, { color?: ColorKey }> => n.type === 'shape' || n.type === 'sticky' || n.type === 'device' || n.type === 'frame';
+  const tints = nodes.filter(tintable);
+  const tinted = tints[0];
+  const color: ColorKey = tinted && tints.every((n) => (n.color ?? 'gray') === (tinted.color ?? 'gray')) ? (tinted.color ?? 'gray') : 'gray';
+  const recolor = (c: ColorKey) => {
+    const which = new Set(tints.map((n) => n.id));
+    st().mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (which.has(n.id) ? ({ ...n, color: c } as Node) : n)) }));
+    setMenu(null);
+  };
   const sized = one?.type === 'text' || one?.type === 'shape' || one?.type === 'sticky' || one?.type === 'frame' || one?.type === 'sequence' ? one : undefined;
   const sizes = sized ? sizesFor(sized.type) : [];
   // The built-in size of this kind of node; an unset fontSize means exactly this.
@@ -176,14 +184,14 @@ export function QuickBar() {
       )}
       {tinted && (
         <div className={`qb-drop${menu === 'color' ? ' open' : ''}`}>
-          <Btn className="drop" tip={`色：${COLOR_NAME[color]}`} on={menu === 'color'} onClick={toggle('color')}>
+          <Btn className="drop" tip={tints.length > 1 ? `色（選んだ ${tints.length} 個まとめて）` : `色：${COLOR_NAME[color]}`} on={menu === 'color'} onClick={toggle('color')}>
             <span className="dot" style={swatch(tinted, color)} />
             {ICON.caret}
           </Btn>
           {menu === 'color' && (
             <div className="qb-menu grid">
               {COLOR_KEYS.map((c) => (
-                <button key={c} className={color === c ? 'on' : ''} data-tip={COLOR_NAME[c]} aria-label={COLOR_NAME[c]} onClick={() => patch({ color: c })}>
+                <button key={c} className={color === c ? 'on' : ''} data-tip={COLOR_NAME[c]} aria-label={COLOR_NAME[c]} onClick={() => recolor(c)}>
                   <span className="dot" style={swatch(tinted, c)} />
                 </button>
               ))}
@@ -237,6 +245,15 @@ export function QuickBar() {
           </Btn>
           {menu === 'line' && (
             <div className="qb-menu">
+              {/* Where the colour goes is settled first, before a swatch is clicked. */}
+              <div className="qb-scope">
+                <button className={all ? 'on' : ''} onClick={() => setWide(true)}>
+                  {signalOf(edge.signal).label} すべて
+                </button>
+                <button className={all ? '' : 'on'} onClick={() => setWide(false)}>
+                  この線だけ
+                </button>
+              </div>
               <div className="qb-swatches">
                 {LINE_COLORS.map((c) => (
                   <button key={c} className={lineColor(doc, edge).toLowerCase() === c ? 'on' : ''} aria-label={c} onClick={() => paint(c)}>
@@ -246,14 +263,6 @@ export function QuickBar() {
                 <label className="qb-custom" data-tip="ほかの色を選ぶ">
                   <input type="color" value={lineColor(doc, edge)} onChange={(e) => paint(e.target.value, false)} />
                 </label>
-              </div>
-              <div className="qb-scope">
-                <button className={all ? 'on' : ''} onClick={() => setWide(true)}>
-                  {signalOf(edge.signal).label} すべて
-                </button>
-                <button className={all ? '' : 'on'} onClick={() => setWide(false)}>
-                  この線だけ
-                </button>
               </div>
               <button onClick={() => paint(null)}>既定の色に戻す</button>
             </div>
@@ -311,7 +320,7 @@ export function QuickBar() {
       {edges.some((e) => e.route) && !tagged && (
         <Btn className="labeled" tip="手で動かした曲がりを消して、自動の経路に戻す" onClick={() => setEdges({ route: undefined })}>
           {ICON.reset}
-          <span>自動経路に</span>
+          <span>経路を自動に戻す</span>
         </Btn>
       )}
       {edge && <i />}

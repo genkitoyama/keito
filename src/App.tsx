@@ -3,11 +3,11 @@ import { SearchBar, openSearch } from './ui/SearchBar';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { flushSync } from 'react-dom';
-import { Canvas, inGesture, insertImages, spawnFrom, zoomBy } from './canvas/Canvas';
+import { Canvas, inGesture, insertImages, insertText, spawnFrom, zoomBy } from './canvas/Canvas';
 import { onControl } from './ui/keys';
 import { hasText } from './model/types';
 import { copyText, getSetting, setSetting } from './platform/io';
-import { copySelection, duplicateSelection, pasteClipboard, useStore } from './model/store';
+import { copySelection, duplicateSelection, pasteClipboard, saveNow, useStore } from './model/store';
 import { ExportPanel } from './ui/ExportPanel';
 import { BoardsPanel } from './ui/Boards';
 import { BoardTabs } from './ui/BoardTabs';
@@ -16,15 +16,23 @@ import { Inspector } from './ui/Inspector';
 import { ListsPanel } from './ui/ListsPanel';
 import { RevisionBanner } from './ui/Revisions';
 import { TOOL_KEYS, Toolbar } from './ui/Toolbar';
-import { TopBar, saveBoardFile } from './ui/TopBar';
+import { TopBar } from './ui/TopBar';
 import { kindOf } from './model/kinds';
 import { isUnderlay } from './model/geometry';
 import { SettingsPanel } from './ui/Settings';
 
-/** Copy on the board, and clear any picture left on the system clipboard so the next paste is this copy. */
+/**
+ * Copy on the board, and clear any picture left on the system clipboard so the next paste is this
+ * copy. With nothing copied (only lines selected), the system clipboard is left as it was.
+ */
 function copyOut() {
-  copySelection();
-  if (useStore.getState().selection.length) copyText('').catch(() => {});
+  if (copySelection()) copyText('').catch(() => {});
+}
+
+/** Text picked out on the page (a list cell, a hint): ⌘C and ⌘X are the system's for it, not the board's. */
+function pageText(): boolean {
+  const picked = window.getSelection();
+  return !!picked && !picked.isCollapsed && picked.toString().trim() !== '';
 }
 
 /** Arrow-key moves this close together (ms) are one step to undo. */
@@ -38,10 +46,21 @@ function useHotkeys() {
       if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) {
         // Typing in a field keeps its keys, but saving, the project menu and search still answer
         // (in a browser, ⌘S would otherwise save the web page).
+        // Escape leaves the field: a window it is in closes, the library closes from its search,
+        // and elsewhere (the inspector …) the keys go back to the board. A field that has a use for
+        // Escape of its own (a list cell, a form) keeps it.
+        if (e.key === 'Escape' && !e.isComposing && e.keyCode !== 229 && !e.defaultPrevented) {
+          const s = useStore.getState();
+          if (document.querySelector('.modal-bg')) {
+            if (s.panel === 'export' || s.panel === 'boards' || s.panel === 'settings') s.setPanel(null);
+          } else if (s.docks.library && t.closest('.library')) s.setDock('library', false);
+          else t.blur();
+          return;
+        }
         const physical = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
         if (!(e.metaKey || e.ctrlKey) || e.isComposing || !['s', 'k', 'f'].includes(physical) || document.querySelector('.modal-bg')) return;
         e.preventDefault();
-        if (physical === 's') void saveBoardFile();
+        if (physical === 's') void saveNow();
         else if (physical === 'k') toggleProjectMenu();
         else openSearch();
         return;
@@ -69,23 +88,27 @@ function useHotkeys() {
       // A single selected shape or connector takes text directly.
       const only = s.selection.length === 1 ? s.selection[0] : '';
       const onlyNode = s.doc.nodes.find((n) => n.id === only);
-      const editable = !!only && (!onlyNode || hasText(onlyNode));
+      // An old state from the history on screen is only looked at.
+      const editable = !!only && (!onlyNode || hasText(onlyNode)) && !s.viewing;
       // Typing on a selected shape starts editing: mount and focus the editor synchronously and
-      // let this very keystroke flow into it. With the IME on, keys arrive as "Process": the
-      // shortcuts below are still matched by the physical key first, as with it off, and Space
-      // stays the hand for panning.
+      // let this very keystroke flow into it. With the IME on, keys arrive as "Process", and Space
+      // stays the hand for panning. A letter goes to the text before it is taken as a tool's key:
+      // a name typed in romaji ("sousinki", "tenji" …) would otherwise switch tools on its first letter.
       const typeToEdit = () => flushSync(() => s.setEditing(only));
+      const typing = editable && !mod && !e.altKey && (ime ? e.code !== 'Space' : e.key.length === 1 && e.key !== ' ');
       let handled = true;
       if (mod && key === 'z') e.shiftKey ? s.redo() : s.undo();
       else if (mod && key === 'y') s.redo();
+      else if (mod && (key === 'c' || key === 'x') && pageText()) return;
       else if (mod && key === 'c') copyOut();
       else if (mod && key === 'x') {
         copyOut();
         s.removeIds(s.selection);
       } else if (mod && key === 'v') return; // handled by the paste event, which can see images
       else if (mod && key === 'd') duplicateSelection();
-      else if (mod && key === 'a') s.select(s.doc.nodes.filter((n) => !isUnderlay(n)).map((n) => n.id));
-      else if (mod && key === 's') void saveBoardFile();
+      else if (mod && key === 'a') s.select([...s.doc.nodes.filter((n) => !isUnderlay(n)).map((n) => n.id), ...s.doc.edges.map((ed) => ed.id)]);
+      // Boards save by themselves: ⌘S writes what is pending now and says so (a file of the board is an export).
+      else if (mod && key === 's') void saveNow();
       else if (mod && key === 'k') toggleProjectMenu();
       else if (mod && key === 'f') openSearch();
       else if (mod && (key === '=' || key === '+')) zoomBy(1.25);
@@ -93,14 +116,19 @@ function useHotkeys() {
       else if (mod && key.startsWith('arrow') && nodeIds.length === 1) spawnFrom(nodeIds[0], key === 'arrowleft' ? 'left' : key === 'arrowright' ? 'right' : key === 'arrowup' ? 'top' : 'bottom');
       else if (mod) handled = false;
       else if (key === 'backspace' || key === 'delete') s.removeIds(s.selection);
+      // Escape lets go of the nearest thing first: what waits to be placed, the tool, the selection,
+      // and only then a panel left open to work beside.
       else if (key === 'escape') {
         if (s.placing) s.setPlacing(null);
-        else if (s.panel) s.setPanel(null);
         else if (s.tool !== 'select') s.setTool('select');
-        else s.select([]);
+        else if (s.selection.length) s.select([]);
+        else if (s.docks.library) s.setDock('library', false);
+        else if (s.docks.comments) s.setDock('comments', false);
+        else if (s.docks.lists) s.setDock('lists', false);
       } else if (key === 'enter' && editable) s.setEditing(only);
+      // A pixel a press, ten with Shift, as in other drawing tools.
       else if (key.startsWith('arrow') && nodeIds.length) {
-        const step = e.shiftKey ? 1 : 10;
+        const step = e.shiftKey ? 10 : 1;
         const dx = key === 'arrowleft' ? -step : key === 'arrowright' ? step : 0;
         const dy = key === 'arrowup' ? -step : key === 'arrowdown' ? step : 0;
         const ids = new Set(nodeIds);
@@ -109,15 +137,16 @@ function useHotkeys() {
         lastNudge = e.timeStamp;
         s.mutate((d) => ({ ...d, nodes: d.nodes.map((n) => (ids.has(n.id) ? { ...n, x: n.x + dx, y: n.y + dy } : n)) }), fresh);
       } else if (e.shiftKey && e.code === 'Digit1') s.fit();
+      else if (typing) return typeToEdit();
       // The library and the tools a board's kind offers; keys for others do nothing on it.
-      else if (key === 'l' && kindOf(s.doc).library) s.setPanel(s.panel === 'library' ? null : 'library');
+      else if (key === 'l' && kindOf(s.doc).library) s.setDock('library');
       else if (TOOL_KEYS[key] && !e.shiftKey && !e.altKey && kindOf(s.doc).tools.includes(TOOL_KEYS[key])) s.setTool(TOOL_KEYS[key]);
-      else if (editable && !e.altKey && (ime ? !mod && e.code !== 'Space' : e.key.length === 1 && e.key !== ' ')) return typeToEdit();
       else handled = false;
       if (handled) e.preventDefault();
     };
-    // Paste: pictures and SVG markup from the system clipboard become image nodes;
-    // anything else pastes what was last copied on the board.
+    // Paste: pictures and SVG markup from the system clipboard become image nodes, and text copied
+    // elsewhere a text box; with nothing there (a copy on the board empties it), what was last
+    // copied on the board.
     const onPaste = (e: ClipboardEvent) => {
       const t = e.target;
       if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
@@ -129,6 +158,7 @@ function useHotkeys() {
       e.preventDefault();
       if (files.length) void insertImages(files);
       else if (/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(text)) void insertImages([new File([text], 'pasted.svg', { type: 'image/svg+xml' })]);
+      else if (text.trim()) insertText(text.replace(/\r\n?/g, '\n').trim());
       else pasteClipboard();
     };
     // A button clicked with the mouse lets go of the focus Chrome gives it (WebKit gives none), so
@@ -146,6 +176,16 @@ function useHotkeys() {
       window.removeEventListener('click', onClick);
     };
   }, []);
+}
+
+/** The word on what was just done, for a moment, at the foot of the board. */
+function Notice() {
+  const notice = useStore((s) => s.notice);
+  return notice ? (
+    <div className="notice" role="status">
+      {notice}
+    </div>
+  ) : null;
 }
 
 /** Draggable boundary between two panes. `onDrag` gets how far the pointer has moved since the last call. */
@@ -188,6 +228,7 @@ function usePaneSize(name: string, initial: number, min: number, max: () => numb
 
 export function App() {
   const panel = useStore((s) => s.panel);
+  const docks = useStore((s) => s.docks);
   // A board with no lists (a sequence or free board) keeps no lists panel, even if it was left open.
   const hasLists = useStore((s) => kindOf(s.doc).lists.length > 0);
   const ready = useStore((s) => s.ready);
@@ -199,15 +240,17 @@ export function App() {
     <div className="app" style={{ '--side': `${side}px`, '--lists': `${lists}px` } as CSSProperties}>
       <TopBar />
       <BoardTabs />
-      <div className="main">
+      {/* With the lists open below, the library and the comments stop above them. */}
+      <div className={`main${docks.lists && hasLists ? ' with-lists' : ''}`}>
         <Toolbar />
         <div className="stage">
           <RevisionBanner />
           <Canvas />
           <SearchBar />
-          {panel === 'comments' && <CommentsPanel />}
-          {panel === 'lists' && hasLists && <Splitter axis="y" onDrag={(d) => growLists(-d)} />}
-          {panel === 'lists' && hasLists && <ListsPanel />}
+          <Notice />
+          {docks.comments && <CommentsPanel />}
+          {docks.lists && hasLists && <Splitter axis="y" onDrag={(d) => growLists(-d)} />}
+          {docks.lists && hasLists && <ListsPanel />}
         </div>
         <Splitter axis="x" onDrag={(d) => growSide(-d)} />
         <Inspector />

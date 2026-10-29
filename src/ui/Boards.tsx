@@ -154,9 +154,19 @@ export function BoardsPanel() {
                       st().renameProject(project, renaming);
                       setProject(renaming.trim());
                       setRenaming(null);
-                    } else if (e.key === 'Escape') setRenaming(null);
+                    } else if (e.key === 'Escape') {
+                      e.stopPropagation();
+                      setRenaming(null);
+                    }
                   }}
-                  onBlur={() => setRenaming(null)}
+                  // Clicking elsewhere keeps the name typed, as leaving any other field does.
+                  onBlur={() => {
+                    if (renaming.trim() && renaming.trim() !== project) {
+                      st().renameProject(project, renaming);
+                      setProject(renaming.trim());
+                    }
+                    setRenaming(null);
+                  }}
                 />
               ) : (
                 <h3>{projectLabel(project)}</h3>
@@ -183,7 +193,21 @@ export function BoardsPanel() {
                     </button>
                   ))}
                 </div>
-                <div className="row">
+                <div
+                  className="row"
+                  onKeyDown={(e) => {
+                    // Enter in the name makes the board (in the project's, it may be picking a suggestion);
+                    // Escape puts the form away.
+                    if (composing(e) || !(e.target instanceof HTMLInputElement)) return;
+                    if (e.key === 'Enter' && !e.target.list) {
+                      st().newBoard(startBoard(form.kind, form.title, form.project));
+                      close();
+                    } else if (e.key === 'Escape') {
+                      e.stopPropagation();
+                      setForm(null);
+                    }
+                  }}
+                >
                   <input autoFocus placeholder={`ボードの名前（空なら「${KINDS[form.kind].label}」）`} value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
                   <input list="keito-projects" placeholder="案件名" value={form.project} onChange={(e) => setForm({ ...form, project: e.target.value })} />
                   <datalist id="keito-projects">

@@ -105,16 +105,17 @@ export function EdgePanel({ e }: { e: Edge }) {
       <Section title="線の見た目">
         <div className="field">
           <span>線の色</span>
+          {/* Where the colour goes is settled first, before a swatch is clicked. */}
+          <label className="check">
+            <input type="checkbox" checked={all} onChange={(ev) => setAll(ev.target.checked)} />
+            同じ種別（{signalOf(e.signal).label}）の線すべてに適用
+          </label>
           <div className="line-colors">
             {LINE_COLORS.map((c) => (
               <button key={c} className={color.toLowerCase() === c ? 'on' : ''} style={{ background: c }} aria-label={c} onClick={() => paint(c)} />
             ))}
             <input type="color" value={color} onChange={(ev) => paint(ev.target.value, true)} title="ほかの色を選ぶ" />
           </div>
-          <label className="check">
-            <input type="checkbox" checked={all} onChange={(ev) => setAll(ev.target.checked)} />
-            同じ種別（{signalOf(e.signal).label}）の線すべてに適用
-          </label>
           {(e.color || custom) && (
             <button className="mini" onClick={() => paint(null)}>
               既定の色に戻す

@@ -4,8 +4,8 @@ import { colourKey, ipIssues, quantityOf, unitsOf } from '../../model/lists';
 import { freshId } from '../../model/presets';
 import { kindOf } from '../../model/kinds';
 import { linkClick } from '../../platform/io';
-import { useStore } from '../../model/store';
-import { type DeviceNode, type Port } from '../../model/types';
+import { say, useStore } from '../../model/store';
+import { type DeviceNode, type Edge, type Port } from '../../model/types';
 import { RunsOn, SharedSection } from '../Shared';
 import { Field, Section, Head, SUPPLY_CATEGORY, CategoryField, Colors, SignalSelect, SignalHowTo, PortName, num } from './fields';
 
@@ -25,12 +25,16 @@ export function DevicePanel({ n }: { n: DeviceNode }) {
     for (let i = 2; names.has(name); i++) name = `${base} ${i}`;
     patch({ ports: [...n.ports, { id: freshId(new Set(n.ports.map((p) => p.id)), 'p'), name, side, signal: soft ? 'data' : 'video' }] }, true);
   };
-  const removePort = (id: string) =>
+  const removePort = (id: string) => {
+    const on = (e: Edge) => (e.from.node === n.id && e.from.port === id) || (e.to.node === n.id && e.to.port === id);
+    const along = st().doc.edges.filter(on).length;
     st().mutate((d) => ({
       ...d,
       nodes: d.nodes.map((x) => (x.id === n.id ? { ...n, ports: n.ports.filter((p) => p.id !== id) } : x)),
-      edges: d.edges.filter((e) => !((e.from.node === n.id && e.from.port === id) || (e.to.node === n.id && e.to.port === id))),
+      edges: d.edges.filter((e) => !on(e)),
     }));
+    if (along) say(`ポートにつながっていた線 ${along} 本も一緒に消しました（⌘Z で戻せます）`);
+  };
   // Supplying power is what the 電源 category means (UPS, taps, distribution boards); a capacity
   // already typed in stays in view whatever the category, so it is never hidden from the user.
   const supplies = n.category.trim() === SUPPLY_CATEGORY;
@@ -128,7 +132,7 @@ export function DevicePanel({ n }: { n: DeviceNode }) {
               {/* Prices are typed in the equipment list, where the rows can be gone down one after another. */}
               <p className="hint price-hint">
                 {n.price != null ? <>単価 {n.price.toLocaleString('ja-JP')} 円{unitsOf(n).count > 1 && <>（金額 {(n.price * unitsOf(n).count).toLocaleString('ja-JP')} 円）</>}。</> : <>単価は</>}
-                <button className="link" onClick={() => st().setPanel('lists')}>
+                <button className="link" onClick={() => st().setDock('lists', true)}>
                   機材リスト
                 </button>
                 {n.price != null ? 'で変えられます。' : 'の「単価(円)」欄に入力します。'}
