@@ -25,6 +25,11 @@ export function ContextMenu({ at, close }: { at: { x: number; y: number }; close
     const away = (e: Event) => {
       if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
       if (e.target instanceof Element && e.target.closest('.context-menu')) return;
+      // Escape closes the menu and nothing more: the selection under it stays.
+      if (e instanceof KeyboardEvent) {
+        e.stopPropagation();
+        e.preventDefault();
+      }
       close();
     };
     window.addEventListener('pointerdown', away, true);
