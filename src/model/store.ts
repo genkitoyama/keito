@@ -1248,6 +1248,19 @@ function pasteShift(nodes: Node[], view: View): { x: number; y: number } {
   return { x: snap(mx - (x0 + x1 - 2 * step.x) / 2), y: snap(my - (y0 + y1 - 2 * step.y) / 2) };
 }
 
+/**
+ * Bring the selected nodes in front of the others, or send them behind (the order they are drawn
+ * in). Areas stay behind what they hold whatever their order: this sorts areas among areas.
+ */
+export function restack(where: 'front' | 'back'): void {
+  const s = useStore.getState();
+  const ids = new Set(s.selection);
+  const picked = s.doc.nodes.filter((n) => ids.has(n.id));
+  if (!picked.length) return;
+  const rest = s.doc.nodes.filter((n) => !ids.has(n.id));
+  s.mutate((d) => ({ ...d, nodes: where === 'front' ? [...rest, ...picked] : [...picked, ...rest] }));
+}
+
 export function align(mode: 'left' | 'top' | 'hcenter' | 'vcenter' | 'hspace' | 'vspace'): void {
   const s = useStore.getState();
   const ids = new Set(s.selection);

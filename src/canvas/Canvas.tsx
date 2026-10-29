@@ -12,6 +12,7 @@ import { isImageFile, readImageFile } from '../platform/storage';
 import { tell } from '../platform/io';
 import { EdgeView, HopCaps, INK, LabelChip, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, framesInOrder, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
+import { ContextMenu } from './ContextMenu';
 import { composing, onControl } from '../ui/keys';
 import { type Corner, type Drag, type Ghost, type Plan, SIDES, ACCENT, canConnect, st } from './drag';
 import { planConnect, planReconnect, planSpawn, ConnectGhost } from './connect';
@@ -371,6 +372,19 @@ export function Canvas() {
   const letGoOfFields = () => {
     const a = document.activeElement;
     if (a instanceof HTMLElement && a !== document.body && !a.closest('.text-editor-box')) a.blur();
+  };
+
+  // Right-click: what is under the pointer is selected (unless it already is, with others) and a menu opens there.
+  const [menuAt, setMenuAt] = useState<{ x: number; y: number } | null>(null);
+  const onContextMenu = (e: RMouseEvent) => {
+    e.preventDefault();
+    if (inGesture() || st().editing) return;
+    const s = st();
+    const hit = nodeAt(s.doc, world(e));
+    if (hit && !s.selection.includes(hit.id)) s.select([hit.id]);
+    else if (!hit && !s.selection.some((id) => s.doc.edges.some((x) => x.id === id))) s.select([]);
+    const r = svgRef.current!.getBoundingClientRect();
+    setMenuAt({ x: e.clientX - r.left, y: e.clientY - r.top });
   };
 
   const onBackgroundDown = (e: RPointerEvent) => {
@@ -847,7 +861,7 @@ export function Canvas() {
         void insertImages([...e.dataTransfer.files], world(e));
       }}
     >
-      <svg ref={svgRef} width="100%" height="100%" style={{ cursor }} onPointerDownCapture={letGoOfFields} onPointerDown={onBackgroundDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onCancel} onPointerLeave={() => setPointer(null)} onDoubleClick={onDoubleClick} onContextMenu={(e) => e.preventDefault()}>
+      <svg ref={svgRef} width="100%" height="100%" style={{ cursor }} onPointerDownCapture={letGoOfFields} onPointerDown={onBackgroundDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onCancel} onPointerLeave={() => setPointer(null)} onDoubleClick={onDoubleClick} onContextMenu={onContextMenu}>
         <defs>
           <pattern id="dots" width={20 * view.k} height={20 * view.k} patternUnits="userSpaceOnUse" x={view.x} y={view.y}>
             <circle cx={1} cy={1} r={1} fill="#cbd5e1" />
@@ -988,7 +1002,8 @@ export function Canvas() {
       </svg>
       {editing && <TextEditor key={editing} id={editing} />}
       {/* Keyed by the selection so an open menu never carries over to another object. */}
-      {idle && selection.length > 0 && <QuickBar key={selection.join(',')} />}
+      {idle && selection.length > 0 && !menuAt && <QuickBar key={selection.join(',')} />}
+      {menuAt && <ContextMenu at={menuAt} close={() => setMenuAt(null)} />}
       {(placing || placesBox(tool)) && !busy && (
         <div className="place-hint">
           {placing ? `「${placing.label}」: 置きたい所をクリック` : tool === 'sequence' ? '置きたい所をクリック' : '置きたい所をクリック、ドラッグで大きさを決めて置く'}

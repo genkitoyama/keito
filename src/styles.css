@@ -2556,3 +2556,45 @@ button.project-item {
   line-height: 16px;
   text-align: center;
 }
+
+/* Right-click menu on the board */
+.context-menu {
+  position: absolute;
+  z-index: 40;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: #fff;
+  border: 1px solid var(--line, #d7dde5);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+  font-size: 12.5px;
+}
+.context-menu button {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.context-menu button:hover:not(:disabled) {
+  background: #eef2f7;
+}
+.context-menu button:disabled {
+  color: #a3adba;
+  cursor: default;
+}
+.context-menu kbd {
+  font: inherit;
+  color: var(--sub);
+}
+.context-menu hr {
+  margin: 3px 2px;
+  border: 0;
+  border-top: 1px solid #e5e9ef;
+}
