@@ -7,7 +7,7 @@ import { ask, tell } from '../platform/io';
 import { type BoardKind, KINDS, kindOf } from './kinds';
 import { SEQUENCE_SAMPLE } from './sequence';
 import { BOARD_ID, readBoard } from './load';
-import { docBounds, nodeRect } from './geometry';
+import { docBounds, nodeRect, snap } from './geometry';
 import { allIds, freshId, makeNode, randomId } from './presets';
 import { sampleBoards } from './sample';
 import { registerSignals } from './signals';
@@ -204,15 +204,16 @@ export const useStore = create<State>((set, get) => ({
     if (along && !get().viewing) say(`つながっていた線 ${along} 本も一緒に消しました（⌘Z で戻せます）`);
   },
   // The board's history list is not part of the drawing: undo takes back drawing, never a kept state.
+  // What was selected stays selected where it is still there, to try the next change on it.
   undo: () =>
     set((s) => {
       const doc = s.past[s.past.length - 1];
-      return doc ? { doc: { ...doc, revisions: s.doc.revisions }, past: s.past.slice(0, -1), future: [s.doc, ...s.future], selection: [], editing: null } : s;
+      return doc ? { doc: { ...doc, revisions: s.doc.revisions }, past: s.past.slice(0, -1), future: [s.doc, ...s.future], selection: stillIn(doc, s.selection), editing: null } : s;
     }),
   redo: () =>
     set((s) => {
       const doc = s.future[0];
-      return doc ? { doc: { ...doc, revisions: s.doc.revisions }, past: [...s.past, s.doc], future: s.future.slice(1), selection: [], editing: null } : s;
+      return doc ? { doc: { ...doc, revisions: s.doc.revisions }, past: [...s.past, s.doc], future: s.future.slice(1), selection: stillIn(doc, s.selection), editing: null } : s;
     }),
   select: (selection) => set({ selection }),
   // Arming a tool puts away whatever was waiting to be placed.
@@ -606,6 +607,12 @@ function resetSession(doc: Doc, shown: Doc): void {
  * (not changed meanwhile from the command line, say), where those steps still apply.
  */
 const kept = new Map<string, { past: Doc[]; future: Doc[]; view: View; print: string }>();
+
+/** The ids of a selection that a state of the board still has. */
+function stillIn(doc: Doc, ids: string[]): string[] {
+  const here = new Set([...doc.nodes.map((n) => n.id), ...doc.edges.map((e) => e.id)]);
+  return ids.filter((id) => here.has(id));
+}
 
 /** Put a freshly loaded (or created) board on screen. */
 function show(doc: Doc): void {
@@ -1187,10 +1194,15 @@ export function duplicateSelection(offset = 30): void {
   }), false);
 }
 
-/** Paste (or duplicate) with fresh ids, keeping the cables between the copied nodes. */
-export function pasteClipboard(offset = 30): void {
+/**
+ * Paste (or duplicate) with fresh ids, keeping the cables between the copied nodes. The copies go a
+ * little down and right of the originals; where that is out of view (another board, a part scrolled
+ * away), they go to the middle of the view instead.
+ */
+export function pasteClipboard(): void {
   if (!clipboard) return;
   const s = useStore.getState();
+  const offset = pasteShift(clipboard.nodes, s.view);
   const taken = allIds(s.doc);
   const map = new Map<string, string>();
   // Pasted onto another board of the project, a shared thing stays the same thing; a copy on its
@@ -1202,18 +1214,38 @@ export function pasteClipboard(offset = 30): void {
     const id = freshId(taken, n.id.replace(/\d+$/, '') || 'n');
     map.set(n.id, id);
     const keep = same && 'shared' in n && !!n.shared && !here.has(n.shared);
-    return { ...n, id, x: n.x + offset, y: n.y + offset, ...('shared' in n && !keep ? { shared: undefined, sharedAt: undefined } : {}) } as Node;
+    return { ...n, id, x: n.x + offset.x, y: n.y + offset.y, ...('shared' in n && !keep ? { shared: undefined, sharedAt: undefined } : {}) } as Node;
   });
   const edges = clipboard.edges.map((e) => ({
     ...e,
     id: freshId(taken, 'e'),
     from: { ...e.from, node: map.get(e.from.node)! },
     to: { ...e.to, node: map.get(e.to.node)! },
-    route: e.route?.map((p) => ({ x: p.x + offset, y: p.y + offset })),
+    route: e.route?.map((p) => ({ x: p.x + offset.x, y: p.y + offset.y })),
   }));
   s.mutate((d) => ({ ...d, nodes: [...d.nodes, ...nodes], edges: [...d.edges, ...edges] }));
   s.select(nodes.map((n) => n.id));
   clipboard = { ...clipboard, nodes, edges };
+}
+
+/** How far pasted copies move from what was copied: 30 down and right, or into the middle of the view. */
+function pasteShift(nodes: Node[], view: View): { x: number; y: number } {
+  const step = { x: 30, y: 30 };
+  const el = document.getElementById('canvas');
+  if (!el || !nodes.length) return step;
+  const rects = nodes.map(nodeRect);
+  const x0 = Math.min(...rects.map((r) => r.x)) + step.x;
+  const y0 = Math.min(...rects.map((r) => r.y)) + step.y;
+  const x1 = Math.max(...rects.map((r) => r.x + r.w)) + step.x;
+  const y1 = Math.max(...rects.map((r) => r.y + r.h)) + step.y;
+  const { width, height } = el.getBoundingClientRect();
+  // In view if its middle is: a large copy may well stick out at the edges.
+  const cx = ((x0 + x1) / 2) * view.k + view.x;
+  const cy = ((y0 + y1) / 2) * view.k + view.y;
+  if (cx >= 0 && cx <= width && cy >= 0 && cy <= height) return step;
+  const mx = (width / 2 - view.x) / view.k;
+  const my = (height / 2 - view.y) / view.k;
+  return { x: snap(mx - (x0 + x1 - 2 * step.x) / 2), y: snap(my - (y0 + y1 - 2 * step.y) / 2) };
 }
 
 export function align(mode: 'left' | 'top' | 'hcenter' | 'vcenter' | 'hspace' | 'vspace'): void {

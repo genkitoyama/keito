@@ -128,6 +128,20 @@ export function insertNode(kind: CreateKind, at?: Pt, rect?: Rect): string {
   return n.id;
 }
 
+/**
+ * Text copied from elsewhere (a mail, a spreadsheet) and pasted on the board: a text box with it, in
+ * the middle of the view, on a board that has text boxes.
+ */
+export function insertText(text: string): void {
+  const s = st();
+  if (!kindOf(s.doc).tools.includes('text')) return;
+  const p = viewCenter();
+  const n = makeNode('text', snap(p.x), snap(p.y), allIds(s.doc), text);
+  n.h = Math.max(n.h, textHeightFor(n, text));
+  s.mutate((d) => ({ ...d, nodes: [...d.nodes, n] }));
+  s.select([n.id]);
+}
+
 /** A box just put down and opened for its first text: that text belongs to the step that made it. */
 let fresh: string | null = null;
 /** A box a double-click dropped on the board, by the way: left with no text, it is called off. */

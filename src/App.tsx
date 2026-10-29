@@ -3,7 +3,7 @@ import { SearchBar, openSearch } from './ui/SearchBar';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { flushSync } from 'react-dom';
-import { Canvas, inGesture, insertImages, spawnFrom, zoomBy } from './canvas/Canvas';
+import { Canvas, inGesture, insertImages, insertText, spawnFrom, zoomBy } from './canvas/Canvas';
 import { onControl } from './ui/keys';
 import { hasText } from './model/types';
 import { copyText, getSetting, setSetting } from './platform/io';
@@ -141,8 +141,9 @@ function useHotkeys() {
       else handled = false;
       if (handled) e.preventDefault();
     };
-    // Paste: pictures and SVG markup from the system clipboard become image nodes;
-    // anything else pastes what was last copied on the board.
+    // Paste: pictures and SVG markup from the system clipboard become image nodes, and text copied
+    // elsewhere a text box; with nothing there (a copy on the board empties it), what was last
+    // copied on the board.
     const onPaste = (e: ClipboardEvent) => {
       const t = e.target;
       if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
@@ -154,6 +155,7 @@ function useHotkeys() {
       e.preventDefault();
       if (files.length) void insertImages(files);
       else if (/^\s*(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>]/i.test(text)) void insertImages([new File([text], 'pasted.svg', { type: 'image/svg+xml' })]);
+      else if (text.trim()) insertText(text.replace(/\r\n?/g, '\n').trim());
       else pasteClipboard();
     };
     // A button clicked with the mouse lets go of the focus Chrome gives it (WebKit gives none), so
