@@ -48,14 +48,24 @@ PDF（A4 / A3 横）、画像（PNG / SVG）、表（Excel / CSV）、データ�
 
 ## はじめかた
 
-いまのところ、配布用のビルドは用意していません。ソースから動かしてください。
+### デスクトップアプリ（macOS）
 
-### 必要なもの
+[Releases](https://github.com/genkitoyama/keito/releases/latest) から `keito_<バージョン>_aarch64.dmg` をダウンロードし、開いた中の keito を「アプリケーション」フォルダにドラッグします。Apple Silicon（M1 以降）・macOS 11 以降の Mac で動きます。Developer ID で署名し、Apple の公証を通してあるので、警告なしで開けます。
+
+初めて起動したときに、ボードを保存するフォルダ（`書類/keito` か、選んだフォルダ）を決めます。
+
+コマンドラインと Claude Code から使うとき（下の「コマンドラインと Claude Code」）は、ソースも手元に置きます。
+
+### ソースから動かす
+
+ブラウザ版や Intel の Mac で使うとき、開発するときはこちらです。
+
+#### 必要なもの
 
 - [Node.js](https://nodejs.org/) 22 以降
 - デスクトップアプリを作るときだけ [Rust](https://www.rust-lang.org/tools/install)（macOS で確認しています）
 
-### ブラウザで使う
+#### ブラウザで使う
 
 ```bash
 git clone https://github.com/genkitoyama/keito.git
@@ -68,14 +78,15 @@ npm run dev
 
 ボードは `keito/boards/` に保存されます。保存先は環境変数 `KEITO_BOARDS` か、`~/.config/keito/config.json` の `"boards"` で変えられます。
 
-### デスクトップアプリで使う
+#### デスクトップアプリを動かす・作る
 
 ```bash
-npm run app        # 開発モードで起動
-npm run app:build  # .app と .dmg を作る（src-tauri/target/release/bundle/）
+npm run app          # 開発モードで起動
+npm run app:build    # .app と .dmg を作る（src-tauri/target/release/bundle/）
+npm run app:release  # 署名と公証まで行う配布用の .dmg を作る（docs/development.md）
 ```
 
-初めて起動したときに、ボードを保存するフォルダ（`書類/keito` か、選んだフォルダ）を決めます。コマンドラインやブラウザ版と同じフォルダを指せば、同じボードを読み書きできます。
+デスクトップアプリで選ぶボードのフォルダを、コマンドラインやブラウザ版と同じにすれば、同じボードを読み書きできます。
 
 ## コマンドラインと Claude Code
 
@@ -100,7 +111,7 @@ Claude Code 向けの使い方を `.claude/skills/keito/` に入れてありま�
 ## 既知の制限
 
 - 共同編集とクラウド共有には対応していません。ボードは手元の PC だけに保存されます。人に渡すときは、書き出した `.keito.json` かボードのフォルダごと渡してください。
-- デスクトップアプリは macOS でだけ確かめています。
+- 配布しているデスクトップアプリは macOS（Apple Silicon）用だけです。ほかの環境では、ソースから動かしてください。
 
 ## ライセンス
 

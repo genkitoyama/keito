@@ -137,7 +137,7 @@ boards/
 
 ## デスクトップアプリ
 
-Tauri で包んだ macOS アプリとしても動きます（`npm run app` / `npm run app:build`）。中身はブラウザ版と同じで、違いは次のとおりです。
+Tauri で包んだ macOS アプリとしても動きます。[Releases](https://github.com/genkitoyama/keito/releases/latest) の .dmg から入れるか、ソースから `npm run app` / `npm run app:build` で動かします。中身はブラウザ版と同じで、違いは次のとおりです。
 
 - ボードは PC のフォルダに保存されます。初回の起動時に、`書類/keito` を使うか別のフォルダを選ぶかを聞きます。あとからはメニューの「keito > 設定…」（⌘,）で変えられます。環境変数 `KEITO_BOARDS` か `~/.config/keito/config.json` の `boards`（コマンドラインと同じ設定）があれば、そちらが優先されます。コマンドラインや開発サーバーと同じフォルダを指せば、同じボードを読み書きします（片方で書き込むと、もう片方にすぐ反映されます）。
 
