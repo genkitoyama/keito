@@ -623,6 +623,27 @@ export function showRect(r: Rect): void {
   useStore.setState({ view: { k, x: width / 2 - (r.x + r.w / 2) * k, y: height / 2 - (r.y + r.h / 2) * k } });
 }
 
+/**
+ * Bring things (nodes, or lines by their two ends) into view when any of them is out of it: the
+ * view moves to centre them, at the same zoom. Already in view, nothing moves.
+ */
+export function reveal(ids: string[]): void {
+  const { doc, view } = useStore.getState();
+  const want = new Set(ids);
+  for (const e of doc.edges) if (want.has(e.id)) want.add(e.from.node).add(e.to.node);
+  const rects = doc.nodes.filter((n) => want.has(n.id)).map(nodeRect);
+  const el = document.getElementById('canvas');
+  if (!rects.length || !el) return;
+  const x0 = Math.min(...rects.map((r) => r.x));
+  const y0 = Math.min(...rects.map((r) => r.y));
+  const x1 = Math.max(...rects.map((r) => r.x + r.w));
+  const y1 = Math.max(...rects.map((r) => r.y + r.h));
+  const { width, height } = el.getBoundingClientRect();
+  const inView = x0 * view.k + view.x >= 0 && y0 * view.k + view.y >= 0 && x1 * view.k + view.x <= width && y1 * view.k + view.y <= height;
+  if (inView) return;
+  useStore.setState({ view: { ...view, x: width / 2 - ((x0 + x1) / 2) * view.k, y: height / 2 - ((y0 + y1) / 2) * view.k } });
+}
+
 export function centerOn(nodeId: string): void {
   const { doc, view } = useStore.getState();
   const n = doc.nodes.find((x) => x.id === nodeId);

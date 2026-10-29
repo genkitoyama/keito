@@ -3,7 +3,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react';
 import { type CellEdit, TABLES, type Table, bands, clearOrder, editCell, editable, moveRow } from '../model/lists';
 import { kindOf } from '../model/kinds';
 import { allSignals, groupSignals } from '../model/signals';
-import { useStore } from '../model/store';
+import { reveal, useStore } from '../model/store';
 import { openExport } from './ExportPanel';
 import { ICON } from './icons';
 import { composing } from './keys';
@@ -29,6 +29,13 @@ export function ListsPanel() {
   // The rows in the order they are shown: while a row is dragged, already where it would go.
   const order = t.rows.map((_, i) => i);
   if (drag) order.splice(drag.to, 0, ...order.splice(drag.from, 1));
+  /** The next cell that can be filled from row `row`, column `col`, going on along the rows; null at the end. */
+  const nextCell = (row: number, col: number, step: 1 | -1): { row: number; col: number } | null => {
+    const cells = order.flatMap((r) => t.head.map((_, c) => ({ row: r, col: c })));
+    let k = cells.findIndex((x) => x.row === row && x.col === col);
+    for (k += step; k >= 0 && k < cells.length; k += step) if (editable(t, cells[k].row, cells[k].col)) return cells[k];
+    return null;
+  };
 
   /**
    * Rows are dragged with the pointer (the browser's own drag and drop handles tables unevenly).
@@ -220,7 +227,12 @@ export function ListsPanel() {
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                onClick={() => t.refs[i].length && useStore.getState().select(t.refs[i])}
+                onClick={() => {
+                  if (!t.refs[i].length) return;
+                  useStore.getState().select(t.refs[i]);
+                  // The row's things are shown on the board, brought into view if they are off it.
+                  reveal(t.refs[i]);
+                }}
               >
                 {t.reorder &&
                   (t.total && i === t.rows.length - 1 ? (
@@ -245,8 +257,8 @@ export function ListsPanel() {
                           row={i}
                           edit={edit}
                           shown={c}
-                          done={(value) => {
-                            setEditing(null);
+                          done={(value, step) => {
+                            setEditing(step ? nextCell(i, j, step) : null);
                             if (value != null) useStore.getState().setDoc(editCell(useStore.getState().doc, edit, t.refs[i], value));
                           }}
                         />
@@ -283,7 +295,7 @@ export function ListsPanel() {
  * The input for one list cell. Enter or leaving the cell keeps the value, Escape drops it; an
  * Enter that confirms a Japanese conversion belongs to the IME, not to the cell.
  */
-function CellEditor({ t, row, edit, shown, done }: { t: Table; row: number; edit: CellEdit; shown: string; done: (value: string | null) => void }) {
+function CellEditor({ t, row, edit, shown, done }: { t: Table; row: number; edit: CellEdit; shown: string; done: (value: string | null, step?: 1 | -1) => void }) {
   const doc = useStore((s) => s.doc);
   // Enter ends the edit and takes the input away, which blurs it: the value is kept only once.
   const left = useRef(false);
@@ -310,10 +322,10 @@ function CellEditor({ t, row, edit, shown, done }: { t: Table; row: number; edit
   }
   // A number column may show a word ("未設定") where there is no number yet.
   const start = edit.kind === 'number' && !/^-?[\d.]+$/.test(shown) ? '' : shown;
-  const finish = (value: string | null) => {
+  const finish = (value: string | null, step?: 1 | -1) => {
     if (left.current) return;
     left.current = true;
-    done(value === start ? null : value);
+    done(value === start ? null : value, step);
   };
   return (
     <input
@@ -325,7 +337,11 @@ function CellEditor({ t, row, edit, shown, done }: { t: Table; row: number; edit
       onKeyDown={(ev) => {
         if (composing(ev)) return;
         if (ev.key === 'Enter') finish(ev.currentTarget.value);
-        else if (ev.key === 'Escape') {
+        // Tab keeps the value and goes on to the next cell to fill (Shift+Tab, the one before), as in a spreadsheet.
+        else if (ev.key === 'Tab') {
+          ev.preventDefault();
+          finish(ev.currentTarget.value, ev.shiftKey ? -1 : 1);
+        } else if (ev.key === 'Escape') {
           ev.preventDefault();
           finish(null);
         }
