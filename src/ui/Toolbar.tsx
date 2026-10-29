@@ -15,7 +15,7 @@ const TOOLS: { tool: Tool; label: string; key: string; icon: ReactNode }[] = [
   { tool: 'select', label: '選択', key: 'V', icon: ico(<path d="M5 3l10 6-4.5 1.2L8.8 15z" />) },
   { tool: 'pan', label: '画面を動かす', key: 'H', icon: ICON.hand },
   { tool: 'rect', label: '四角', key: 'R', icon: shapeIcon('rect') },
-  { tool: 'round', label: '端子', key: 'E', icon: shapeIcon('round') },
+  { tool: 'round', label: '開始・終了（角丸）', key: 'E', icon: shapeIcon('round') },
   { tool: 'diamond', label: '判断', key: 'D', icon: shapeIcon('diamond') },
   { tool: 'ellipse', label: '楕円', key: 'O', icon: shapeIcon('ellipse') },
   { tool: 'cloud', label: '雲', key: 'C', icon: shapeIcon('cloud') },

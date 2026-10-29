@@ -2617,3 +2617,24 @@ fieldset.plain:disabled {
 .main.with-lists .comments-panel {
   max-height: calc(100% - var(--lists) - 26px);
 }
+
+/* What to do first, on a board with nothing on it */
+.empty-hint {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: center;
+  color: var(--sub);
+  font-size: 12.5px;
+  line-height: 1.6;
+  pointer-events: none;
+}
+.empty-hint b {
+  color: #334155;
+  font-size: 14px;
+}

@@ -1031,6 +1031,7 @@ export function Canvas() {
       {/* Keyed by the selection so an open menu never carries over to another object. */}
       {idle && selection.length > 0 && !menuAt && <QuickBar key={selection.join(',')} />}
       {menuAt && <ContextMenu at={menuAt} close={() => setMenuAt(null)} />}
+      {doc.nodes.length === 0 && !viewing && !placing && <EmptyHint doc={doc} />}
       {(placing || placesBox(tool)) && !busy && (
         <div className="place-hint">
           {placing ? `「${placing.label}」: 置きたい所をクリック` : tool === 'sequence' ? '置きたい所をクリック' : '置きたい所をクリック、ドラッグで大きさを決めて置く'}
@@ -1043,6 +1044,27 @@ export function Canvas() {
         <button onClick={() => zoomBy(1.25)} title="拡大">＋</button>
         <button onClick={() => st().fit()} title="全体表示 (⇧1)">全体</button>
       </div>
+    </div>
+  );
+}
+
+/** What to do first on a board with nothing on it yet, in the middle of it. */
+function EmptyHint({ doc }: { doc: Doc }) {
+  const lib = kindOf(doc).library;
+  return (
+    <div className="empty-hint">
+      {lib ? (
+        <>
+          <b>まず{lib.label}を置きましょう</b>
+          <span>
+            左の「{lib.label}」（L キー）から選んでクリックで置き、ポートの●どうしをドラッグで結ぶと線が引けます。
+          </span>
+        </>
+      ) : (
+        <b>左のツールで図形を選んで置くか、何もない所をダブルクリックして書き始めます</b>
+      )}
+      {lib?.set === 'equipment' && <span>エリア枠（F）で場所ごとに囲むと、機材リストの「設置場所」になります。</span>}
+      {lib?.set === 'software' && <span>エリア枠（F）で動いている PC ごとに囲むと見やすくなります。</span>}
     </div>
   );
 }
