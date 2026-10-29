@@ -132,7 +132,7 @@ export function DevicePanel({ n }: { n: DeviceNode }) {
               {/* Prices are typed in the equipment list, where the rows can be gone down one after another. */}
               <p className="hint price-hint">
                 {n.price != null ? <>単価 {n.price.toLocaleString('ja-JP')} 円{unitsOf(n).count > 1 && <>（金額 {(n.price * unitsOf(n).count).toLocaleString('ja-JP')} 円）</>}。</> : <>単価は</>}
-                <button className="link" onClick={() => st().setPanel('lists')}>
+                <button className="link" onClick={() => st().setDock('lists', true)}>
                   機材リスト
                 </button>
                 {n.price != null ? 'で変えられます。' : 'の「単価(円)」欄に入力します。'}

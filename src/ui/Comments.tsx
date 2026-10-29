@@ -60,7 +60,7 @@ export function CommentsPanel() {
       <header>
         <h3>コメント</h3>
         <small>未解決 {open.length} 件</small>
-        <button className="mini" onClick={() => st().setPanel(null)} aria-label="閉じる">
+        <button className="mini" onClick={() => st().setDock('comments', false)} aria-label="閉じる">
           ×
         </button>
       </header>

@@ -204,7 +204,7 @@ function Library() {
 
 export function Toolbar() {
   const tool = useStore((s) => s.tool);
-  const panel = useStore((s) => s.panel);
+  const library = useStore((s) => s.docks.library);
   const kind = kindOf(useStore((s) => s.doc));
   const st = useStore.getState;
   return (
@@ -244,14 +244,14 @@ export function Toolbar() {
         {kind.library && (
           <>
             <hr />
-            <button className={panel === 'library' ? 'on' : ''} data-tip={`${kind.library.label}ライブラリ（L）`} aria-label={`${kind.library.label}ライブラリ`} onClick={() => st().setPanel(panel === 'library' ? null : 'library')}>
+            <button className={library ? 'on' : ''} data-tip={`${kind.library.label}ライブラリ（L）`} aria-label={`${kind.library.label}ライブラリ`} onClick={() => st().setDock('library')}>
               {ico(<path d="M3 6h14v8H3zM6 6V4m8 2V4M6 10h2m2 0h4" />)}
               <span>{kind.library.label}</span>
             </button>
           </>
         )}
       </nav>
-      {panel === 'library' && kind.library && <Library />}
+      {library && kind.library && <Library />}
     </>
   );
 }

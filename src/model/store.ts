@@ -15,7 +15,10 @@ import { type Entry, type ShareNode, catalog, newKey, pull, stamp, takeFrom } fr
 import { type Doc, type Edge, type Node, type Rect, type Revision, type UserPreset, emptyMeta } from './types';
 
 export type Tool = 'select' | 'pan' | 'rect' | 'round' | 'diamond' | 'ellipse' | 'cloud' | 'sticky' | 'text' | 'frame' | 'sequence';
-export type Panel = null | 'lists' | 'export' | 'library' | 'boards' | 'comments' | 'settings';
+/** A window over the board (one at a time). */
+export type Panel = null | 'export' | 'boards' | 'settings';
+/** Panels beside the board, open alongside one another: the library, the lists, the comments. */
+export type Dock = 'library' | 'lists' | 'comments';
 /**
  * Something picked from the toolbar or a library, waiting to be put where the user clicks (its
  * outline follows the pointer). `place` puts it centred on a point of the board.
@@ -70,6 +73,8 @@ interface State {
   view: View;
   editing: string | null;
   panel: Panel;
+  /** Which side panels are open. */
+  docks: Record<Dock, boolean>;
   /** False until the first board has been loaded from storage. */
   ready: boolean;
   /** Where boards are kept: a folder on disk (server) or this browser (local). */
@@ -104,6 +109,8 @@ interface State {
   setView(view: View): void;
   setEditing(id: string | null): void;
   setPanel(panel: Panel): void;
+  /** Open or close a side panel (toggled when `on` is left out). */
+  setDock(dock: Dock, on?: boolean): void;
   fit(): void;
   openBoard(id: string): void;
   newBoard(doc?: Doc): void;
@@ -159,7 +166,8 @@ export const useStore = create<State>((set, get) => ({
   view: { x: 0, y: 0, k: 1 },
   editing: null,
   // `?panel=export` etc. opens a panel on load (handy for deep links).
-  panel: (new URLSearchParams(location.search).get('panel') as Panel) || null,
+  panel: (['export', 'boards', 'settings'].includes(new URLSearchParams(location.search).get('panel') ?? '') ? new URLSearchParams(location.search).get('panel') : null) as Panel,
+  docks: { library: false, lists: new URLSearchParams(location.search).get('panel') === 'lists', comments: new URLSearchParams(location.search).get('panel') === 'comments' },
   ready: false,
   mode: 'local',
   saving: 'saved',
@@ -221,6 +229,7 @@ export const useStore = create<State>((set, get) => ({
   setView: (view) => set({ view }),
   setEditing: (editing) => set({ editing }),
   setPanel: (panel) => set({ panel }),
+  setDock: (dock, on) => set((s) => ({ docks: { ...s.docks, [dock]: on ?? !s.docks[dock] } })),
   fit: () => {
     const el = document.getElementById('canvas');
     const box = docBounds(get().doc);

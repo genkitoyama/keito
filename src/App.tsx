@@ -53,7 +53,7 @@ function useHotkeys() {
           const s = useStore.getState();
           if (document.querySelector('.modal-bg')) {
             if (s.panel === 'export' || s.panel === 'boards' || s.panel === 'settings') s.setPanel(null);
-          } else if (s.panel === 'library' && t.closest('.library')) s.setPanel(null);
+          } else if (s.docks.library && t.closest('.library')) s.setDock('library', false);
           else t.blur();
           return;
         }
@@ -122,7 +122,9 @@ function useHotkeys() {
         if (s.placing) s.setPlacing(null);
         else if (s.tool !== 'select') s.setTool('select');
         else if (s.selection.length) s.select([]);
-        else if (s.panel) s.setPanel(null);
+        else if (s.docks.library) s.setDock('library', false);
+        else if (s.docks.comments) s.setDock('comments', false);
+        else if (s.docks.lists) s.setDock('lists', false);
       } else if (key === 'enter' && editable) s.setEditing(only);
       // A pixel a press, ten with Shift, as in other drawing tools.
       else if (key.startsWith('arrow') && nodeIds.length) {
@@ -137,7 +139,7 @@ function useHotkeys() {
       } else if (e.shiftKey && e.code === 'Digit1') s.fit();
       else if (typing) return typeToEdit();
       // The library and the tools a board's kind offers; keys for others do nothing on it.
-      else if (key === 'l' && kindOf(s.doc).library) s.setPanel(s.panel === 'library' ? null : 'library');
+      else if (key === 'l' && kindOf(s.doc).library) s.setDock('library');
       else if (TOOL_KEYS[key] && !e.shiftKey && !e.altKey && kindOf(s.doc).tools.includes(TOOL_KEYS[key])) s.setTool(TOOL_KEYS[key]);
       else handled = false;
       if (handled) e.preventDefault();
@@ -226,6 +228,7 @@ function usePaneSize(name: string, initial: number, min: number, max: () => numb
 
 export function App() {
   const panel = useStore((s) => s.panel);
+  const docks = useStore((s) => s.docks);
   // A board with no lists (a sequence or free board) keeps no lists panel, even if it was left open.
   const hasLists = useStore((s) => kindOf(s.doc).lists.length > 0);
   const ready = useStore((s) => s.ready);
@@ -237,16 +240,17 @@ export function App() {
     <div className="app" style={{ '--side': `${side}px`, '--lists': `${lists}px` } as CSSProperties}>
       <TopBar />
       <BoardTabs />
-      <div className="main">
+      {/* With the lists open below, the library and the comments stop above them. */}
+      <div className={`main${docks.lists && hasLists ? ' with-lists' : ''}`}>
         <Toolbar />
         <div className="stage">
           <RevisionBanner />
           <Canvas />
           <SearchBar />
           <Notice />
-          {panel === 'comments' && <CommentsPanel />}
-          {panel === 'lists' && hasLists && <Splitter axis="y" onDrag={(d) => growLists(-d)} />}
-          {panel === 'lists' && hasLists && <ListsPanel />}
+          {docks.comments && <CommentsPanel />}
+          {docks.lists && hasLists && <Splitter axis="y" onDrag={(d) => growLists(-d)} />}
+          {docks.lists && hasLists && <ListsPanel />}
         </div>
         <Splitter axis="x" onDrag={(d) => growSide(-d)} />
         <Inspector />

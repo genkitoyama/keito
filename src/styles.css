@@ -2609,3 +2609,11 @@ fieldset.plain {
 fieldset.plain:disabled {
   opacity: 0.6;
 }
+
+/* Side panels open together: the library and the comments end above the lists */
+.main.with-lists .library {
+  bottom: calc(var(--lists) + 14px);
+}
+.main.with-lists .comments-panel {
+  max-height: calc(100% - var(--lists) - 26px);
+}

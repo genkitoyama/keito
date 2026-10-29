@@ -1,7 +1,7 @@
 import { ProjectMenu } from './ProjectMenu';
 import { fromYaml } from '../model/dsl';
 import { randomId } from '../model/presets';
-import { type Panel, emptyDoc, saveNow, useStore } from '../model/store';
+import { emptyDoc, saveNow, useStore } from '../model/store';
 import { tidy } from '../model/tidy';
 import { kindOf } from '../model/kinds';
 import { openComments } from '../model/comments';
@@ -38,7 +38,7 @@ async function openFile(): Promise<void> {
 
 export function TopBar() {
   const doc = useStore((s) => s.doc);
-  const panel = useStore((s) => s.panel);
+  const docks = useStore((s) => s.docks);
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
   const saving = useStore((s) => s.saving);
@@ -48,7 +48,7 @@ export function TopBar() {
   const kind = useStore((s) => kindOf(s.doc));
   const comments = useStore((s) => openComments(s.doc).length);
   const st = useStore.getState;
-  const toggle = (p: Panel) => st().setPanel(panel === p ? null : p);
+
 
   return (
     <header className="topbar">
@@ -115,16 +115,16 @@ export function TopBar() {
       <span className="grow" />
       {/* Panels that open beside the drawing, then the one thing the board is made for: export. */}
       {kind.lists.length > 0 && (
-        <button className={`ghost${panel === 'lists' ? ' on' : ''}`} onClick={() => toggle('lists')}>
+        <button className={`ghost${docks.lists ? ' on' : ''}`} onClick={() => st().setDock('lists')}>
           {ICON.table}
           {kind.listsLabel}
         </button>
       )}
-      <button className={`ghost${panel === 'comments' ? ' on' : ''}`} onClick={() => toggle('comments')} data-tip="付箋（コメント）の一覧">
+      <button className={`ghost${docks.comments ? ' on' : ''}`} onClick={() => st().setDock('comments')} data-tip="付箋（コメント）の一覧">
         {ICON.comment}
         コメント{comments > 0 && <b className="count">{comments}</b>}
       </button>
-      <button className="primary export-btn" onClick={() => toggle('export')}>
+      <button className="primary export-btn" onClick={() => st().setPanel('export')}>
         {ICON.download}
         エクスポート
       </button>

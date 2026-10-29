@@ -197,7 +197,7 @@ export function ListsPanel() {
             Excel / CSV…
           </button>
         </div>
-        <button className="list-close" aria-label="閉じる" title="表を閉じる" onClick={() => useStore.getState().setPanel(null)}>
+        <button className="list-close" aria-label="閉じる" title="表を閉じる" onClick={() => useStore.getState().setDock('lists', false)}>
           {ICON.close}
         </button>
       </div>
