@@ -7,7 +7,7 @@ import { Canvas, inGesture, insertImages, spawnFrom, zoomBy } from './canvas/Can
 import { onControl } from './ui/keys';
 import { hasText } from './model/types';
 import { copyText, getSetting, setSetting } from './platform/io';
-import { copySelection, duplicateSelection, pasteClipboard, useStore } from './model/store';
+import { copySelection, duplicateSelection, pasteClipboard, saveNow, useStore } from './model/store';
 import { ExportPanel } from './ui/ExportPanel';
 import { BoardsPanel } from './ui/Boards';
 import { BoardTabs } from './ui/BoardTabs';
@@ -16,7 +16,7 @@ import { Inspector } from './ui/Inspector';
 import { ListsPanel } from './ui/ListsPanel';
 import { RevisionBanner } from './ui/Revisions';
 import { TOOL_KEYS, Toolbar } from './ui/Toolbar';
-import { TopBar, saveBoardFile } from './ui/TopBar';
+import { TopBar } from './ui/TopBar';
 import { kindOf } from './model/kinds';
 import { isUnderlay } from './model/geometry';
 import { SettingsPanel } from './ui/Settings';
@@ -60,7 +60,7 @@ function useHotkeys() {
         const physical = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
         if (!(e.metaKey || e.ctrlKey) || e.isComposing || !['s', 'k', 'f'].includes(physical) || document.querySelector('.modal-bg')) return;
         e.preventDefault();
-        if (physical === 's') void saveBoardFile();
+        if (physical === 's') void saveNow();
         else if (physical === 'k') toggleProjectMenu();
         else openSearch();
         return;
@@ -106,7 +106,8 @@ function useHotkeys() {
       } else if (mod && key === 'v') return; // handled by the paste event, which can see images
       else if (mod && key === 'd') duplicateSelection();
       else if (mod && key === 'a') s.select([...s.doc.nodes.filter((n) => !isUnderlay(n)).map((n) => n.id), ...s.doc.edges.map((ed) => ed.id)]);
-      else if (mod && key === 's') void saveBoardFile();
+      // Boards save by themselves: ⌘S writes what is pending now and says so (a file of the board is an export).
+      else if (mod && key === 's') void saveNow();
       else if (mod && key === 'k') toggleProjectMenu();
       else if (mod && key === 'f') openSearch();
       else if (mod && (key === '=' || key === '+')) zoomBy(1.25);
@@ -172,6 +173,16 @@ function useHotkeys() {
   }, []);
 }
 
+/** The word on what was just done, for a moment, at the foot of the board. */
+function Notice() {
+  const notice = useStore((s) => s.notice);
+  return notice ? (
+    <div className="notice" role="status">
+      {notice}
+    </div>
+  ) : null;
+}
+
 /** Draggable boundary between two panes. `onDrag` gets how far the pointer has moved since the last call. */
 function Splitter({ axis, onDrag }: { axis: 'x' | 'y'; onDrag: (delta: number) => void }) {
   const last = useRef<number | null>(null);
@@ -229,6 +240,7 @@ export function App() {
           <RevisionBanner />
           <Canvas />
           <SearchBar />
+          <Notice />
           {panel === 'comments' && <CommentsPanel />}
           {panel === 'lists' && hasLists && <Splitter axis="y" onDrag={(d) => growLists(-d)} />}
           {panel === 'lists' && hasLists && <ListsPanel />}

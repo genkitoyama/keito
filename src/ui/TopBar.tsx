@@ -1,7 +1,7 @@
 import { ProjectMenu } from './ProjectMenu';
 import { fromYaml } from '../model/dsl';
 import { randomId } from '../model/presets';
-import { type Panel, emptyDoc, useStore } from '../model/store';
+import { type Panel, emptyDoc, saveNow, useStore } from '../model/store';
 import { tidy } from '../model/tidy';
 import { kindOf } from '../model/kinds';
 import { openComments } from '../model/comments';
@@ -42,6 +42,7 @@ export function TopBar() {
   const canUndo = useStore((s) => s.past.length > 0);
   const canRedo = useStore((s) => s.future.length > 0);
   const saving = useStore((s) => s.saving);
+  const saveError = useStore((s) => s.saveError);
   const mode = useStore((s) => s.mode);
   const viewing = useStore((s) => !!s.viewing);
   const kind = useStore((s) => kindOf(s.doc));
@@ -56,27 +57,27 @@ export function TopBar() {
       {/* The project on screen (its boards are the tabs below), and the others to jump to. */}
       <ProjectMenu />
       {/* Boards and files: made, copied, opened, deleted. */}
-      <button className="ghost" onClick={() => openBoards(true)} data-tip="新しいボード（種類を選ぶ）">
+      <button className="ghost" onClick={() => openBoards(true)} data-tip="新しいボードを作る（種類を選ぶ）">
         {ICON.plus}
-        新規
+        新しいボード
       </button>
-      <button className="ghost" data-tip="このボードを複製" onClick={async () => st().newBoard({ ...(await inlineImages(doc)), id: randomId(), meta: { ...doc.meta, title: `${doc.meta.title} のコピー` } })}>
+      <button className="ghost" data-tip="このボードをまるごと複製して、コピーを開く（図形の複製は ⌘D）" onClick={async () => st().newBoard({ ...(await inlineImages(doc)), id: randomId(), meta: { ...doc.meta, title: `${doc.meta.title} のコピー` } })}>
         {ICON.duplicate}
-        複製
+        ボードを複製
       </button>
-      <button className="ghost" onClick={openFile} data-tip="ファイルを開く（.keito.json / .yaml）">
+      <button className="ghost" onClick={openFile} data-tip="ファイルを開いて新しいボードにする（.keito.json / .yaml）">
         {ICON.folder}
-        開く
+        ファイルを開く
       </button>
       <button
         className="ghost danger-hover"
-        data-tip="このボードを削除（ボード一覧から戻せます）"
+        data-tip="このボードを削除（ボード一覧から戻せます。図形の削除は Delete）"
         onClick={() => {
           void ask(`「${doc.meta.title}」を削除しますか？\n（ボード一覧の「最近削除したボード」から戻せます）`).then((yes) => yes && st().deleteBoard(doc.id));
         }}
       >
         {ICON.trash}
-        削除
+        ボードを削除
       </button>
       <span className="sep" />
       <button disabled={!canUndo} onClick={() => st().undo()} data-tip="元に戻す（⌘Z）" aria-label="元に戻す" className="ghost icon">{ICON.undo}</button>
@@ -106,8 +107,9 @@ export function TopBar() {
           </button>
         </span>
       ) : (
-        <span className={`save-state ${saving}`} title={mode === 'server' ? 'boards フォルダに自動保存' : 'このブラウザ内に自動保存'}>
+        <span className={`save-state ${saving}`} title={saving === 'error' ? `理由: ${saveError ?? '不明'}\n少しずつ間をあけて自動でやり直しています。` : mode === 'server' ? 'boards フォルダに自動保存（⌘S で今すぐ保存）' : 'このブラウザ内に自動保存（⌘S で今すぐ保存）'}>
           {saving === 'error' ? '保存できていません' : saving === 'saving' ? '保存中…' : mode === 'server' ? 'フォルダに保存済み' : 'ブラウザに保存済み'}
+          {saving === 'error' && <button onClick={() => void saveNow()}>もう一度</button>}
         </span>
       )}
       <span className="grow" />

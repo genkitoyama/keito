@@ -1061,9 +1061,31 @@ td.empty {
   color: #92400e;
   font-weight: 600;
 }
-.save-state.conflict button {
+.save-state.conflict button,
+.save-state.error button {
   font-size: 11px;
   padding: 2px 8px;
+}
+.save-state.error button {
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+/* A short word on what was just done, at the foot of the board */
+.notice {
+  position: absolute;
+  left: 50%;
+  bottom: 56px;
+  transform: translateX(-50%);
+  z-index: 30;
+  padding: 7px 14px;
+  border-radius: 8px;
+  background: #1f2937;
+  color: #fff;
+  font-size: 12px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.22);
+  pointer-events: none;
+  white-space: nowrap;
 }
 
 /* Line colour menu */

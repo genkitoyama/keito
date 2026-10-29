@@ -322,7 +322,7 @@ export function ExportPanel() {
             ) : mode === 'data' ? (
               <>
                 <h4>keito ファイル（.keito.json）</h4>
-                <p className="hint">画像も含めたボードまるごと。ほかの PC の keito で「開く」と元どおりに編集できます。バックアップや受け渡しに。⌘S でも保存できます。</p>
+                <p className="hint">画像も含めたボードまるごと。ほかの PC の keito で「ファイルを開く」と元どおりに編集できます。バックアップや受け渡しに。</p>
                 <button className="primary wide" onClick={run(() => saveBoardFile(), 'keito ファイルを保存しました。')}>
                   keito ファイルを保存
                 </button>

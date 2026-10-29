@@ -82,6 +82,10 @@ interface State {
   saving: 'saved' | 'saving' | 'error' | 'conflict' | 'gone';
   /** Set while an old revision is on screen in place of the live board (which is not touched). */
   viewing: { entry: Revision; all: Revision[] } | null;
+  /** Why the last write failed, while `saving` is 'error'. */
+  saveError: string | null;
+  /** A short word on what was just done (what a delete took with it …), shown for a moment. */
+  notice: string | null;
 
   /** Push the current doc onto the undo stack (call before a drag or a burst of edits). */
   checkpoint(): void;
@@ -160,6 +164,8 @@ export const useStore = create<State>((set, get) => ({
   mode: 'local',
   saving: 'saved',
   viewing: null,
+  saveError: null,
+  notice: null,
   presets: [],
   others: [],
   placing: null,
@@ -186,12 +192,16 @@ export const useStore = create<State>((set, get) => ({
   removeIds: (ids) => {
     if (!ids.length) return;
     const gone = new Set(ids);
+    const d = get().doc;
+    // Lines go with the things they join: said, since they were not among what was picked.
+    const along = d.edges.filter((e) => !gone.has(e.id) && (gone.has(e.from.node) || gone.has(e.to.node))).length;
     get().mutate((d) => ({
       ...d,
       nodes: d.nodes.filter((n) => !gone.has(n.id)),
       edges: d.edges.filter((e) => !gone.has(e.id) && !gone.has(e.from.node) && !gone.has(e.to.node)),
     }));
     set({ selection: [], editing: null });
+    if (along && !get().viewing) say(`つながっていた線 ${along} 本も一緒に消しました（⌘Z で戻せます）`);
   },
   // The board's history list is not part of the drawing: undo takes back drawing, never a kept state.
   undo: () =>
@@ -707,16 +717,35 @@ async function write(doc: Doc): Promise<void> {
     retries = 0;
     clearTimeout(retryTimer);
     const info: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now(), project: doc.meta.project || undefined, kind: doc.kind };
-    useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], ...(here() ? { saving: s.doc === doc ? 'saved' : 'saving' } : {}) }));
+    useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], ...(here() ? { saving: s.doc === doc ? 'saved' : 'saving', saveError: null } : {}) }));
   } catch (e) {
     if (!here()) return console.error(e);
     // Written or deleted elsewhere since it was read here: the user settles it (see resolveConflict).
     if (e instanceof Conflict) return void enterConflict('conflict');
     if (e instanceof Gone) return void enterConflict('gone');
     console.error(e);
-    useStore.setState({ saving: 'error' });
+    useStore.setState({ saving: 'error', saveError: e instanceof Error ? e.message : String(e) });
     retryLater();
   }
+}
+
+/** ⌘S, or "もう一度" after a failed write: what is pending is written now (it is otherwise written by itself). */
+export async function saveNow(): Promise<void> {
+  clearTimeout(retryTimer);
+  retries = 0;
+  const s = useStore.getState();
+  const pending = s.doc !== stored;
+  if (s.saving === 'error' && s.ready && !s.viewing && pending) await persist(s.doc).catch(() => {});
+  else await flush();
+  if (useStore.getState().saving === 'saved') say(pending ? '保存しました' : '保存済みです（変更は自動で保存されます）');
+}
+
+let noticeTimer = 0;
+/** Show a short word for a moment. */
+export function say(text: string): void {
+  clearTimeout(noticeTimer);
+  useStore.setState({ notice: text });
+  noticeTimer = window.setTimeout(() => useStore.setState({ notice: null }), 4000);
 }
 
 /** Write any pending change now (before switching boards or leaving the page); whether it is all written. */
