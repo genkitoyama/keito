@@ -6,6 +6,10 @@
 
 ![系統図を描いているところ。左に図、右に選んだ機材の情報](docs/images/hero.png)
 
+紹介動画（1 分 25 秒・YouTube）：
+
+<a href="https://youtu.be/bZpOZyQM5ak"><img src="docs/images/video.jpg" width="480" alt="keito の紹介動画を YouTube で見る"></a>
+
 ## 特長
 
 - **線は自動で引かれる**：ポートどうしをドラッグでつなぐと、線は機材をよけて引かれ、ケーブル ID（`HDMI-01` など）が自動で振られます。機材を動かすと、線もその場で引き直されます。
