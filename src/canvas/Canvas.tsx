@@ -522,6 +522,20 @@ export function Canvas() {
     begin(e, { kind: 'connect', from, at, side, sx: e.clientX, sy: e.clientY, trail: [at] });
   };
 
+  /** A press on a port's target: the port nearest the pointer starts the line (targets of close ports overlap). */
+  const takePort = (e: RPointerEvent, end: EdgeEnd, at: Pt) => {
+    const w = world(e);
+    let best = { end, at, d: Math.hypot(at.x - w.x, at.y - w.y) };
+    const n = st().doc.nodes.find((x) => x.id === end.node);
+    if (n?.type === 'device')
+      for (const q of n.ports) {
+        const p = portPos(n, q.id);
+        const d = p ? Math.hypot(p.x - w.x, p.y - w.y) : Infinity;
+        if (p && d < best.d) best = { end: { node: n.id, port: q.id }, at: p, d };
+      }
+    onHandleDown(e, best.end, best.at);
+  };
+
   const onResizeDown = (e: RPointerEvent, n: Node, corner: Corner) => {
     if (e.button !== 0) return;
     e.stopPropagation();
@@ -853,8 +867,8 @@ export function Canvas() {
       <NodeView n={editing === n.id && canConnect(n) ? { ...n, text: '' } : n} theme={SCREEN} doc={doc} />
     </g>
   );
-  const devicePorts = (render: (key: string, p: Pt, end: EdgeEnd) => ReactNode) =>
-    others.flatMap((n) => (n.type === 'device' ? n.ports.map((port) => render(`${n.id}/${port.id}`, portPos(n, port.id)!, { node: n.id, port: port.id })) : []));
+  const devicePorts = (render: (key: string, p: Pt, end: EdgeEnd, side: 'left' | 'right') => ReactNode) =>
+    others.flatMap((n) => (n.type === 'device' ? n.ports.map((port) => render(`${n.id}/${port.id}`, portPos(n, port.id)!, { node: n.id, port: port.id }, port.side)) : []));
 
   return (
     <div
@@ -978,7 +992,15 @@ export function Canvas() {
               );
             })}
 
-          {idle && devicePorts((key, p, end) => <circle key={key} className="port-hit" cx={p.x} cy={p.y} r={9} onPointerDown={(e) => onHandleDown(e, end, p)} />)}
+          {idle &&
+            devicePorts((key, p, end, side) => {
+              // Never smaller on screen than a fingertip of a pointer, however far out the view is
+              // zoomed; set a little outside the box, so its edge still takes the box itself; and
+              // where the targets of close ports overlap, the port nearest the pointer is the one taken.
+              const out = side === 'left' ? -1 : 1;
+              const r = Math.max(9, 7 / view.k);
+              return <circle key={key} className="port-hit" cx={p.x + out * r * 0.35} cy={p.y} r={r} onPointerDown={(e) => takePort(e, end, p)} />;
+            })}
           {idle && selectedEdge && !isTagged(doc, selectedEdge) && (
             <EdgeHandles pts={routes.get(selectedEdge.id) ?? []} k={view.k} manual={!!selectedEdge.route} onSegment={(ev, seg, h, route) => onSegmentDown(ev, selectedEdge.id, seg, h, route)} onEnd={(ev, end, other) => onEndDown(ev, selectedEdge.id, end, other)} />
           )}
