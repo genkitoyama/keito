@@ -290,7 +290,11 @@ function CellEditor({ t, row, edit, shown, done }: { t: Table; row: number; edit
   if (edit.kind === 'signal') {
     const e = doc.edges.find((x) => x.id === t.refs[row][0]);
     return (
-      <select autoFocus defaultValue={e?.signal} onChange={(ev) => done(ev.target.value)} onBlur={() => done(null)} onKeyDown={(ev) => ev.key === 'Escape' && done(null)}>
+      <select autoFocus defaultValue={e?.signal} onChange={(ev) => done(ev.target.value)} onBlur={() => done(null)} onKeyDown={(ev) => {
+        if (ev.key !== 'Escape') return;
+        ev.preventDefault();
+        done(null);
+      }}>
         {/* A cable list offers cable types; a communication list, protocols. */}
         {groupSignals(allSignals().filter((s) => s.id !== 'flow' && kindOf(doc).lines(s) && (s.cable || !!s.protocol))).map((g) => (
           <optgroup key={g.label} label={g.label}>
@@ -321,7 +325,10 @@ function CellEditor({ t, row, edit, shown, done }: { t: Table; row: number; edit
       onKeyDown={(ev) => {
         if (composing(ev)) return;
         if (ev.key === 'Enter') finish(ev.currentTarget.value);
-        else if (ev.key === 'Escape') finish(null);
+        else if (ev.key === 'Escape') {
+          ev.preventDefault();
+          finish(null);
+        }
       }}
     />
   );

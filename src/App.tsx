@@ -46,6 +46,17 @@ function useHotkeys() {
       if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) {
         // Typing in a field keeps its keys, but saving, the project menu and search still answer
         // (in a browser, ⌘S would otherwise save the web page).
+        // Escape leaves the field: a window it is in closes, the library closes from its search,
+        // and elsewhere (the inspector …) the keys go back to the board. A field that has a use for
+        // Escape of its own (a list cell, a form) keeps it.
+        if (e.key === 'Escape' && !e.isComposing && e.keyCode !== 229 && !e.defaultPrevented) {
+          const s = useStore.getState();
+          if (document.querySelector('.modal-bg')) {
+            if (s.panel === 'export' || s.panel === 'boards' || s.panel === 'settings') s.setPanel(null);
+          } else if (s.panel === 'library' && t.closest('.library')) s.setPanel(null);
+          else t.blur();
+          return;
+        }
         const physical = /^Key[A-Z]$/.test(e.code) ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
         if (!(e.metaKey || e.ctrlKey) || e.isComposing || !['s', 'k', 'f'].includes(physical) || document.querySelector('.modal-bg')) return;
         e.preventDefault();

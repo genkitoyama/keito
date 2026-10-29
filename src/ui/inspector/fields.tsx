@@ -334,7 +334,17 @@ export function NewSignal({ onAdd }: { onAdd: (id: string) => void }) {
   }
   return (
     <div className="rev-form">
-      <div className="row">
+      <div
+        className="row"
+        onKeyDown={(e) => {
+          if (composing(e) || !(e.target instanceof HTMLInputElement) || e.target.type === 'color') return;
+          if (e.key === 'Enter' && form.label.trim()) add();
+          else if (e.key === 'Escape') {
+            e.stopPropagation();
+            setForm(null);
+          }
+        }}
+      >
         <input autoFocus placeholder="種別の名前（例: HDBaseT）" value={form.label} onChange={(e) => setForm({ ...form, label: e.target.value })} />
         <input className="rev-id" style={{ flex: '0 0 64px' }} placeholder="ID頭" title="ケーブルIDの頭文字（例: HDB → HDB-01）" value={form.prefix} onChange={(e) => setForm({ ...form, prefix: e.target.value })} />
         <input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} title="線の色" style={{ flex: '0 0 30px', padding: 0, height: 28 }} />
