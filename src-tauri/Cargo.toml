@@ -1,6 +1,6 @@
 [package]
 name = "keito"
-version = "0.1.1"
+version = "0.1.2"
 description = "keito: system diagrams for exhibitions and installations"
 authors = []
 license = "MIT"
