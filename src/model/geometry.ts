@@ -1,4 +1,4 @@
-import { UI_FONT, measure, wrapText } from './text';
+import { UI_FONT, measure, wrapName, wrapText } from './text';
 import { type Run, type Seg, BEND, STUB, TRESPASS, bordersOf, hugCost, roomAround, chip, collides, facing, isH, lanes, routeAround, trespass } from './router';
 import { seqLayout, seqScale } from './sequence';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node, Port, PortSide, Pt, Rect } from './types';
@@ -13,7 +13,7 @@ export const DEVICE_NAME = { size: 13, line: 13 * 1.4 };
 export const deviceNameWidth = (d: DeviceNode): number => d.w - 12 - (d.venue ? 48 : 0);
 
 export function deviceHead(d: DeviceNode): number {
-  const lines = wrapText(d.text, deviceNameWidth(d), `700 ${DEVICE_NAME.size}px ${UI_FONT}`).length;
+  const lines = wrapName(d.text, deviceNameWidth(d), `700 ${DEVICE_NAME.size}px ${UI_FONT}`).length;
   return DEV.head + (Math.max(1, lines) - 1) * DEVICE_NAME.line;
 }
 export const snap = (v: number): number => Math.round(v / GRID) * GRID;

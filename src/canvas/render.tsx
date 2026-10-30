@@ -7,7 +7,7 @@ import { cableIds, idShown, ipIssues, lengthShown, powerLoads } from '../model/l
 import { BLOCK_WORD, SEQ, SEQ_TEXT, parseSequence, seqBands, seqBlocks, seqLayout, seqPlace, seqScale } from '../model/sequence';
 import { IP_SIZE, LOAD_SIZE, ipBadgeWidth, loadBadgeText, tagsStacked } from '../model/badges';
 import { PALETTE, PLAIN_DEVICE, STICKY, STRONG, deviceTint } from '../model/signals';
-import { MONO_FONT, UI_FONT, measure, wrapText } from '../model/text';
+import { MONO_FONT, UI_FONT, measure, wrapName, wrapText } from '../model/text';
 import { safeUrl } from '../model/url';
 import type { DeviceNode, Doc, Edge, Node, Pt, Rect, SequenceNode } from '../model/types';
 import { assetUrl } from '../platform/storage';
@@ -76,11 +76,13 @@ interface TextProps {
   fill?: string;
   anchor?: 'start' | 'middle' | 'end';
   underline?: boolean;
+  /** Broken where a device's name reads best (wrapName), not wherever the line runs out. */
+  name?: boolean;
 }
 
 /** Wrapped text block centred vertically on y. */
-export function TextBlock({ x, y, w, text, size, theme, weight = 400, fill = INK, anchor = 'middle', underline }: TextProps) {
-  const lines = wrapText(text, w, `${weight} ${size}px ${theme.font}`);
+export function TextBlock({ x, y, w, text, size, theme, weight = 400, fill = INK, anchor = 'middle', underline, name }: TextProps) {
+  const lines = (name ? wrapName : wrapText)(text, w, `${weight} ${size}px ${theme.font}`);
   const lh = size * TEXT.lineHeight;
   const y0 = y - ((lines.length - 1) * lh) / 2;
   return (
@@ -138,7 +140,7 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
           会場
         </text>
       )}
-      <TextBlock x={x + w / 2} y={y + (sub ? 16 : DEV.head / 2) + extra / 2} w={deviceNameWidth(n)} text={n.text} size={DEVICE_NAME.size} weight={700} theme={theme} />
+      <TextBlock x={x + w / 2} y={y + (sub ? 16 : DEV.head / 2) + extra / 2} w={deviceNameWidth(n)} text={n.text} size={DEVICE_NAME.size} weight={700} theme={theme} name />
       {sub &&
         (link ? (
           // A real link in exported SVG / PDF. On the board, text never takes clicks, so the device still selects.
