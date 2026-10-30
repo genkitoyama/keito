@@ -7,6 +7,8 @@ import type { ListKey } from './kinds';
 import type { DeviceNode, Doc, Edge, EdgeEnd, Node } from './types';
 
 const pad2 = (n: number): string => String(n).padStart(2, '0');
+/** Watts added up, without what adding decimals in binary leaves over (15.1, not 15.100000000000001). */
+const roundW = (w: number): number => Math.round(w * 1000) / 1000;
 
 /** Is this cable's ID written in its label on the board? */
 export const idShown = (doc: Doc, e: Edge): boolean => e.showId ?? doc.cableIdLabels !== false;
@@ -293,7 +295,7 @@ export function equipmentTable(doc: Doc, withUrl = true): Table {
     g.names.add(q.name);
     if (place) g.places.add(place);
     g.count += q.count;
-    if (d.watts != null) g.watts = (g.watts ?? 0) + d.watts * q.count;
+    if (d.watts != null) g.watts = roundW((g.watts ?? 0) + d.watts * q.count);
     g.prices.add(d.price ?? null);
     if (d.price != null) g.amount = (g.amount ?? 0) + d.price * q.count;
     groups.set(id, g);
@@ -318,7 +320,7 @@ export function equipmentTable(doc: Doc, withUrl = true): Table {
   };
   const notes = (ids: string[]): string => [...new Set(ids.map((id) => (doc.nodes.find((n) => n.id === id) as DeviceNode).note.trim()).filter(Boolean))].join(' / ');
   const total = list.reduce((sum, g) => sum + g.count, 0);
-  const watts = list.reduce((sum, g) => sum + (g.watts ?? 0), 0);
+  const watts = roundW(list.reduce((sum, g) => sum + (g.watts ?? 0), 0));
   const amount = list.reduce((sum, g) => sum + (g.amount ?? 0), 0);
   // A unit price shows when every device on the row has the same one; the amount adds up what is known.
   const unit = (g: { prices: Set<number | null> }): string => (g.prices.size === 1 && [...g.prices][0] != null ? String([...g.prices][0]) : '');
@@ -548,7 +550,7 @@ export function powerLoads(doc: Doc): Map<string, PowerLoad> {
   const out = new Map<string, PowerLoad>();
   for (const [id, ids] of feeds) {
     const src = byId.get(id) as DeviceNode;
-    const watts = ids.reduce((sum, d) => sum + powerDraw(byId, d, feeds, new Set([id])), 0);
+    const watts = roundW(ids.reduce((sum, d) => sum + powerDraw(byId, d, feeds, new Set([id])), 0));
     const capacity = src.capacity ?? null;
     out.set(id, { ids, watts, capacity, over: capacity != null && watts > capacity });
   }
@@ -575,7 +577,7 @@ export function drawOf(doc: Doc, id: string): number | null {
   const n = whole.nodes.find((x) => x.id === id);
   const passes = powerLoads(whole).get(id);
   if (n?.type !== 'device' || (n.watts == null && !passes)) return null;
-  return (n.watts ?? 0) * unitsOf(n).count + (passes?.watts ?? 0);
+  return roundW((n.watts ?? 0) * unitsOf(n).count + (passes?.watts ?? 0));
 }
 
 /** Power distribution: one row per fed device, with a total per source. */
@@ -607,7 +609,7 @@ export function powerTable(doc: Doc): Table {
     }
     // The sum closes each source's group, with how much of its capacity the load takes.
     const use = load.capacity ? ` · 使用率 ${Math.round((load.watts / load.capacity) * 100)}%` : '';
-    const verdict = load.capacity == null ? '容量未設定' : load.over ? `超過 ${load.watts - load.capacity}W${use}` : `余裕 ${load.capacity - load.watts}W${use}`;
+    const verdict = load.capacity == null ? '容量未設定' : load.over ? `超過 ${roundW(load.watts - load.capacity)}W${use}` : `余裕 ${roundW(load.capacity - load.watts)}W${use}`;
     rows.push([source(id), `合計 ${load.ids.length} 台`, String(load.watts), load.capacity == null ? '' : String(load.capacity), verdict]);
     refs.push([id]);
     rowClass.push(load.over ? 'subtotal over' : load.capacity == null ? 'subtotal unknown' : 'subtotal');
@@ -660,7 +662,7 @@ export function checkTable(doc: Doc): Table {
     if (n) found.push({ level: 0, what: issue === 'dup' ? 'IP アドレスの重複' : 'IP アドレスの形式', target: name(id), detail: issue === 'dup' ? `${n.ip} がほかの機材と同じです` : `${n.ip} は IPv4 アドレスとして読めません`, ref: [id] });
   }
   for (const [id, load] of powerLoads(doc)) {
-    if (load.over) found.push({ level: 0, what: '給電容量の超過', target: name(id), detail: `${load.watts}W / 容量 ${load.capacity}W（${load.watts - (load.capacity ?? 0)}W 超過）`, ref: [id, ...load.ids] });
+    if (load.over) found.push({ level: 0, what: '給電容量の超過', target: name(id), detail: `${load.watts}W / 容量 ${load.capacity}W（${roundW(load.watts - (load.capacity ?? 0))}W 超過）`, ref: [id, ...load.ids] });
   }
   // The same cable ID on two cables, which can only come from IDs typed by hand.
   const byId = new Map<string, string[]>();

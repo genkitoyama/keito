@@ -113,6 +113,24 @@ describe('power', () => {
     d.edges.push(cord('e5', 'pj1', 'in', 'ups'));
     expect(powerLoads(d).get('ups')?.watts).toBe(700);
   });
+
+  it('adds up watts with decimals as typed, not with binary leftovers', () => {
+    const d: Doc = {
+      ...blank(),
+      nodes: [
+        device('tap', '電源タップ', [ac('right', 'o1'), ac('right', 'o2'), ac('right', 'o3')], { capacity: 15 }),
+        device('a', 'A', [ac('left')], { watts: 2.2 }),
+        device('b', 'B', [ac('left')], { watts: 4.4 }),
+        device('c', 'C', [ac('left')], { watts: 8.5 }),
+      ],
+      edges: [cord('e1', 'tap', 'o1', 'a'), cord('e2', 'tap', 'o2', 'b'), cord('e3', 'tap', 'o3', 'c')],
+    };
+    expect(powerLoads(d).get('tap')?.watts).toBe(15.1);
+    const cells = [...powerTable(d).rows, ...checkTable(d).rows, ...equipmentTable(d).rows].flat().join(' ');
+    expect(cells).toContain('15.1W / 容量 15W（0.1W 超過）');
+    expect(cells).toContain('超過 0.1W');
+    expect(cells).not.toMatch(/\d\.\d{6,}/);
+  });
 });
 
 describe('figures typed into a list', () => {
