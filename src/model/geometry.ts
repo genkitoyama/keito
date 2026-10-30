@@ -7,14 +7,27 @@ export const GRID = 10;
 export const DEV = { head: 44, row: 22, pad: 8 };
 /** The bold name in a device's header; every extra line of it makes the header taller. */
 export const DEVICE_NAME = { size: 13, line: 13 * 1.4 };
+/** The maker / model line under it; it too makes the header taller for every line it runs on to. */
+export const DEVICE_SUB = { size: 9.5, line: 9.5 * 1.4 };
 
-/** Height of a device's header: one line of name (and the maker / model line), plus any further lines of name. */
+/** Height of a device's header: one line of name and one of maker / model, plus any further lines of either. */
 /** How wide a device's name may run: a venue device keeps clear of the 会場 mark on either side. */
 export const deviceNameWidth = (d: DeviceNode): number => d.w - 12 - (d.venue ? 48 : 0);
 
+/** The maker and model, as the line under the name reads. */
+export const deviceSub = (d: DeviceNode): string => [d.maker, d.model].filter(Boolean).join(' ');
+export const deviceSubWidth = (d: DeviceNode): number => d.w - 12;
+
+/** The lines a device's name and its maker / model line each run on to. */
+export function deviceHeadLines(d: DeviceNode): { name: number; sub: number } {
+  const name = wrapName(d.text, deviceNameWidth(d), `700 ${DEVICE_NAME.size}px ${UI_FONT}`).length;
+  const sub = deviceSub(d) ? wrapName(deviceSub(d), deviceSubWidth(d), `400 ${DEVICE_SUB.size}px ${UI_FONT}`).length : 1;
+  return { name: Math.max(1, name), sub: Math.max(1, sub) };
+}
+
 export function deviceHead(d: DeviceNode): number {
-  const lines = wrapName(d.text, deviceNameWidth(d), `700 ${DEVICE_NAME.size}px ${UI_FONT}`).length;
-  return DEV.head + (Math.max(1, lines) - 1) * DEVICE_NAME.line;
+  const lines = deviceHeadLines(d);
+  return DEV.head + (lines.name - 1) * DEVICE_NAME.line + (lines.sub - 1) * DEVICE_SUB.line;
 }
 export const snap = (v: number): number => Math.round(v / GRID) * GRID;
 

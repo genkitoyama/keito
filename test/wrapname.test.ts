@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { DEVICE_NAME, DEVICE_SUB, deviceHead } from '../src/model/geometry';
 import { wrapName, wrapText } from '../src/model/text';
+import type { DeviceNode } from '../src/model/types';
 
 // Outside the browser text is measured by estimate: a full-width character is as wide as the type.
 const font = '700 13px sans-serif';
@@ -22,5 +24,15 @@ describe('device names on two lines', () => {
     const long = 'とても長い名前のついた機材でどこにも区切りがないもの';
     expect(wrapName(long, width, font)).toEqual(wrapText(long, width, font));
     expect(wrapName('A（とても長い名前のついた機材でどこにも区切りがないもの）', width, font).length).toBe(wrapText('A（とても長い名前のついた機材でどこにも区切りがないもの）', width, font).length);
+  });
+});
+
+describe('a device header', () => {
+  const dev = (p: Partial<DeviceNode>): DeviceNode => ({ id: 'd', type: 'device', x: 0, y: 0, w: 180, h: 0, text: 'PC', maker: 'Dell', model: 'X1', category: '', note: '', ports: [], ...p });
+
+  it('grows for every further line of the maker / model line, as for the name', () => {
+    const short = deviceHead(dev({}));
+    expect(deviceHead(dev({ model: 'Precision 3680 Tower (RTX 4000 Ada) Workstation' }))).toBe(short + DEVICE_SUB.line);
+    expect(deviceHead(dev({ text: 'HDBaseT 送信機（ステージ下手側）' }))).toBe(short + DEVICE_NAME.line);
   });
 });
