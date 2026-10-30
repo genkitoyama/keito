@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { CAPTION_SIZE, DEV, DEVICE_NAME, captionBox, crossingGaps, crossings, deviceHead, deviceNameWidth, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
+import { CAPTION_SIZE, DEV, DEVICE_NAME, DEVICE_SUB, captionBox, crossingGaps, crossings, deviceHead, deviceHeadLines, deviceNameWidth, deviceSub, deviceSubWidth, hopOrder, isTagged, isUnderlay, labelPoint, nodeSize, pathD, portPos, routeEdges } from '../model/geometry';
 import { edgeLabel, labelFont, labelSize, tagFont } from '../model/labels';
 import { LEGEND, legendLayout } from '../model/legend';
 import { lineColor, lineDashed, mix, signalColor } from '../model/lineColor';
@@ -7,7 +7,7 @@ import { cableIds, idShown, ipIssues, lengthShown, powerLoads } from '../model/l
 import { BLOCK_WORD, SEQ, SEQ_TEXT, parseSequence, seqBands, seqBlocks, seqLayout, seqPlace, seqScale } from '../model/sequence';
 import { IP_SIZE, LOAD_SIZE, ipBadgeWidth, loadBadgeText, tagsStacked } from '../model/badges';
 import { PALETTE, PLAIN_DEVICE, STICKY, STRONG, deviceTint } from '../model/signals';
-import { MONO_FONT, UI_FONT, measure, wrapText } from '../model/text';
+import { MONO_FONT, UI_FONT, measure, wrapName, wrapText } from '../model/text';
 import { safeUrl } from '../model/url';
 import type { DeviceNode, Doc, Edge, Node, Pt, Rect, SequenceNode } from '../model/types';
 import { assetUrl } from '../platform/storage';
@@ -76,11 +76,13 @@ interface TextProps {
   fill?: string;
   anchor?: 'start' | 'middle' | 'end';
   underline?: boolean;
+  /** Broken where a device's name reads best (wrapName), not wherever the line runs out. */
+  name?: boolean;
 }
 
 /** Wrapped text block centred vertically on y. */
-export function TextBlock({ x, y, w, text, size, theme, weight = 400, fill = INK, anchor = 'middle', underline }: TextProps) {
-  const lines = wrapText(text, w, `${weight} ${size}px ${theme.font}`);
+export function TextBlock({ x, y, w, text, size, theme, weight = 400, fill = INK, anchor = 'middle', underline, name }: TextProps) {
+  const lines = (name ? wrapName : wrapText)(text, w, `${weight} ${size}px ${theme.font}`);
   const lh = size * TEXT.lineHeight;
   const y0 = y - ((lines.length - 1) * lh) / 2;
   return (
@@ -108,11 +110,13 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
   const tint = n.color && n.color !== 'gray' ? PALETTE[n.color] : null;
   const line = tint?.stroke ?? PLAIN_DEVICE.stroke;
   const sw = 1.5;
-  const sub = [n.maker, n.model].filter(Boolean).join(' ');
+  const sub = deviceSub(n);
   const link = safeUrl(n.url);
   const top = deviceHead(n);
-  // A name that runs to several lines pushes the maker / model line and the ports down.
-  const extra = top - DEV.head;
+  // A name that runs to several lines pushes the maker / model line and the ports down; a maker /
+  // model line that runs to several pushes the ports down.
+  const extra = (deviceHeadLines(n).name - 1) * DEVICE_NAME.line;
+  const subExtra = top - DEV.head - extra;
   const head = `M${x},${y + top} V${y + r} Q${x},${y} ${x + r},${y} H${x + w - r} Q${x + w},${y} ${x + w},${y + r} V${y + top} Z`;
   // What the venue already has reads apart from what is brought in: a dashed outline and a striped
   // header, as drawings mark work by others, and a small "会場" in the corner. It keeps its colour.
@@ -138,15 +142,15 @@ function Device({ n, theme, doc }: { n: DeviceNode; theme: Theme; doc?: Doc }) {
           会場
         </text>
       )}
-      <TextBlock x={x + w / 2} y={y + (sub ? 16 : DEV.head / 2) + extra / 2} w={deviceNameWidth(n)} text={n.text} size={DEVICE_NAME.size} weight={700} theme={theme} />
+      <TextBlock x={x + w / 2} y={y + (sub ? 16 : DEV.head / 2) + extra / 2} w={deviceNameWidth(n)} text={n.text} size={DEVICE_NAME.size} weight={700} theme={theme} name />
       {sub &&
         (link ? (
           // A real link in exported SVG / PDF. On the board, text never takes clicks, so the device still selects.
           <a href={link} target="_blank" rel="noopener noreferrer" onClick={linkClick(link)}>
-            <TextBlock x={x + w / 2} y={y + 33 + extra} w={w - 12} text={sub} size={9.5} fill="#2563eb" underline theme={theme} />
+            <TextBlock x={x + w / 2} y={y + 33 + extra + subExtra / 2} w={deviceSubWidth(n)} text={sub} size={DEVICE_SUB.size} fill="#2563eb" underline theme={theme} name />
           </a>
         ) : (
-          <TextBlock x={x + w / 2} y={y + 33 + extra} w={w - 12} text={sub} size={9.5} fill="#64748b" theme={theme} />
+          <TextBlock x={x + w / 2} y={y + 33 + extra + subExtra / 2} w={deviceSubWidth(n)} text={sub} size={DEVICE_SUB.size} fill="#64748b" theme={theme} name />
         ))}
       {doc && <LoadBadge doc={doc} n={n} theme={theme} />}
       <IpBadge n={n} doc={doc} />
