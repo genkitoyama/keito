@@ -46,6 +46,12 @@
     "macOS": {
       "minimumSystemVersion": "11.0",
       "hardenedRuntime": true
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Japanese", "English"]
+      }
     }
   },
   "plugins": {

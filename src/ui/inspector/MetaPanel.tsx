@@ -1,6 +1,7 @@
 import { LABEL_SIZE, LABEL_SIZES } from '../../model/labels';
 import { type BoardKind, KINDS, KIND_ORDER, kindOf } from '../../model/kinds';
 import { useStore } from '../../model/store';
+import { shortcuts } from '../../platform/io';
 import { type Doc, type DocMeta, type Node } from '../../model/types';
 import { useShallow } from 'zustand/react/shallow';
 import { useState } from 'react';
@@ -176,7 +177,7 @@ export function MetaPanel() {
       <p className="hint">
         <b>操作</b>
         <br />
-        ダブルクリック: 文字編集 ／ 辺の●やポートをドラッグ: 接続 ／ スクロール: 移動 ／ ⌘+スクロール: ズーム ／ Space+ドラッグ: パン
+        {shortcuts('ダブルクリック: 文字編集 ／ 辺の●やポートをドラッグ: 接続 ／ スクロール: 移動 ／ ⌘+スクロール: ズーム ／ Space+ドラッグ: パン')}
       </p>
     </>
   );

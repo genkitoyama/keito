@@ -116,6 +116,15 @@ export const linkClick = (url: string | undefined) => (e: { preventDefault(): vo
   openLink(url);
 };
 
+/** Whether the keys are a Mac's (⌘ and ⇧), not Ctrl and Shift as elsewhere. */
+const MAC = typeof navigator === 'undefined' || /Mac|iPhone|iPad/.test(navigator.userAgent);
+
+/**
+ * Shortcuts in a text as this system writes them: "⌘Z" and "⇧⌘Z" on a Mac, "Ctrl+Z" and
+ * "Ctrl+Shift+Z" elsewhere (the keys themselves answer to either, see App.tsx).
+ */
+export const shortcuts = (text: string, mac = MAC): string => (mac ? text : text.replace(/⇧⌘/g, 'Ctrl+Shift+').replace(/⌘\+?/g, 'Ctrl+').replace(/⇧/g, 'Shift+'));
+
 /** Small settings of this user (the last export chosen, a panel's width …), kept on this machine. */
 export function getSetting(name: string): string {
   try {

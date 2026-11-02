@@ -10,7 +10,7 @@ import { type ColorKey, type Edge, type Node, hasText } from '../model/types';
 import { safeUrl } from '../model/url';
 import { COLOR_NAME, FILLS, FillPreview, ICON, SHAPES, shapeIcon, sizesFor } from './icons';
 import { useBurst } from './burst';
-import { openLink } from '../platform/io';
+import { openLink, shortcuts } from '../platform/io';
 
 const st = useStore.getState;
 const CHECKER = 'repeating-conic-gradient(#c3ccd8 0% 25%, #fff 0% 50%) 50% / 8px 8px';
@@ -29,7 +29,7 @@ function swatch(n: Node, c: ColorKey): CSSProperties {
 /** Bar button. `tip` is shown instantly on hover — icons alone are never the only explanation. */
 function Btn({ tip, on, onClick, children, className = '' }: { tip: string; on?: boolean; onClick: () => void; children: ReactNode; className?: string }) {
   return (
-    <button className={`${className}${on ? ' on' : ''}`} data-tip={tip} aria-label={tip} onClick={onClick}>
+    <button className={`${className}${on ? ' on' : ''}`} data-tip={tip} aria-label={shortcuts(tip)} onClick={onClick}>
       {children}
     </button>
   );

@@ -7,6 +7,8 @@
  * button, so a scrolling panel or the tab strip cannot cut it off, and it is
  * kept inside the window.
  */
+import { shortcuts } from '../platform/io';
+
 const LINGER = 3000;
 /** Gap between a tip and its element, and room kept from the window's edge. */
 const GAP = 8;
@@ -27,7 +29,7 @@ function place(el: Element): void {
     tip.className = 'tip';
     document.body.append(tip);
   }
-  tip.textContent = el.getAttribute('data-tip');
+  tip.textContent = shortcuts(el.getAttribute('data-tip') ?? '');
   const box = el.getBoundingClientRect();
   const w = tip.offsetWidth;
   const h = tip.offsetHeight;

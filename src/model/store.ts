@@ -3,7 +3,7 @@ import { fitLegends } from './legend';
 import { drawingOf, entryFor, fingerprint, thin } from './history';
 import { create } from 'zustand';
 import { type Backend, type BoardInfo, Conflict, Gone, type TrashedBoard, WRITER, connect, externalize, localBoards } from '../platform/storage';
-import { ask, tell } from '../platform/io';
+import { ask, shortcuts, tell } from '../platform/io';
 import { type BoardKind, KINDS, kindOf } from './kinds';
 import { SEQUENCE_SAMPLE } from './sequence';
 import { BOARD_ID, readBoard } from './load';
@@ -760,7 +760,7 @@ let noticeTimer = 0;
 /** Show a short word for a moment. */
 export function say(text: string): void {
   clearTimeout(noticeTimer);
-  useStore.setState({ notice: text });
+  useStore.setState({ notice: shortcuts(text) });
   noticeTimer = window.setTimeout(() => useStore.setState({ notice: null }), 4000);
 }
 

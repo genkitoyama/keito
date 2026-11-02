@@ -9,7 +9,7 @@ import { kindOf } from '../model/kinds';
 import { type Placing, duplicateInPlace, storeImage, useStore } from '../model/store';
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
 import { isImageFile, readImageFile } from '../platform/storage';
-import { tell } from '../platform/io';
+import { shortcuts, tell } from '../platform/io';
 import { EdgeView, HopCaps, INK, LabelChip, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, framesInOrder, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 import { ContextMenu } from './ContextMenu';
@@ -1049,7 +1049,7 @@ export function Canvas() {
         <button onClick={() => zoomBy(1 / 1.25)} title="縮小">−</button>
         <button onClick={() => st().setView({ ...view, k: 1 })} title="100%">{Math.round(view.k * 100)}%</button>
         <button onClick={() => zoomBy(1.25)} title="拡大">＋</button>
-        <button onClick={() => st().fit()} title="全体表示 (⇧1)">全体</button>
+        <button onClick={() => st().fit()} title={shortcuts('全体表示 (⇧1)')}>全体</button>
       </div>
     </div>
   );

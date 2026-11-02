@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { copySelection, duplicateSelection, pasteClipboard, restack, useStore } from '../model/store';
 import { isUnderlay } from '../model/geometry';
-import { copyText } from '../platform/io';
+import { copyText, shortcuts } from '../platform/io';
 
 const st = useStore.getState;
 
@@ -52,7 +52,7 @@ export function ContextMenu({ at, close }: { at: { x: number; y: number }; close
       }}
     >
       <span>{label}</span>
-      <kbd>{keys}</kbd>
+      <kbd>{shortcuts(keys)}</kbd>
     </button>
   );
   const copy = () => {

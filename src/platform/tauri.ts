@@ -9,7 +9,7 @@ import { boardKind, readBoard, readSerial } from '../model/load';
 import { boot, flushBeforeClose, useStore } from '../model/store';
 import { upgradePreset } from '../model/video';
 import type { Doc, UserPreset } from '../model/types';
-import { type Platform, usePlatform } from './io';
+import { type Platform, shortcuts, usePlatform } from './io';
 import { type Backend, type BoardInfo, type BoardNews, Conflict, Gone, type TrashedBoard, WRITER, assetOf } from './storage';
 import { offerUpdate, startUpdate } from './update';
 
@@ -18,8 +18,10 @@ import { offerUpdate, startUpdate } from './update';
  * (src-tauri/src/commands.rs), and the system's own dialogs, browser and files.
  */
 
+const WINDOWS = navigator.userAgent.includes('Windows');
+
 /** Pictures in a board's folder, as the app serves them (Windows reaches custom schemes over http). */
-const ASSETS = navigator.userAgent.includes('Windows') ? 'http://keito-asset.localhost/' : 'keito-asset://localhost/';
+const ASSETS = WINDOWS ? 'http://keito-asset.localhost/' : 'keito-asset://localhost/';
 
 // The version of each board on disk as this page last read or wrote it.
 const serials = new Map<string, number>();
@@ -174,7 +176,7 @@ async function chooseFolder(): Promise<boolean> {
 async function settleFolder(): Promise<void> {
   const folder = await invoke<Folder>('boards_folder');
   if (folder.source !== 'default') return;
-  const offered = await askDialog(`ボードを保存するフォルダを決めてください。\n\n${folder.path}\n\nあとからメニューの「keito > 設定…」で変えられます。`, { title: 'keito', okLabel: 'このフォルダを使う', cancelLabel: '別の場所を選ぶ…' });
+  const offered = await askDialog(`ボードを保存するフォルダを決めてください。\n\n${folder.path}\n\nあとからメニューの「${WINDOWS ? 'ファイル' : 'keito'} > 設定…」で変えられます。`, { title: 'keito', okLabel: 'このフォルダを使う', cancelLabel: '別の場所を選ぶ…' });
   if (!offered && (await chooseFolder())) return;
   await invoke('set_boards_folder', { path: folder.path });
 }
@@ -236,11 +238,30 @@ export async function startDesktop(): Promise<void> {
     void leave();
   });
   // 表示 > 再読み込み (⌘R): the page starts afresh once what it has is written, as on quitting.
-  void listen('reload-requested', async () => {
+  const reload = async () => {
     if ((await flushBeforeClose()) || (await system.ask('保存できていない変更があります。このまま再読み込みしますか？'))) location.reload();
-  });
+  };
+  void listen('reload-requested', reload);
   // keito > 設定… (⌘,)
-  void listen('open-settings', () => useStore.getState().setPanel('settings'));
+  const settings = () => useStore.getState().setPanel('settings');
+  void listen('open-settings', settings);
+  // On Windows, keys pressed in the web view never reach the menu: the page hears the menu's
+  // shortcuts itself (by the key's place, so that they work with the IME on). The web view's own
+  // reloading (F5 among them) is turned off by the app, and F5 reloads as the menu does.
+  if (WINDOWS)
+    window.addEventListener(
+      'keydown',
+      (e) => {
+        const ctrl = e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey;
+        if ((ctrl && e.code === 'KeyR') || e.key === 'F5') void reload();
+        else if (ctrl && e.code === 'KeyQ') void leave();
+        else if (ctrl && e.code === 'Comma') settings();
+        else return;
+        e.preventDefault();
+        e.stopPropagation();
+      },
+      true,
+    );
   // keito > アップデートを確認…
   void listen('check-update', () => void lookForUpdate(true));
   try {
@@ -248,7 +269,7 @@ export async function startDesktop(): Promise<void> {
     await boot(desktop);
   } catch (e) {
     console.error(e);
-    await system.tell(`ボードのフォルダを開けませんでした。\n\n${e instanceof Error ? e.message : String(e)}\n\n表示 > 再読み込み（⌘R）でやり直せます。`);
+    await system.tell(`ボードのフォルダを開けませんでした。\n\n${e instanceof Error ? e.message : String(e)}\n\n${shortcuts('表示 > 再読み込み（⌘R）')}でやり直せます。`);
   }
   // Looked for once the boards are open, so that the folder asked for on first launch comes first.
   void lookForUpdate(false);
