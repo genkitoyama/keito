@@ -47,5 +47,12 @@
       "minimumSystemVersion": "11.0",
       "hardenedRuntime": true
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEY5RUREQzQyQjQzRTNFMDAKUldRQVBqNjBRdHp0K1dNZTNmeGd0RFRDQzQ0M0MxK1kxRDZzOCt0aGhHZXdtdjhRSzZqRjdTdjUK",
+      "endpoints": ["https://github.com/genkitoyama/keito/releases/latest/download/latest.json"],
+      "requireSignedVersion": true
+    }
   }
 }

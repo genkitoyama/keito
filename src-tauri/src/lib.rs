@@ -47,9 +47,17 @@ fn quit(app: AppHandle) {
     app.exit(0);
 }
 
+/// An update is in place and the page has written what it had: start again on the new version.
+#[tauri::command]
+fn relaunch(app: AppHandle) {
+    WRITTEN.store(true, Ordering::SeqCst);
+    app.restart();
+}
+
 /// The menu bar: the app's own menu (with 設定…), editing (so ⌘C / ⌘V reach text fields), reloading, the window.
 fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let settings = MenuItem::with_id(app, "settings", "設定…", true, Some("CmdOrCtrl+,"))?;
+    let update = MenuItem::with_id(app, "check-update", "アップデートを確認…", true, None::<&str>)?;
     // Quitting is the app's own, not the system's: the page writes what it has first.
     let quit = MenuItem::with_id(app, "quit", "keito を終了", true, Some("CmdOrCtrl+Q"))?;
     let keito = Submenu::with_items(
@@ -58,6 +66,7 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         true,
         &[
             &PredefinedMenuItem::about(app, Some("keito について"), None)?,
+            &update,
             &PredefinedMenuItem::separator(app)?,
             &settings,
             &PredefinedMenuItem::separator(app)?,
@@ -92,6 +101,7 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .register_uri_scheme_protocol("keito-asset", |ctx, request| commands::serve_asset(ctx.app_handle(), request))
         .register_uri_scheme_protocol("keito-print", |ctx, request| pdf::serve(ctx.app_handle(), request))
         .manage(pdf::Pages::default())
@@ -118,6 +128,7 @@ pub fn run() {
             commands::save_pdf,
             quit,
             quit_heard,
+            relaunch,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -134,6 +145,9 @@ pub fn run() {
             app.on_menu_event(|app, event| match event.id().as_ref() {
                 "settings" => {
                     let _ = app.emit("open-settings", ());
+                }
+                "check-update" => {
+                    let _ = app.emit("check-update", ());
                 }
                 "quit" => {
                     ask_to_quit(app);

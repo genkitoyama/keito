@@ -2324,8 +2324,29 @@ body.row-dragging .lists td.editable:hover {
   background: #fef2f2;
   color: var(--danger);
 }
+/* A newer version of the app on offer: tinted so it is seen, but quieter than export. */
+.topbar .update-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 9px;
+  border-color: #bfdbfe;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.topbar .update-btn:hover:not(:disabled) {
+  background: #dbeafe;
+}
+/* While it is fetched and put in, its progress stays readable. */
+.topbar .update-btn:disabled {
+  opacity: 1;
+  cursor: progress;
+}
 .topbar button.ghost .ico,
-.topbar .export-btn .ico {
+.topbar .export-btn .ico,
+.topbar .update-btn .ico {
   width: 16px;
   height: 16px;
   flex: none;

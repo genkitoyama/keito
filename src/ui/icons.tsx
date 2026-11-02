@@ -55,6 +55,7 @@ export const ICON = {
   comment: ico(<path d="M3.5 4.5h13a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H9l-3.5 3v-3h-2a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1z" />),
   tidy: ico(<path d="M3 5h9M3 10h14M3 15h6M15 3l.6 1.4L17 5l-1.4.6L15 7l-.6-1.4L13 5l1.4-.6zM13.5 13l.45 1.05L15 14.5l-1.05.45L13.5 16l-.45-1.05L12 14.5l1.05-.45z" />),
   download: ico(<path d="M10 3v9.5M6 8.5l4 4 4-4M4 15.5v1h12v-1" />),
+  update: ico(<path d="M10 13.5v-7M7 9.5l3-3 3 3M10 17.5a7.5 7.5 0 1 0 0-15 7.5 7.5 0 0 0 0 15z" />),
   close: ico(<path d="M5 5l10 10M15 5L5 15" />),
   reset: ico(<path d="M2.5 10a7.5 7.5 0 1 0 7.5-7.5 8.1 8.1 0 0 0-5.6 2.3L2.5 6.7M2.5 2.5v4.2h4.2" />),
   caret: (

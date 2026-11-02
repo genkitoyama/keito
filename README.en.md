@@ -60,6 +60,8 @@ Download `keito_<version>_aarch64.dmg` from [Releases](https://github.com/genkit
 
 On first launch, choose the folder for your boards (`Documents/keito`, or one you pick).
 
+When a new version is out, a button to update to it appears at the top right. Pressing it downloads the new version, saves your boards and restarts keito on it. You can also check from the menu (keito > アップデートを確認…). Versions up to 0.1.2 cannot update themselves: replace one of those from the dmg once.
+
 To use it from the command line and Claude Code (see "Command line and Claude Code" below), keep the source on your machine too.
 
 ### From source
