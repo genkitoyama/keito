@@ -12,17 +12,9 @@
 #   APPLE_SIGNING_IDENTITY  the certificate's full name, in place of KEITO_SIGNING_TEAM
 #   KEITO_SKIP_NOTARIZE=1  sign only, for a build that stays on this Mac
 #
-# It also makes the update the app fetches for itself (see plugins.updater in tauri.conf.json):
-# the stapled app packed as .app.tar.gz and signed with the updater's key, and latest.json naming
-# it. Both go on the GitHub release beside the .dmg. The key is made once, and kept safe (the app
-# accepts no update signed with any other, so losing it means users update by hand once):
-#   npx tauri signer generate -w ~/.tauri/keito.key
-# and its public key (~/.tauri/keito.key.pub) goes in tauri.conf.json.
-#
-#   TAURI_SIGNING_PRIVATE_KEY_PATH  the updater's key (default: ~/.tauri/keito.key)
-#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  its password (asked for when not set)
-#   KEITO_UPDATE_URL  where the .app.tar.gz will be downloaded from, its name left out (default:
-#                     the GitHub release of this version)
+# It also makes the update the app fetches for itself: the stapled app packed as .app.tar.gz,
+# signed with the updater's key and named in the release's latest.json (see scripts/updater.sh for
+# the key, made once). The release's files are gathered in src-tauri/target/release-files/v<version>.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -51,39 +43,14 @@ if [ "$notarize" = 1 ] && ! xcrun notarytool history --keychain-profile "$profil
   exit 1
 fi
 
-# The updater's key, tried on a scrap now: a missing key or a wrong password stops it here, not
-# after the build and the wait for notarization. A build that stays on this Mac does without it.
-key="${TAURI_SIGNING_PRIVATE_KEY_PATH:-$HOME/.tauri/keito.key}"
+# The updater's key, tried now: a missing key or a wrong password stops it here, not after the
+# build and the wait for notarization. A build that stays on this Mac does without it.
+. scripts/updater.sh
 updates=1
-if [ ! -f "$key" ]; then
-  if [ "$notarize" = 1 ]; then
-    echo "アップデート用の署名鍵が見つかりません: $key" >&2
-    echo "  最初に一度だけ作ります: npx tauri signer generate -w ~/.tauri/keito.key" >&2
-    echo "  （公開鍵 ~/.tauri/keito.key.pub の中身を src-tauri/tauri.conf.json の plugins.updater.pubkey に入れます）" >&2
-    exit 1
-  fi
+if [ "$notarize" = 0 ] && ! updater_has_key; then
   updates=0
-fi
-if [ "$updates" = 1 ]; then
-  if [ -z "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD+set}" ]; then
-    read -rsp "アップデート用の署名鍵のパスワード: " TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-    echo
-  fi
-  # The app checks updates against the public key it was built with: one that is not this key's
-  # would refuse every update from the next release on.
-  if [ "$(tr -d '[:space:]' <"$key.pub" 2>/dev/null)" != "$(node -p "require('./src-tauri/tauri.conf.json').plugins.updater.pubkey")" ]; then
-    echo "src-tauri/tauri.conf.json の plugins.updater.pubkey が、署名鍵の公開鍵 $key.pub の中身と違います。" >&2
-    exit 1
-  fi
-  # The password reaches the signer alone, not `tauri build`.
-  sign_update() { TAURI_SIGNING_PRIVATE_KEY_PATH="$key" TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" npx tauri signer sign "$@" >/dev/null; }
-  scrap="$(mktemp -d)"
-  trap 'rm -rf "$scrap"' EXIT
-  : >"$scrap/scrap"
-  if ! sign_update "$scrap/scrap"; then
-    echo "アップデート用の署名鍵で署名できませんでした（パスワードが違うかもしれません）: $key" >&2
-    exit 1
-  fi
+else
+  updater_check
 fi
 
 echo "署名: $APPLE_SIGNING_IDENTITY"
@@ -110,8 +77,7 @@ if [ "$updates" = 0 ]; then
   exit 0
 fi
 # The update: the app as stapled, packed with nothing of this Mac's own (extended attributes and
-# AppleDouble files would land inside the bundle and break its signature), then signed for this
-# version, so that the app refuses it announced as any other.
+# AppleDouble files would land inside the bundle and break its signature).
 version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")"
 case "$(uname -m)" in
   arm64) arch=aarch64 ;;
@@ -119,17 +85,8 @@ case "$(uname -m)" in
 esac
 tarball="$bundle/macos/keito_${version}_${arch}.app.tar.gz"
 COPYFILE_DISABLE=1 tar --no-xattrs --no-mac-metadata -czf "$tarball" -C "$(dirname "$app")" "$(basename "$app")"
-sign_update --app-version "$version" "$tarball"
-latest="$bundle/latest.json"
-url="${KEITO_UPDATE_URL:-https://github.com/genkitoyama/keito/releases/download/v$version}/$(basename "$tarball")"
-node -e '
-  const [version, platform, url, signature] = process.argv.slice(1);
-  const latest = { version, pub_date: new Date().toISOString(), platforms: { [platform]: { url, signature } } };
-  process.stdout.write(JSON.stringify(latest, null, 2) + "\n");
-' "$version" "darwin-$arch" "$url" "$(cat "$tarball.sig")" >"$latest"
+updater_add "$tarball" "$version" "darwin-$arch"
+cp "$dmg" "$(release_dir "$version")/"
 
-echo "できました。GitHub のリリース v$version に、次の 3 つを上げます:"
-echo "  $dmg"
-echo "  $tarball"
-echo "  $latest"
-echo "例: gh release create v$version \"$dmg\" \"$tarball\" \"$latest\" --title \"keito $version\" --notes-file <リリースノート>"
+echo "できました: $dmg"
+release_say "$version"

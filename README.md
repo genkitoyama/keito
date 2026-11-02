@@ -60,6 +60,14 @@ PDF（A4 / A3 横）、画像（PNG / SVG）、表（Excel / CSV）、データ�
 
 新しい版が出ると、画面の右上に「<バージョン> にアップデート」のボタンが出ます。押すとダウンロードし、ボードを保存してから keito を再起動して入れ替わります。メニューの「keito > アップデートを確認…」でも確かめられます。0.1.2 までの版はこの機能を持たないので、一度だけ dmg から入れ替えてください。
 
+### デスクトップアプリ（Windows）
+
+[Releases](https://github.com/genkitoyama/keito/releases/latest) から `keito_<バージョン>_x64-setup.exe` をダウンロードして開きます。Windows 10 / 11 の 64 ビット版で動きます。使う人ごとに入るので、管理者の権限は要りません。
+
+インストーラーにはまだコード署名をしていないので、初めて開くときに「Windows によって PC が保護されました」と出ます。「詳細情報」を押してから「実行」を押すと進めます。
+
+使い方は macOS 版と同じです。ショートカットの ⌘ は Ctrl に、メニューの「keito > 設定…」は「ファイル > 設定…」に、「keito > アップデートを確認…」は「ヘルプ > アップデートを確認…」に読み替えてください。
+
 コマンドラインと Claude Code から使うとき（下の「コマンドラインと Claude Code」）は、ソースも手元に置きます。
 
 ### ソースから動かす
@@ -90,6 +98,7 @@ npm run dev
 npm run app          # 開発モードで起動
 npm run app:build    # .app と .dmg を作る（src-tauri/target/release/bundle/）
 npm run app:release  # 署名と公証まで行う配布用の .dmg を作る（docs/development.md）
+npm run app:release:windows  # Windows 版のインストーラーを Mac でクロスビルドする（docs/development.md）
 ```
 
 デスクトップアプリで選ぶボードのフォルダを、コマンドラインやブラウザ版と同じにすれば、同じボードを読み書きできます。
@@ -117,7 +126,8 @@ Claude Code 向けの使い方を `.claude/skills/keito/` に入れてありま�
 ## 既知の制限
 
 - 共同編集とクラウド共有には対応していません。ボードは手元の PC だけに保存されます。人に渡すときは、書き出した `.keito.json` かボードのフォルダごと渡してください。
-- 配布しているデスクトップアプリは macOS（Apple Silicon）用だけです。ほかの環境では、ソースから動かしてください。
+- 配布しているデスクトップアプリは、macOS（Apple Silicon）用と Windows（x64）用です。ほかの環境では、ソースから動かしてください。
+- Windows 版のインストーラーにはまだコード署名をしていません（上の「デスクトップアプリ（Windows）」）。
 
 ## ライセンス
 

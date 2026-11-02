@@ -62,6 +62,14 @@ On first launch, choose the folder for your boards (`Documents/keito`, or one yo
 
 When a new version is out, a button to update to it appears at the top right. Pressing it downloads the new version, saves your boards and restarts keito on it. You can also check from the menu (keito > アップデートを確認…). Versions up to 0.1.2 cannot update themselves: replace one of those from the dmg once.
 
+### Desktop app (Windows)
+
+Download `keito_<version>_x64-setup.exe` from [Releases](https://github.com/genkitoyama/keito/releases/latest) and open it. It runs on 64-bit Windows 10 and 11, and installs for the current user, without administrator rights.
+
+The installer is not code-signed yet, so Windows shows "Windows protected your PC" the first time: press "More info", then "Run anyway".
+
+It works as the macOS app does. Read Ctrl for ⌘ in shortcuts, ファイル > 設定… for keito > 設定…, and ヘルプ > アップデートを確認… for keito > アップデートを確認….
+
 To use it from the command line and Claude Code (see "Command line and Claude Code" below), keep the source on your machine too.
 
 ### From source
@@ -92,6 +100,7 @@ Boards are saved in `keito/boards/`. To save them elsewhere, set the `KEITO_BOAR
 npm run app          # run in development mode
 npm run app:build    # build the .app and .dmg (in src-tauri/target/release/bundle/)
 npm run app:release  # build a signed and notarized .dmg to hand out (see docs/development.md)
+npm run app:release:windows  # cross-build the Windows installer on a Mac (see docs/development.md)
 ```
 
 Point the desktop app's boards folder at the same folder as the command line or the browser version and they share the same boards.
@@ -119,7 +128,8 @@ Instructions for Claude Code are in `.claude/skills/keito/`. Open Claude Code in
 ## Known limitations
 
 - No real-time collaboration or cloud sharing: boards are saved on your own computer only. To hand one over, send an exported `.keito.json` or the board's folder.
-- The desktop app is released for macOS (Apple silicon) only. Elsewhere, run it from source.
+- The desktop app is released for macOS (Apple silicon) and Windows (x64). Elsewhere, run it from source.
+- The Windows installer is not code-signed yet (see "Desktop app (Windows)" above).
 
 ## License
 
