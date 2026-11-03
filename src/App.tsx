@@ -111,7 +111,8 @@ function useHotkeys() {
       else if (mod && key === 's') void saveNow();
       else if (mod && key === 'k') toggleProjectMenu();
       else if (mod && key === 'f') openSearch();
-      else if (mod && (key === '=' || key === '+')) zoomBy(1.25);
+      // On a Japanese keyboard ＋ is Shift+; — with Ctrl alone the key arrives as ';'.
+      else if (mod && (key === '=' || key === '+' || key === ';')) zoomBy(1.25);
       else if (mod && key === '-') zoomBy(0.8);
       else if (mod && key.startsWith('arrow') && nodeIds.length === 1) spawnFrom(nodeIds[0], key === 'arrowleft' ? 'left' : key === 'arrowright' ? 'right' : key === 'arrowup' ? 'top' : 'bottom');
       else if (mod) handled = false;

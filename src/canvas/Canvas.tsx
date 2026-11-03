@@ -296,7 +296,10 @@ export function Canvas() {
         const r = el.getBoundingClientRect();
         const px = e.clientX - r.left;
         const py = e.clientY - r.top;
-        const k = Math.min(4, Math.max(0.1, v.k * Math.exp(-e.deltaY * 0.01)));
+        // A pinch comes in small steps; a mouse wheel's notch is far larger (about 100px, and
+        // more on Windows with more lines per notch): capped, a notch zooms about as far as ＋/−.
+        const dy = Math.max(-25, Math.min(25, e.deltaY));
+        const k = Math.min(4, Math.max(0.1, v.k * Math.exp(-dy * 0.01)));
         st().setView({ k, x: px - ((px - v.x) * k) / v.k, y: py - ((py - v.y) * k) / v.k });
       } else {
         st().setView({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY });
