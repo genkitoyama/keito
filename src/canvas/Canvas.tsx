@@ -277,10 +277,16 @@ export function Canvas() {
       // Pointer already gone (or synthetic) — the drag still works while over the canvas.
     }
   };
-  const doubleClick = (id: string): boolean => {
+  /**
+   * Whether this press is the second of a double-click on `id`. If it is, the press's own focusing
+   * is called off: it comes after the press is handled, and would take the focus from the text
+   * editor the double-click opens (an empty box just dropped would then be called off at once).
+   */
+  const doubleClick = (e: RPointerEvent, id: string): boolean => {
     const now = performance.now();
     const hit = lastClick.current.id === id && now - lastClick.current.t < 450;
     lastClick.current = { id: hit ? '' : id, t: now };
+    if (hit) e.preventDefault();
     return hit;
   };
 
@@ -413,7 +419,7 @@ export function Canvas() {
     // A box tool: a click puts one there, a drag draws it out to the size wanted.
     if (placesBox(tool) && !st().viewing) return begin(e, { kind: 'place', start: p });
     // Double-click on empty canvas drops a box and starts typing, like a whiteboard.
-    if (doubleClick('canvas') && !st().viewing) return dropBox(p);
+    if (doubleClick(e, 'canvas') && !st().viewing) return dropBox(p);
     const base = e.shiftKey ? st().selection : [];
     st().select(base);
     begin(e, { kind: 'marquee', start: p, base });
@@ -426,7 +432,7 @@ export function Canvas() {
     const s = st();
     // On an old state, a click shows what it was (in the panel), and nothing moves.
     if (s.viewing) return s.select(e.shiftKey ? (s.selection.includes(n.id) ? s.selection.filter((id) => id !== n.id) : [...s.selection, n.id]) : [n.id]);
-    if (doubleClick(n.id) && hasText(n)) {
+    if (doubleClick(e, n.id) && hasText(n)) {
       // Double-clicking the body of an area frame adds a box there; its title strip renames it.
       const p = world(e);
       if (n.type === 'frame' && p.y > n.y + frameTitleHeight(n)) return dropBox(p);
@@ -476,7 +482,7 @@ export function Canvas() {
     if (e.button !== 0 || tool !== 'select' || space || st().placing) return;
     e.stopPropagation();
     const s = st();
-    if (doubleClick(id) && !s.viewing) {
+    if (doubleClick(e, id) && !s.viewing) {
       s.select([id]);
       s.setEditing(id);
       return;
@@ -505,7 +511,7 @@ export function Canvas() {
     if (e.button !== 0 || tool !== 'select' || space || st().placing) return;
     e.stopPropagation();
     const s = st();
-    if (doubleClick(id) && !s.viewing) {
+    if (doubleClick(e, id) && !s.viewing) {
       s.select([id]);
       s.setEditing(id);
       return;
