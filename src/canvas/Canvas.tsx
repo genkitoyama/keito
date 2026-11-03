@@ -1101,12 +1101,12 @@ const overBoard = (): boolean => !!document.querySelector('.modal-bg, .project-m
 function ImeCatcher({ onSpace }: { onSpace: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [converting, setConverting] = useState(false);
-  // Shift+1 just pressed (its "！" is not the shape's), and a conversion being let go of.
+  // Shift+1 just pressed: its "！" is not the shape's.
   const bang = useRef(false);
-  const dropping = useRef(false);
   const only = useStore((s) => (s.selection.length === 1 && !s.editing && !s.viewing ? s.selection[0] : ''));
   const doc = useStore((s) => s.doc);
   const view = useStore((s) => s.view);
+  const panel = useStore((s) => s.panel);
   const node = doc.nodes.find((n) => n.id === only);
   const edge = node ? undefined : doc.edges.find((e) => e.id === only);
   const takesText = node ? hasText(node) : !!edge;
@@ -1129,7 +1129,17 @@ function ImeCatcher({ onSpace }: { onSpace: () => void }) {
       if (!board && sel && !sel.isCollapsed && !el.contains(sel.anchorNode)) return;
       el.focus({ preventScroll: true });
     };
-    hold();
+    // A window or the project menu coming over the board (by a key, the focus still here) has the
+    // field let go of the focus: the IME would convert in it unseen, the keys going to the menu.
+    // Gone again, the focus comes back.
+    const cover = () => {
+      const el = ref.current;
+      if (el && overBoard()) {
+        if (document.activeElement === el) el.blur();
+      } else hold();
+    };
+    cover();
+    const covered = () => setTimeout(cover);
     const down = (e: PointerEvent) => {
       pressFrom = e.target instanceof Element ? e.target : null;
     };
@@ -1150,14 +1160,17 @@ function ImeCatcher({ onSpace }: { onSpace: () => void }) {
     window.addEventListener('pointercancel', up, true);
     document.addEventListener('focusout', out);
     window.addEventListener('focus', back);
+    window.addEventListener('keito:overlay', covered);
     return () => {
       window.removeEventListener('pointerdown', down, true);
       window.removeEventListener('pointerup', up, true);
       window.removeEventListener('pointercancel', up, true);
       document.removeEventListener('focusout', out);
       window.removeEventListener('focus', back);
+      window.removeEventListener('keito:overlay', covered);
     };
-  }, [only, takesText]);
+    // (A window opening or closing is a change of panel.)
+  }, [only, takesText, panel]);
 
   if (!takesText) return null;
   const k = view.k;
@@ -1172,23 +1185,25 @@ function ImeCatcher({ onSpace }: { onSpace: () => void }) {
       // Shift+1 shows the whole board, as with the IME off; the IME takes it for a "！" to convert.
       onKeyDown={(e) => {
         // A window or the project menu came over the board (by a key) with the focus still here:
-        // it is let go of before the IME starts on the key (once it has, Chrome holds on to it).
+        // it is let go of before the IME starts on the key.
         if (overBoard()) return e.currentTarget.blur();
-        bang.current =e.shiftKey && e.code === 'Digit1' && e.keyCode === 229 && !e.nativeEvent.isComposing && !overBoard();
+        // Nothing being converted: the field is empty, or holds only an earlier Shift+1's "！" (the
+        // IME lets go of it when the field is left, but Chrome may go on taking it as converting).
+        const idle = /^[!！]?$/.test(e.currentTarget.textContent ?? '');
+        bang.current = e.shiftKey && e.code === 'Digit1' && e.keyCode === 229 && idle;
         if (bang.current) st().fit();
       }}
       onCompositionStart={(e) => {
-        // A window or the project menu came over the board (by a key) with the focus still here.
-        dropping.current = overBoard();
-        if (dropping.current) e.currentTarget.blur();
+        if (overBoard()) e.currentTarget.blur();
       }}
       // Shown once there is something to convert: Space alone puts down a wide space at once.
       onCompositionUpdate={(e) => {
-        if (dropping.current) return;
-        // The "！" of Shift+1 is let go of at once (leaving the field puts an end to it).
+        // Under a window or the project menu, nothing is shown (and nothing is put down).
+        if (overBoard()) return setConverting(false);
+        // The "！" of Shift+1 is not shown, and leaving the field has the IME let go of it (the
+        // focus then comes back here).
         if (bang.current && /^[!！]$/.test(e.data)) {
-          dropping.current = true;
-          bang.current = false;
+          setConverting(false);
           return e.currentTarget.blur();
         }
         bang.current = false;
@@ -1198,9 +1213,8 @@ function ImeCatcher({ onSpace }: { onSpace: () => void }) {
         setConverting(false);
         const text = e.data;
         e.currentTarget.textContent = '';
-        // (An IME that puts the "！" down at once, without converting, is let go of here.)
-        const dropped = dropping.current || (bang.current && /^[!！]$/.test(text));
-        dropping.current = false;
+        // (Also an IME that puts the "！" down at once, without converting.)
+        const dropped = bang.current && /^[!！]$/.test(text);
         bang.current = false;
         if (dropped || !text || document.activeElement !== ref.current || overBoard()) return;
         // With the IME on, Space arrives as the IME's own key (no code to know it by) and puts down
