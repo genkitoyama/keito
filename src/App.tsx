@@ -3,7 +3,7 @@ import { SearchBar, openSearch } from './ui/SearchBar';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { flushSync } from 'react-dom';
-import { Canvas, inGesture, insertImages, insertText, spawnFrom, zoomBy } from './canvas/Canvas';
+import { Canvas, inGesture, insertImages, insertText, isCatcher, spawnFrom, zoomBy } from './canvas/Canvas';
 import { onControl } from './ui/keys';
 import { hasText } from './model/types';
 import { copyText, getSetting, setSetting } from './platform/io';
@@ -43,7 +43,11 @@ function useHotkeys() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target;
-      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) {
+      // The field that takes the IME's typing on a selected shape is the board's, not a field: only
+      // the keys the IME converts stay with it.
+      const catcher = isCatcher(t);
+      if (catcher && (e.isComposing || e.keyCode === 229)) return;
+      if (t instanceof HTMLElement && !catcher && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) {
         // Typing in a field keeps its keys, but saving, the project menu and search still answer
         // (in a browser, ⌘S would otherwise save the web page).
         // Escape leaves the field: a window it is in closes, the library closes from its search,
@@ -150,7 +154,7 @@ function useHotkeys() {
     // copied on the board.
     const onPaste = (e: ClipboardEvent) => {
       const t = e.target;
-      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (t instanceof HTMLElement && !isCatcher(t) && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       // A window over the board (export, the boards list) or the project menu: the board is out of
       // reach, and nothing lands on it unseen.
       if (document.querySelector('.modal-bg, .project-menu')) return;

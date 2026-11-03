@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import type { CSSProperties, MouseEvent as RMouseEvent, ReactNode, PointerEvent as RPointerEvent } from 'react';
 import { labelFont } from '../model/labels';
 import { hopOrder, DEVICE_NAME, deviceHead, type Dir, center, contains, intersects, isUnderlay, isTagged, labelPoint, nearestT, nodeAt, nodeRect, pathD, portPos, routeEdges, sidePoint, simplify, snap } from '../model/geometry';
@@ -348,12 +349,12 @@ export function Canvas() {
 
   useEffect(() => {
     const typing = (t: EventTarget | null): boolean =>
-      t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+      t instanceof HTMLElement && !isCatcher(t) && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
     const down = (e: KeyboardEvent) => {
       // ⌘/Ctrl+Space switches the input source or opens Spotlight; the OS then
       // swallows the key-up, which would leave the canvas stuck in pan mode.
-      // A focused button takes Space to be pressed.
-      if (e.code !== 'Space' || typing(e.target) || onControl(e.target)) return;
+      // A focused button takes Space to be pressed, and an IME converting takes it to convert.
+      if (e.code !== 'Space' || e.isComposing || typing(e.target) || onControl(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return setSpace(false);
       e.preventDefault();
       setSpace(true);
@@ -1044,6 +1045,7 @@ export function Canvas() {
         </g>
       </svg>
       {editing && <TextEditor key={editing} id={editing} />}
+      {CATCHES_IME && <ImeCatcher onSpace={() => setSpace(true)} />}
       {/* Keyed by the selection so an open menu never carries over to another object. */}
       {idle && selection.length > 0 && !menuAt && <QuickBar key={selection.join(',')} />}
       {menuAt && <ContextMenu at={menuAt} close={() => setMenuAt(null)} />}
@@ -1082,6 +1084,77 @@ function EmptyHint({ doc }: { doc: Doc }) {
       {lib?.set === 'equipment' && <span>エリア枠（F）で場所ごとに囲むと、機材リストの「設置場所」になります。</span>}
       {lib?.set === 'software' && <span>エリア枠（F）で動いている PC ごとに囲むと見やすくなります。</span>}
     </div>
+  );
+}
+
+/**
+ * Chrome on Windows tells the IME there is nothing to type into while no field has the focus, so
+ * with the IME on, the first key typed on a selected shape went in as a bare letter ("aか" for
+ * "aka"). There, a hidden field holds the focus while one thing that takes text is selected: the
+ * IME converts in it, shown over the shape, and what it puts down opens the shape's editor.
+ */
+const CATCHES_IME = typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows');
+
+/** The hidden field that takes the IME's typing on a selected shape (see ImeCatcher). */
+export const isCatcher = (t: EventTarget | null): boolean => t instanceof HTMLElement && t.classList.contains('ime-catcher');
+
+function ImeCatcher({ onSpace }: { onSpace: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [converting, setConverting] = useState(false);
+  const only = useStore((s) => (s.selection.length === 1 && !s.editing && !s.viewing ? s.selection[0] : ''));
+  const doc = useStore((s) => s.doc);
+  const view = useStore((s) => s.view);
+  const node = doc.nodes.find((n) => n.id === only);
+  const edge = node ? undefined : doc.edges.find((e) => e.id === only);
+  const takesText = node ? hasText(node) : !!edge;
+
+  // The field takes the focus only from no one: a field in a panel, the search, a menu keep theirs.
+  useEffect(() => {
+    if (!takesText) return;
+    const hold = () => {
+      const a = document.activeElement;
+      if (ref.current && (!a || a === document.body)) ref.current.focus({ preventScroll: true });
+    };
+    hold();
+    // A press on the board (or on a button) leaves the focus on the page itself: it comes back here.
+    window.addEventListener('pointerup', hold);
+    window.addEventListener('focus', hold);
+    return () => {
+      window.removeEventListener('pointerup', hold);
+      window.removeEventListener('focus', hold);
+    };
+  }, [only, takesText]);
+
+  if (!takesText) return null;
+  const k = view.k;
+  const at = node ? { x: node.x + node.w / 2, y: node.y + node.h / 2 } : labelPoint(routeEdges(doc).get(only) ?? [{ x: 0, y: 0 }], edge?.labelAt);
+  return (
+    <div
+      ref={ref}
+      className={`ime-catcher${converting ? ' converting' : ''}`}
+      contentEditable
+      suppressContentEditableWarning
+      style={{ left: view.x + at.x * k, top: view.y + at.y * k, fontSize: 14 * k }}
+      // Shown once there is something to convert: Space alone puts down a wide space at once.
+      onCompositionUpdate={(e) => setConverting(e.data.trim() !== '')}
+      onCompositionEnd={(e) => {
+        setConverting(false);
+        const text = e.data;
+        e.currentTarget.textContent = '';
+        if (!text || document.activeElement !== ref.current) return;
+        // With the IME on, Space arrives as the IME's own key (no code to know it by) and puts down
+        // a wide space: it is the hand for panning, as Space is with the IME off.
+        if (text.trim() === '') return onSpace();
+        // What the IME put down opens the editor and goes in there, in place of the text as it was
+        // (as a letter typed on a selected shape does).
+        flushSync(() => st().setEditing(only));
+        document.execCommand('insertText', false, text);
+      }}
+      // Anything put down here without converting (a wide space) is not kept.
+      onInput={(e) => {
+        if (!(e.nativeEvent as InputEvent).isComposing) e.currentTarget.textContent = '';
+      }}
+    />
   );
 }
 
