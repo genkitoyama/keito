@@ -262,6 +262,14 @@ export async function startDesktop(): Promise<void> {
       },
       true,
     );
+  // The web view's own right-click menu (更新, 名前を付けて保存, 印刷 …) is a browser's: its 更新
+  // reloads without writing first. It stays only where it helps, on text to cut, copy or paste.
+  if (WINDOWS)
+    window.addEventListener('contextmenu', (e) => {
+      const t = e.target;
+      const editable = t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA)$/.test(t.tagName));
+      if (!editable && !window.getSelection()?.toString()) e.preventDefault();
+    });
   // keito > アップデートを確認…
   void listen('check-update', () => void lookForUpdate(true));
   try {
