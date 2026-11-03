@@ -8,6 +8,7 @@ import { check } from '@tauri-apps/plugin-updater';
 import { boardKind, readBoard, readSerial } from '../model/load';
 import { boot, flushBeforeClose, useStore } from '../model/store';
 import { upgradePreset } from '../model/video';
+import { isCatcher } from '../ui/keys';
 import type { Doc, UserPreset } from '../model/types';
 import { type Platform, shortcuts, usePlatform } from './io';
 import { type Backend, type BoardInfo, type BoardNews, Conflict, Gone, type TrashedBoard, WRITER, assetOf } from './storage';
@@ -267,7 +268,10 @@ export async function startDesktop(): Promise<void> {
   if (WINDOWS)
     window.addEventListener('contextmenu', (e) => {
       const t = e.target;
-      const editable = t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA)$/.test(t.tagName));
+      // (The hidden field that takes the IME's typing on a selected shape is the board's, not a
+      // field: the menu key pressed with it in focus is pressed on the board.)
+      const editable =
+        t instanceof HTMLElement && !isCatcher(t) && (t.isContentEditable || /^(INPUT|TEXTAREA)$/.test(t.tagName));
       if (!editable && !window.getSelection()?.toString()) e.preventDefault();
     });
   // keito > アップデートを確認…

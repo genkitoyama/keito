@@ -14,6 +14,9 @@ export function onControl(t: EventTarget | null): boolean {
   }
 }
 
+/** The hidden field that takes the IME's typing on a selected shape (Windows; see Canvas's ImeCatcher). */
+export const isCatcher = (t: EventTarget | null): boolean => t instanceof HTMLElement && t.classList.contains('ime-catcher');
+
 /**
  * Whether a key press belongs to the IME: still composing, or the Enter that confirms a
  * conversion. WebKit (Safari, and the macOS app's webview) ends the composition before that Enter

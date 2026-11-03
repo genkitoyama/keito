@@ -14,7 +14,7 @@ import { shortcuts, tell } from '../platform/io';
 import { EdgeView, HopCaps, INK, LabelChip, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, framesInOrder, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 import { ContextMenu } from './ContextMenu';
-import { composing, onControl } from '../ui/keys';
+import { composing, isCatcher, onControl } from '../ui/keys';
 import { type Corner, type Drag, type Ghost, type Plan, SIDES, ACCENT, canConnect, st } from './drag';
 import { planConnect, planReconnect, planSpawn, ConnectGhost } from './connect';
 import { SharedMarks, CommentPins, EdgeHandles, segmentHits, distToSegment, previewLine, arrowGlyph } from './overlays';
@@ -1095,12 +1095,15 @@ function EmptyHint({ doc }: { doc: Doc }) {
  */
 const CATCHES_IME = typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows');
 
-/** The hidden field that takes the IME's typing on a selected shape (see ImeCatcher). */
-export const isCatcher = (t: EventTarget | null): boolean => t instanceof HTMLElement && t.classList.contains('ime-catcher');
+/** A window (export, the boards list …) or the project menu over the board. */
+const overBoard = (): boolean => !!document.querySelector('.modal-bg, .project-menu');
 
 function ImeCatcher({ onSpace }: { onSpace: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [converting, setConverting] = useState(false);
+  // Shift+1 just pressed (its "！" is not the shape's), and a conversion being let go of.
+  const bang = useRef(false);
+  const dropping = useRef(false);
   const only = useStore((s) => (s.selection.length === 1 && !s.editing && !s.viewing ? s.selection[0] : ''));
   const doc = useStore((s) => s.doc);
   const view = useStore((s) => s.view);
@@ -1111,17 +1114,48 @@ function ImeCatcher({ onSpace }: { onSpace: () => void }) {
   // The field takes the focus only from no one: a field in a panel, the search, a menu keep theirs.
   useEffect(() => {
     if (!takesText) return;
-    const hold = () => {
+    // Where the press now held down began (null when none is).
+    let pressFrom: Element | null = null;
+    // `board`: a press on the board, whose text there is to keep is none (the focus put here
+    // takes the page's selection along, as a press on the board would let go of it anyway).
+    const hold = (board = false) => {
+      const el = ref.current;
       const a = document.activeElement;
-      if (ref.current && (!a || a === document.body)) ref.current.focus({ preventScroll: true });
+      if (!el || (a && a !== document.body)) return;
+      // A window or the project menu over the board: typing there is not the shape's.
+      if (overBoard()) return;
+      // Text chosen elsewhere (a cell, a comment …) stays chosen, to be copied.
+      const sel = window.getSelection();
+      if (!board && sel && !sel.isCollapsed && !el.contains(sel.anchorNode)) return;
+      el.focus({ preventScroll: true });
     };
     hold();
-    // A press on the board (or on a button) leaves the focus on the page itself: it comes back here.
-    window.addEventListener('pointerup', hold);
-    window.addEventListener('focus', hold);
+    const down = (e: PointerEvent) => {
+      pressFrom = e.target instanceof Element ? e.target : null;
+    };
+    // Once let go, after the click it makes (a button clicked lets go of the focus then).
+    const up = () => {
+      const board = !!pressFrom?.closest('.canvas');
+      pressFrom = null;
+      setTimeout(() => hold(board));
+    };
+    // A field left (Escape, a button let go of …) leaves the focus to no one: it comes back here.
+    // Not mid-press: what the press is for (choosing text …) is known once it is let go.
+    const out = (e: FocusEvent) => {
+      if (!e.relatedTarget && !pressFrom) setTimeout(() => hold());
+    };
+    const back = () => hold();
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+    document.addEventListener('focusout', out);
+    window.addEventListener('focus', back);
     return () => {
-      window.removeEventListener('pointerup', hold);
-      window.removeEventListener('focus', hold);
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
+      document.removeEventListener('focusout', out);
+      window.removeEventListener('focus', back);
     };
   }, [only, takesText]);
 
@@ -1135,13 +1169,40 @@ function ImeCatcher({ onSpace }: { onSpace: () => void }) {
       contentEditable
       suppressContentEditableWarning
       style={{ left: view.x + at.x * k, top: view.y + at.y * k, fontSize: 14 * k }}
+      // Shift+1 shows the whole board, as with the IME off; the IME takes it for a "！" to convert.
+      onKeyDown={(e) => {
+        // A window or the project menu came over the board (by a key) with the focus still here:
+        // it is let go of before the IME starts on the key (once it has, Chrome holds on to it).
+        if (overBoard()) return e.currentTarget.blur();
+        bang.current =e.shiftKey && e.code === 'Digit1' && e.keyCode === 229 && !e.nativeEvent.isComposing && !overBoard();
+        if (bang.current) st().fit();
+      }}
+      onCompositionStart={(e) => {
+        // A window or the project menu came over the board (by a key) with the focus still here.
+        dropping.current = overBoard();
+        if (dropping.current) e.currentTarget.blur();
+      }}
       // Shown once there is something to convert: Space alone puts down a wide space at once.
-      onCompositionUpdate={(e) => setConverting(e.data.trim() !== '')}
+      onCompositionUpdate={(e) => {
+        if (dropping.current) return;
+        // The "！" of Shift+1 is let go of at once (leaving the field puts an end to it).
+        if (bang.current && /^[!！]$/.test(e.data)) {
+          dropping.current = true;
+          bang.current = false;
+          return e.currentTarget.blur();
+        }
+        bang.current = false;
+        setConverting(e.data.trim() !== '');
+      }}
       onCompositionEnd={(e) => {
         setConverting(false);
         const text = e.data;
         e.currentTarget.textContent = '';
-        if (!text || document.activeElement !== ref.current) return;
+        // (An IME that puts the "！" down at once, without converting, is let go of here.)
+        const dropped = dropping.current || (bang.current && /^[!！]$/.test(text));
+        dropping.current = false;
+        bang.current = false;
+        if (dropped || !text || document.activeElement !== ref.current || overBoard()) return;
         // With the IME on, Space arrives as the IME's own key (no code to know it by) and puts down
         // a wide space: it is the hand for panning, as Space is with the IME off.
         if (text.trim() === '') return onSpace();

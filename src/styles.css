@@ -339,6 +339,9 @@ textarea:focus {
   min-width: 1px;
   white-space: pre;
   outline: none;
+  /* Not the board's user-select: none, which would keep the IME's text from going in. */
+  user-select: text;
+  -webkit-user-select: text;
   opacity: 0;
   pointer-events: none;
   caret-color: transparent;
