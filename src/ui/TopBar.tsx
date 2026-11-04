@@ -9,7 +9,7 @@ import { openBoards } from './Boards';
 import { ICON } from './icons';
 import type { Doc } from '../model/types';
 import { inlineImages, safeName } from '../platform/storage';
-import { ask, pickTextFile, saveFile, tell } from '../platform/io';
+import { ask, pickTextFile, saveFile, shortcuts, tell } from '../platform/io';
 import { startUpdate, useUpdate } from '../platform/update';
 
 /** Export the board as one self-contained file, pictures included. */
@@ -127,7 +127,7 @@ export function TopBar() {
           </button>
         </span>
       ) : (
-        <span className={`save-state ${saving}`} title={saving === 'error' ? `理由: ${saveError ?? '不明'}\n少しずつ間をあけて自動でやり直しています。` : mode === 'server' ? 'boards フォルダに自動保存（⌘S で今すぐ保存）' : 'このブラウザ内に自動保存（⌘S で今すぐ保存）'}>
+        <span className={`save-state ${saving}`} title={saving === 'error' ? `理由: ${saveError ?? '不明'}\n少しずつ間をあけて自動でやり直しています。` : shortcuts(mode === 'server' ? 'boards フォルダに自動保存（⌘S で今すぐ保存）' : 'このブラウザ内に自動保存（⌘S で今すぐ保存）')}>
           {saving === 'error' ? '保存できていません' : saving === 'saving' ? '保存中…' : mode === 'server' ? 'フォルダに保存済み' : 'ブラウザに保存済み'}
           {saving === 'error' && <button onClick={() => void saveNow()}>もう一度</button>}
         </span>

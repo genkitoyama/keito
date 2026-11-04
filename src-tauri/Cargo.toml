@@ -33,3 +33,8 @@ objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSURL", "NSDictionary", "NSGeometry", "NSObject"] }
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "objc2-core-foundation", "NSPrintInfo", "NSPrintOperation", "NSWindow", "NSResponder", "NSView"] }
 objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "objc2-app-kit", "WKWebView"] }
+
+[target.'cfg(windows)'.dependencies]
+# The same versions as the web view (wry) uses: PDFs are printed through its WebView2.
+webview2-com = "0.39"
+windows-core = "0.62"

@@ -10,7 +10,7 @@ import { type ColorKey, type Edge, type Node, hasText } from '../model/types';
 import { safeUrl } from '../model/url';
 import { COLOR_NAME, FILLS, FillPreview, ICON, SHAPES, shapeIcon, sizesFor } from './icons';
 import { useBurst } from './burst';
-import { openLink } from '../platform/io';
+import { openLink, shortcuts } from '../platform/io';
 
 const st = useStore.getState;
 const CHECKER = 'repeating-conic-gradient(#c3ccd8 0% 25%, #fff 0% 50%) 50% / 8px 8px';
@@ -29,7 +29,7 @@ function swatch(n: Node, c: ColorKey): CSSProperties {
 /** Bar button. `tip` is shown instantly on hover — icons alone are never the only explanation. */
 function Btn({ tip, on, onClick, children, className = '' }: { tip: string; on?: boolean; onClick: () => void; children: ReactNode; className?: string }) {
   return (
-    <button className={`${className}${on ? ' on' : ''}`} data-tip={tip} aria-label={tip} onClick={onClick}>
+    <button className={`${className}${on ? ' on' : ''}`} data-tip={tip} aria-label={shortcuts(tip)} onClick={onClick}>
       {children}
     </button>
   );
@@ -107,6 +107,9 @@ export function QuickBar() {
       open.classList.toggle('up', above ? roomUp >= need || roomUp >= roomDown : roomDown < need && roomUp > roomDown);
     }
   });
+  // (Every hook above this: what is selected may leave the board without the selection changing,
+  // and the bar is then gone, not broken.)
+  const burst = useBurst();
   if (!anchor) return null;
   const one = nodes.length === 1 ? nodes[0] : undefined;
   const patch = (p: Partial<Node>) => {
@@ -119,7 +122,6 @@ export function QuickBar() {
   const toggle = (m: 'shape' | 'color' | 'size' | 'line') => () => setMenu(menu === m ? null : m);
   // Cables are colour-coded by type, so a new colour goes to the whole type unless told otherwise; arrows are coloured one by one.
   const all = wide ?? (!!edge && edge.signal !== 'flow');
-  const burst = useBurst();
   // A colour from the picker arrives over and over while it is dragged round: one undo step for it all.
   const paint = (c: string | null, close = true) => {
     if (!close) burst();

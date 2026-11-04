@@ -5,7 +5,7 @@ const written = vi.hoisted(() => ({ answers: [] as boolean[] }));
 vi.mock('../src/model/store', () => ({ flushBeforeClose: async () => written.answers.shift() ?? true }));
 
 import { usePlatform } from '../src/platform/io';
-import { RELEASES, type Update, offerUpdate, startUpdate, useUpdate } from '../src/platform/update';
+import { RELEASES, type Update, failureWords, offerUpdate, startUpdate, useUpdate } from '../src/platform/update';
 
 /** The user's answers to the questions asked, in turn, and what was asked and opened. */
 const user = { answers: [] as boolean[], asked: [] as string[], told: [] as string[], opened: [] as string[] };
@@ -164,5 +164,21 @@ describe('offering an update', () => {
     offerUpdate(newer.update);
     expect(useUpdate.getState().update).toBe(first.update);
     expect(newer.done).toEqual(['close']);
+  });
+});
+
+describe('saying how to update by hand', () => {
+  it('names the dmg and the Applications folder on macOS', () => {
+    const { install, byHand } = failureWords(false);
+    expect(install).toContain('「アプリケーション」フォルダ');
+    expect(byHand).toContain('dmg');
+  });
+
+  it('names the installer on Windows, with keito quit first, and nothing of a Mac', () => {
+    const { install, byHand } = failureWords(true);
+    expect(install).toContain('インストーラー');
+    expect(byHand).toContain('x64-setup.exe');
+    expect(byHand).toContain('keito を終了してから');
+    expect(install + byHand).not.toMatch(/dmg|アプリケーション/);
   });
 });

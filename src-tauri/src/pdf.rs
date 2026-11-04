@@ -56,8 +56,10 @@ pub async fn write(app: AppHandle, html: String, paper: String, path: std::path:
     let nonce = format!("{:x}{label}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)).replace('-', "");
     // WebKit prints a CSS pixel as 0.8 pt, not the 0.75 pt it is: the page is zoomed back to size,
     // so that millimetres come out as millimetres and the pages break where the page laid them out.
+    // WebView2 (Chromium) prints it as it is.
     let page_mm = w / MM - MARGIN_MM * 2.0;
-    let added = format!("<style>@media print{{html{{zoom:0.9375}}}}</style><script nonce=\"{nonce}\">const PAGE_MM={page_mm};{SPLIT_TABLES}</script></body>");
+    let zoom = if cfg!(target_os = "macos") { "<style>@media print{html{zoom:0.9375}}</style>" } else { "" };
+    let added = format!("{zoom}<script nonce=\"{nonce}\">const PAGE_MM={page_mm};{SPLIT_TABLES}</script></body>");
     let html = match html.rfind("</body>") {
         Some(at) => format!("{}{added}{}", &html[..at], &html[at + "</body>".len()..]),
         None => html + &added,
@@ -65,7 +67,9 @@ pub async fn write(app: AppHandle, html: String, paper: String, path: std::path:
     app.state::<Pages>().0.lock().unwrap_or_else(|e| e.into_inner()).insert(label.clone(), (html, nonce));
     let (tx, rx) = mpsc::channel::<Result<(), String>>();
     let sent = Mutex::new(Some(tx));
-    let url = format!("keito-print://localhost/{label}").parse::<tauri::Url>().map_err(|e| e.to_string())?;
+    // Windows reaches custom schemes over http, as the app's own pages do.
+    let url = if cfg!(windows) { format!("http://keito-print.localhost/{label}") } else { format!("keito-print://localhost/{label}") };
+    let url = url.parse::<tauri::Url>().map_err(|e| e.to_string())?;
     let window = WebviewWindowBuilder::new(&app, &label, WebviewUrl::CustomProtocol(url))
         .visible(false)
         .inner_size(h, w)
@@ -132,7 +136,50 @@ fn print(view: tauri::webview::PlatformWebview, (w, h): (f64, f64), path: &std::
     let _ = Retained::into_raw(delegate);
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(windows)]
+fn print(view: tauri::webview::PlatformWebview, (w, h): (f64, f64), path: &std::path::Path, tx: mpsc::Sender<Result<(), String>>) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{COREWEBVIEW2_PRINT_ORIENTATION_LANDSCAPE, ICoreWebView2_7, ICoreWebView2Environment6};
+    use webview2_com::PrintToPdfCompletedHandler;
+    use windows_core::{HSTRING, Interface, PCWSTR};
+
+    let done = tx.clone();
+    let path = HSTRING::from(path.as_os_str());
+    // Safety: the controller and environment are the live ones of this webview, used on its own (the main) thread.
+    let started = unsafe {
+        (|| -> windows_core::Result<()> {
+            let web = view.controller().CoreWebView2()?.cast::<ICoreWebView2_7>()?;
+            let settings = view.environment().cast::<ICoreWebView2Environment6>()?.CreatePrintSettings()?;
+            // The paper in inches, upright and turned, as on macOS.
+            settings.SetPageWidth(w / 72.0)?;
+            settings.SetPageHeight(h / 72.0)?;
+            settings.SetOrientation(COREWEBVIEW2_PRINT_ORIENTATION_LANDSCAPE)?;
+            // The page's own margin (its @page rule has the same): whichever of the two WebView2 takes,
+            // the page is placed where it was laid out.
+            let margin = MARGIN_MM / 25.4;
+            settings.SetMarginTop(margin)?;
+            settings.SetMarginBottom(margin)?;
+            settings.SetMarginLeft(margin)?;
+            settings.SetMarginRight(margin)?;
+            settings.SetScaleFactor(1.0)?;
+            settings.SetShouldPrintBackgrounds(true)?;
+            settings.SetShouldPrintHeaderAndFooter(false)?;
+            let handler = PrintToPdfCompletedHandler::create(Box::new(move |result, written| {
+                let _ = done.send(match result {
+                    Ok(()) if written => Ok(()),
+                    Ok(()) => Err("PDF を書き出せませんでした".into()),
+                    Err(e) => Err(format!("PDF を書き出せませんでした: {e}")),
+                });
+                Ok(())
+            }));
+            web.PrintToPdf(PCWSTR::from_raw(path.as_ptr()), &settings, &handler)
+        })()
+    };
+    if let Err(e) = started {
+        let _ = tx.send(Err(format!("PDF を書き出せませんでした: {e}")));
+    }
+}
+
+#[cfg(not(any(target_os = "macos", windows)))]
 fn print(_view: tauri::webview::PlatformWebview, _paper: (f64, f64), _path: &std::path::Path, tx: mpsc::Sender<Result<(), String>>) {
     let _ = tx.send(Err("この OS では PDF を直接書き出せません".into()));
 }

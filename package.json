@@ -14,7 +14,8 @@
     "tauri": "tauri",
     "app": "tauri dev",
     "app:build": "tauri build",
-    "app:release": "scripts/release-mac.sh"
+    "app:release": "scripts/release-mac.sh",
+    "app:release:windows": "scripts/release-windows.sh"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

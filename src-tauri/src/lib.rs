@@ -55,6 +55,7 @@ fn relaunch(app: AppHandle) {
 }
 
 /// The menu bar: the app's own menu (with 設定…), editing (so ⌘C / ⌘V reach text fields), reloading, the window.
+#[cfg(target_os = "macos")]
 fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let settings = MenuItem::with_id(app, "settings", "設定…", true, Some("CmdOrCtrl+,"))?;
     let update = MenuItem::with_id(app, "check-update", "アップデートを確認…", true, None::<&str>)?;
@@ -94,6 +95,38 @@ fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         &[&PredefinedMenuItem::minimize(app, Some("しまう"))?, &PredefinedMenuItem::fullscreen(app, Some("フルスクリーン"))?, &PredefinedMenuItem::separator(app)?, &PredefinedMenuItem::close_window(app, Some("閉じる"))?],
     )?;
     Menu::with_items(app, &[&keito, &edit, &view, &window])
+}
+
+/// The menu bar in the window, as Windows has it: the file menu (settings, quitting), reloading,
+/// and help (updates, about). Editing keys work in text fields without a menu (WebView2 takes them),
+/// and the shortcuts shown are heard by the page too (see src/platform/tauri.ts): keys pressed in
+/// the web view do not reach the menu.
+#[cfg(not(target_os = "macos"))]
+fn menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let settings = MenuItem::with_id(app, "settings", "設定…", true, Some("CmdOrCtrl+,"))?;
+    let quit = MenuItem::with_id(app, "quit", "終了", true, Some("CmdOrCtrl+Q"))?;
+    let file = Submenu::with_items(app, "ファイル", true, &[&settings, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let reload = MenuItem::with_id(app, "reload", "再読み込み", true, Some("CmdOrCtrl+R"))?;
+    let view = Submenu::with_items(app, "表示", true, &[&reload])?;
+    let update = MenuItem::with_id(app, "check-update", "アップデートを確認…", true, None::<&str>)?;
+    let help = Submenu::with_items(app, "ヘルプ", true, &[&update, &PredefinedMenuItem::separator(app)?, &PredefinedMenuItem::about(app, Some("keito について"), None)?])?;
+    Menu::with_items(app, &[&file, &view, &help])
+}
+
+/// WebView2's own shortcuts (reloading with Ctrl+R or F5, printing, finding, going back) are turned
+/// off: reloading is the page's own, after what it has is written. Text fields keep their keys.
+#[cfg(windows)]
+fn without_browser_keys(app: &AppHandle) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+    use windows_core::Interface;
+    let Some(window) = app.get_webview_window("main") else { return };
+    let _ = window.with_webview(|view| {
+        // Safety: the controller is the live one of the main window, used on its own (the main) thread.
+        let done = unsafe { view.controller().CoreWebView2().and_then(|web| web.Settings()).and_then(|s| s.cast::<ICoreWebView2Settings3>()).and_then(|s| s.SetAreBrowserAcceleratorKeysEnabled(false)) };
+        if let Err(e) = done {
+            log::warn!("could not turn off the web view's own shortcuts: {e}");
+        }
+    });
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -142,6 +175,8 @@ pub fn run() {
             app.manage(Boards::new(root, source));
             commands::watch(app.handle().clone());
             app.set_menu(menu(app.handle())?)?;
+            #[cfg(windows)]
+            without_browser_keys(app.handle());
             app.on_menu_event(|app, event| match event.id().as_ref() {
                 "settings" => {
                     let _ = app.emit("open-settings", ());
