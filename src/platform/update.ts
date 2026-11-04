@@ -32,6 +32,25 @@ export const useUpdate = create<{ update: Update | null; phase: Phase; share: nu
 /** Where every version can be had by hand, for when updating in the app does not work. */
 export const RELEASES = 'https://github.com/genkitoyama/keito/releases/latest';
 
+/** Whether this is the Windows app, put in by its installer (the macOS one is copied out of a dmg). */
+const WINDOWS = typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows');
+
+/**
+ * What is said when updating in the app fails, as this system's app is put in: on macOS, the app
+ * copied from a dmg into the Applications folder (an app opened elsewhere cannot be replaced); on
+ * Windows, the installer run (with keito quit first, or the installer closes it unwritten).
+ */
+export const failureWords = (windows = WINDOWS): { install: string; byHand: string } =>
+  windows
+    ? {
+        install: 'アップデートのインストーラーを起動できませんでした。',
+        byHand: 'リリースのページからインストーラー（keito_<バージョン>_x64-setup.exe）をダウンロードし、keito を終了してから実行して入れ替えることもできます。ページを開きますか？',
+      }
+    : {
+        install: 'アップデートを入れられませんでした。「アプリケーション」フォルダに入れた keito を開いているか確かめてください。',
+        byHand: 'リリースのページから dmg をダウンロードして入れ替えることもできます。ページを開きますか？',
+      };
+
 /** Whether a press is being taken through (asking, writing the boards …). */
 let going = false;
 
@@ -100,7 +119,7 @@ async function go(update: Update, phase: Phase): Promise<void> {
       await update.install();
     } catch (e) {
       set('downloaded');
-      return failed('アップデートを入れられませんでした。「アプリケーション」フォルダに入れた keito を開いているか確かめてください。', e);
+      return failed(failureWords().install, e);
     }
     set('installed');
   }
@@ -119,5 +138,5 @@ const reasonOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** Say what went wrong, and offer the page to update by hand from. */
 async function failed(what: string, e: unknown): Promise<void> {
-  if (await ask(`${what}\n\n理由: ${reasonOf(e)}\n\nリリースのページから dmg をダウンロードして入れ替えることもできます。ページを開きますか？`)) openLink(RELEASES);
+  if (await ask(`${what}\n\n理由: ${reasonOf(e)}\n\n${failureWords().byHand}`)) openLink(RELEASES);
 }
