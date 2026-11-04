@@ -354,7 +354,10 @@ export function Canvas() {
       // ⌘/Ctrl+Space switches the input source or opens Spotlight; the OS then
       // swallows the key-up, which would leave the canvas stuck in pan mode.
       // A focused button takes Space to be pressed, and an IME converting takes it to convert.
-      if (e.code !== 'Space' || e.isComposing || typing(e.target) || onControl(e.target)) return;
+      // (On the field that takes the IME's typing, a key the IME does not take is not converting,
+      // whatever Chrome says: see the keys in App.)
+      const composing = e.isComposing && !(isCatcher(e.target) && e.keyCode !== 229);
+      if (e.code !== 'Space' || composing || typing(e.target) || onControl(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return setSpace(false);
       e.preventDefault();
       setSpace(true);
@@ -1187,6 +1190,9 @@ function ImeCatcher({ onSpace }: { onSpace: () => void }) {
         // A window or the project menu came over the board (by a key) with the focus still here:
         // it is let go of before the IME starts on the key.
         if (overBoard()) return e.currentTarget.blur();
+        // A key the IME does not take (the IME off, an arrow …) changes nothing here: Chrome may
+        // yet put down an earlier Shift+1's "！" on it, which is still to be dropped.
+        if (e.keyCode !== 229) return;
         // Nothing being converted: the field is empty, or holds only an earlier Shift+1's "！" (the
         // IME lets go of it when the field is left, but Chrome may go on taking it as converting).
         const idle = /^[!！]?$/.test(e.currentTarget.textContent ?? '');
