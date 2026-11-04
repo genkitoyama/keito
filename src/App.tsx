@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { flushSync } from 'react-dom';
 import { Canvas, inGesture, insertImages, insertText, spawnFrom, zoomBy } from './canvas/Canvas';
-import { onControl } from './ui/keys';
+import { isCatcher, onControl } from './ui/keys';
 import { hasText } from './model/types';
 import { copyText, getSetting, setSetting } from './platform/io';
 import { copySelection, duplicateSelection, pasteClipboard, saveNow, useStore } from './model/store';
@@ -43,7 +43,13 @@ function useHotkeys() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target;
-      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) {
+      // The field that takes the IME's typing on a selected shape is the board's, not a field: only
+      // the keys the IME converts stay with it.
+      // (Told by keyCode 229 alone: once Shift+1's "！" is let go of, Chrome may go on marking the
+      // keys as composing, though the IME no longer takes them.)
+      const catcher = isCatcher(t);
+      if (catcher && e.keyCode === 229) return;
+      if (t instanceof HTMLElement && !catcher && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) {
         // Typing in a field keeps its keys, but saving, the project menu and search still answer
         // (in a browser, ⌘S would otherwise save the web page).
         // Escape leaves the field: a window it is in closes, the library closes from its search,
@@ -65,7 +71,7 @@ function useHotkeys() {
         else openSearch();
         return;
       }
-      if (e.isComposing) return;
+      if (e.isComposing && !catcher) return;
       // Mid-drag, keys would act on what is being dragged (a delete under the pointer, an undo of
       // the drag's own step): they wait until it is let go.
       if (inGesture()) return void e.preventDefault();
@@ -111,7 +117,8 @@ function useHotkeys() {
       else if (mod && key === 's') void saveNow();
       else if (mod && key === 'k') toggleProjectMenu();
       else if (mod && key === 'f') openSearch();
-      else if (mod && (key === '=' || key === '+')) zoomBy(1.25);
+      // On a Japanese keyboard ＋ is Shift+; — with Ctrl alone the key arrives as ';'.
+      else if (mod && (key === '=' || key === '+' || key === ';')) zoomBy(1.25);
       else if (mod && key === '-') zoomBy(0.8);
       else if (mod && key.startsWith('arrow') && nodeIds.length === 1) spawnFrom(nodeIds[0], key === 'arrowleft' ? 'left' : key === 'arrowright' ? 'right' : key === 'arrowup' ? 'top' : 'bottom');
       else if (mod) handled = false;
@@ -149,7 +156,7 @@ function useHotkeys() {
     // copied on the board.
     const onPaste = (e: ClipboardEvent) => {
       const t = e.target;
-      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (t instanceof HTMLElement && !isCatcher(t) && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
       // A window over the board (export, the boards list) or the project menu: the board is out of
       // reach, and nothing lands on it unseen.
       if (document.querySelector('.modal-bg, .project-menu')) return;

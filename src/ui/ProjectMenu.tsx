@@ -86,6 +86,10 @@ export function ProjectMenu() {
     openBoards();
   };
 
+  // Said when it opens or closes: the field that takes the IME's typing on a selected shape lets go
+  // of the focus while it is open (see Canvas's ImeCatcher).
+  useEffect(() => void window.dispatchEvent(new Event('keito:overlay')), [open]);
+
   useEffect(() => {
     if (!open) return;
     setAt(0);

@@ -332,6 +332,28 @@ textarea:focus {
   color: #a3aebb;
   pointer-events: none;
 }
+/* Holds the IME's typing on a selected shape (Windows): unseen until the IME converts in it. */
+.ime-catcher {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  min-width: 1px;
+  white-space: pre;
+  outline: none;
+  /* Not the board's user-select: none, which would keep the IME's text from going in. */
+  user-select: text;
+  -webkit-user-select: text;
+  opacity: 0;
+  pointer-events: none;
+  caret-color: transparent;
+}
+.ime-catcher.converting {
+  opacity: 1;
+  padding: 0 4px;
+  background: #fff;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1.5px var(--accent);
+  caret-color: var(--accent);
+}
 .quickbar {
   position: absolute;
   transform: translateX(-50%);

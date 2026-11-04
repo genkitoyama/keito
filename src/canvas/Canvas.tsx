@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import type { CSSProperties, MouseEvent as RMouseEvent, ReactNode, PointerEvent as RPointerEvent } from 'react';
 import { labelFont } from '../model/labels';
 import { hopOrder, DEVICE_NAME, deviceHead, type Dir, center, contains, intersects, isUnderlay, isTagged, labelPoint, nearestT, nodeAt, nodeRect, pathD, portPos, routeEdges, sidePoint, simplify, snap } from '../model/geometry';
@@ -13,7 +14,7 @@ import { shortcuts, tell } from '../platform/io';
 import { EdgeView, HopCaps, INK, LabelChip, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, framesInOrder, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 import { ContextMenu } from './ContextMenu';
-import { composing, onControl } from '../ui/keys';
+import { composing, isCatcher, onControl } from '../ui/keys';
 import { type Corner, type Drag, type Ghost, type Plan, SIDES, ACCENT, canConnect, st } from './drag';
 import { planConnect, planReconnect, planSpawn, ConnectGhost } from './connect';
 import { SharedMarks, CommentPins, EdgeHandles, segmentHits, distToSegment, previewLine, arrowGlyph } from './overlays';
@@ -277,10 +278,16 @@ export function Canvas() {
       // Pointer already gone (or synthetic) — the drag still works while over the canvas.
     }
   };
-  const doubleClick = (id: string): boolean => {
+  /**
+   * Whether this press is the second of a double-click on `id`. If it is, the press's own focusing
+   * is called off: it comes after the press is handled, and would take the focus from the text
+   * editor the double-click opens (an empty box just dropped would then be called off at once).
+   */
+  const doubleClick = (e: RPointerEvent, id: string): boolean => {
     const now = performance.now();
     const hit = lastClick.current.id === id && now - lastClick.current.t < 450;
     lastClick.current = { id: hit ? '' : id, t: now };
+    if (hit) e.preventDefault();
     return hit;
   };
 
@@ -296,7 +303,10 @@ export function Canvas() {
         const r = el.getBoundingClientRect();
         const px = e.clientX - r.left;
         const py = e.clientY - r.top;
-        const k = Math.min(4, Math.max(0.1, v.k * Math.exp(-e.deltaY * 0.01)));
+        // A pinch comes in small steps; a mouse wheel's notch is far larger (about 100px, and
+        // more on Windows with more lines per notch): capped, a notch zooms about as far as ＋/−.
+        const dy = Math.max(-25, Math.min(25, e.deltaY));
+        const k = Math.min(4, Math.max(0.1, v.k * Math.exp(-dy * 0.01)));
         st().setView({ k, x: px - ((px - v.x) * k) / v.k, y: py - ((py - v.y) * k) / v.k });
       } else {
         st().setView({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY });
@@ -339,12 +349,15 @@ export function Canvas() {
 
   useEffect(() => {
     const typing = (t: EventTarget | null): boolean =>
-      t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
+      t instanceof HTMLElement && !isCatcher(t) && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
     const down = (e: KeyboardEvent) => {
       // ⌘/Ctrl+Space switches the input source or opens Spotlight; the OS then
       // swallows the key-up, which would leave the canvas stuck in pan mode.
-      // A focused button takes Space to be pressed.
-      if (e.code !== 'Space' || typing(e.target) || onControl(e.target)) return;
+      // A focused button takes Space to be pressed, and an IME converting takes it to convert.
+      // (On the field that takes the IME's typing, a key the IME does not take is not converting,
+      // whatever Chrome says: see the keys in App.)
+      const composing = e.isComposing && !(isCatcher(e.target) && e.keyCode !== 229);
+      if (e.code !== 'Space' || composing || typing(e.target) || onControl(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return setSpace(false);
       e.preventDefault();
       setSpace(true);
@@ -410,7 +423,7 @@ export function Canvas() {
     // A box tool: a click puts one there, a drag draws it out to the size wanted.
     if (placesBox(tool) && !st().viewing) return begin(e, { kind: 'place', start: p });
     // Double-click on empty canvas drops a box and starts typing, like a whiteboard.
-    if (doubleClick('canvas') && !st().viewing) return dropBox(p);
+    if (doubleClick(e, 'canvas') && !st().viewing) return dropBox(p);
     const base = e.shiftKey ? st().selection : [];
     st().select(base);
     begin(e, { kind: 'marquee', start: p, base });
@@ -423,7 +436,7 @@ export function Canvas() {
     const s = st();
     // On an old state, a click shows what it was (in the panel), and nothing moves.
     if (s.viewing) return s.select(e.shiftKey ? (s.selection.includes(n.id) ? s.selection.filter((id) => id !== n.id) : [...s.selection, n.id]) : [n.id]);
-    if (doubleClick(n.id) && hasText(n)) {
+    if (doubleClick(e, n.id) && hasText(n)) {
       // Double-clicking the body of an area frame adds a box there; its title strip renames it.
       const p = world(e);
       if (n.type === 'frame' && p.y > n.y + frameTitleHeight(n)) return dropBox(p);
@@ -473,7 +486,7 @@ export function Canvas() {
     if (e.button !== 0 || tool !== 'select' || space || st().placing) return;
     e.stopPropagation();
     const s = st();
-    if (doubleClick(id) && !s.viewing) {
+    if (doubleClick(e, id) && !s.viewing) {
       s.select([id]);
       s.setEditing(id);
       return;
@@ -502,7 +515,7 @@ export function Canvas() {
     if (e.button !== 0 || tool !== 'select' || space || st().placing) return;
     e.stopPropagation();
     const s = st();
-    if (doubleClick(id) && !s.viewing) {
+    if (doubleClick(e, id) && !s.viewing) {
       s.select([id]);
       s.setEditing(id);
       return;
@@ -1035,6 +1048,7 @@ export function Canvas() {
         </g>
       </svg>
       {editing && <TextEditor key={editing} id={editing} />}
+      {CATCHES_IME && <ImeCatcher onSpace={() => setSpace(true)} />}
       {/* Keyed by the selection so an open menu never carries over to another object. */}
       {idle && selection.length > 0 && !menuAt && <QuickBar key={selection.join(',')} />}
       {menuAt && <ContextMenu at={menuAt} close={() => setMenuAt(null)} />}
@@ -1073,6 +1087,155 @@ function EmptyHint({ doc }: { doc: Doc }) {
       {lib?.set === 'equipment' && <span>エリア枠（F）で場所ごとに囲むと、機材リストの「設置場所」になります。</span>}
       {lib?.set === 'software' && <span>エリア枠（F）で動いている PC ごとに囲むと見やすくなります。</span>}
     </div>
+  );
+}
+
+/**
+ * Chrome on Windows tells the IME there is nothing to type into while no field has the focus, so
+ * with the IME on, the first key typed on a selected shape went in as a bare letter ("aか" for
+ * "aka"). There, a hidden field holds the focus while one thing that takes text is selected: the
+ * IME converts in it, shown over the shape, and what it puts down opens the shape's editor.
+ */
+const CATCHES_IME = typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows');
+
+/** A window (export, the boards list …) or the project menu over the board. */
+const overBoard = (): boolean => !!document.querySelector('.modal-bg, .project-menu');
+
+function ImeCatcher({ onSpace }: { onSpace: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [converting, setConverting] = useState(false);
+  // Shift+1 just pressed: its "！" is not the shape's.
+  const bang = useRef(false);
+  const only = useStore((s) => (s.selection.length === 1 && !s.editing && !s.viewing ? s.selection[0] : ''));
+  const doc = useStore((s) => s.doc);
+  const view = useStore((s) => s.view);
+  const panel = useStore((s) => s.panel);
+  const node = doc.nodes.find((n) => n.id === only);
+  const edge = node ? undefined : doc.edges.find((e) => e.id === only);
+  const takesText = node ? hasText(node) : !!edge;
+
+  // The field takes the focus only from no one: a field in a panel, the search, a menu keep theirs.
+  useEffect(() => {
+    if (!takesText) return;
+    // Where the press now held down began (null when none is).
+    let pressFrom: Element | null = null;
+    // `board`: a press on the board, whose text there is to keep is none (the focus put here
+    // takes the page's selection along, as a press on the board would let go of it anyway).
+    const hold = (board = false) => {
+      const el = ref.current;
+      const a = document.activeElement;
+      if (!el || (a && a !== document.body)) return;
+      // A window or the project menu over the board: typing there is not the shape's.
+      if (overBoard()) return;
+      // Text chosen elsewhere (a cell, a comment …) stays chosen, to be copied.
+      const sel = window.getSelection();
+      if (!board && sel && !sel.isCollapsed && !el.contains(sel.anchorNode)) return;
+      el.focus({ preventScroll: true });
+    };
+    // A window or the project menu coming over the board (by a key, the focus still here) has the
+    // field let go of the focus: the IME would convert in it unseen, the keys going to the menu.
+    // Gone again, the focus comes back.
+    const cover = () => {
+      const el = ref.current;
+      if (el && overBoard()) {
+        if (document.activeElement === el) el.blur();
+      } else hold();
+    };
+    cover();
+    const covered = () => setTimeout(cover);
+    const down = (e: PointerEvent) => {
+      pressFrom = e.target instanceof Element ? e.target : null;
+    };
+    // Once let go, after the click it makes (a button clicked lets go of the focus then).
+    const up = () => {
+      const board = !!pressFrom?.closest('.canvas');
+      pressFrom = null;
+      setTimeout(() => hold(board));
+    };
+    // A field left (Escape, a button let go of …) leaves the focus to no one: it comes back here.
+    // Not mid-press: what the press is for (choosing text …) is known once it is let go.
+    const out = (e: FocusEvent) => {
+      if (!e.relatedTarget && !pressFrom) setTimeout(() => hold());
+    };
+    const back = () => hold();
+    window.addEventListener('pointerdown', down, true);
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
+    document.addEventListener('focusout', out);
+    window.addEventListener('focus', back);
+    window.addEventListener('keito:overlay', covered);
+    return () => {
+      window.removeEventListener('pointerdown', down, true);
+      window.removeEventListener('pointerup', up, true);
+      window.removeEventListener('pointercancel', up, true);
+      document.removeEventListener('focusout', out);
+      window.removeEventListener('focus', back);
+      window.removeEventListener('keito:overlay', covered);
+    };
+    // (A window opening or closing is a change of panel.)
+  }, [only, takesText, panel]);
+
+  if (!takesText) return null;
+  const k = view.k;
+  const at = node ? { x: node.x + node.w / 2, y: node.y + node.h / 2 } : labelPoint(routeEdges(doc).get(only) ?? [{ x: 0, y: 0 }], edge?.labelAt);
+  return (
+    <div
+      ref={ref}
+      className={`ime-catcher${converting ? ' converting' : ''}`}
+      contentEditable
+      suppressContentEditableWarning
+      style={{ left: view.x + at.x * k, top: view.y + at.y * k, fontSize: 14 * k }}
+      // Shift+1 shows the whole board, as with the IME off; the IME takes it for a "！" to convert.
+      onKeyDown={(e) => {
+        // A window or the project menu came over the board (by a key) with the focus still here:
+        // it is let go of before the IME starts on the key.
+        if (overBoard()) return e.currentTarget.blur();
+        // A key the IME does not take (the IME off, an arrow …) changes nothing here: Chrome may
+        // yet put down an earlier Shift+1's "！" on it, which is still to be dropped.
+        if (e.keyCode !== 229) return;
+        // Nothing being converted: the field is empty, or holds only an earlier Shift+1's "！" (the
+        // IME lets go of it when the field is left, but Chrome may go on taking it as converting).
+        const idle = /^[!！]?$/.test(e.currentTarget.textContent ?? '');
+        bang.current = e.shiftKey && e.code === 'Digit1' && e.keyCode === 229 && idle;
+        if (bang.current) st().fit();
+      }}
+      onCompositionStart={(e) => {
+        if (overBoard()) e.currentTarget.blur();
+      }}
+      // Shown once there is something to convert: Space alone puts down a wide space at once.
+      onCompositionUpdate={(e) => {
+        // Under a window or the project menu, nothing is shown (and nothing is put down).
+        if (overBoard()) return setConverting(false);
+        // The "！" of Shift+1 is not shown, and leaving the field has the IME let go of it (the
+        // focus then comes back here).
+        if (bang.current && /^[!！]$/.test(e.data)) {
+          setConverting(false);
+          return e.currentTarget.blur();
+        }
+        bang.current = false;
+        setConverting(e.data.trim() !== '');
+      }}
+      onCompositionEnd={(e) => {
+        setConverting(false);
+        const text = e.data;
+        e.currentTarget.textContent = '';
+        // (Also an IME that puts the "！" down at once, without converting.)
+        const dropped = bang.current && /^[!！]$/.test(text);
+        bang.current = false;
+        if (dropped || !text || document.activeElement !== ref.current || overBoard()) return;
+        // With the IME on, Space arrives as the IME's own key (no code to know it by) and puts down
+        // a wide space: it is the hand for panning, as Space is with the IME off.
+        if (text.trim() === '') return onSpace();
+        // What the IME put down opens the editor and goes in there, in place of the text as it was
+        // (as a letter typed on a selected shape does).
+        flushSync(() => st().setEditing(only));
+        document.execCommand('insertText', false, text);
+      }}
+      // Anything put down here without converting (a wide space) is not kept.
+      onInput={(e) => {
+        if (!(e.nativeEvent as InputEvent).isComposing) e.currentTarget.textContent = '';
+      }}
+    />
   );
 }
 

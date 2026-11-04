@@ -21,6 +21,19 @@ import { readSerial } from '../src/model/load';
  */
 export const ID = /^(?!.*__)[A-Za-z0-9_-]{1,64}$/;
 
+/**
+ * Take a file away, if it is there. Not fs.rmSync: on Windows, Node 23.10 crashes outright (a
+ * segfault, the whole server gone) on a path with anything but ASCII in it, as a board's folder
+ * named in Japanese has. fs.unlinkSync is not affected.
+ */
+export function removeFile(file: string): void {
+  try {
+    fs.unlinkSync(file);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+  }
+}
+
 /** Where the boards live: KEITO_BOARDS, else the folder named in ~/.config/keito/config.json, else ./boards. */
 export function boardsRoot(fallback = path.resolve('boards')): string {
   if (process.env.KEITO_BOARDS) return path.resolve(process.env.KEITO_BOARDS);
@@ -110,7 +123,7 @@ export function locked<T>(root: string, change: () => T, wait = WAIT_MS): T {
         if (Date.now() - fs.statSync(file).mtimeMs > STALE_MS) {
           const aside = `${file}.${token}.stale`;
           fs.renameSync(file, aside);
-          fs.rmSync(aside, { force: true });
+          removeFile(aside);
         }
       } catch {
         // Let go or taken over meanwhile: try again.
@@ -123,7 +136,7 @@ export function locked<T>(root: string, change: () => T, wait = WAIT_MS): T {
     return change();
   } finally {
     try {
-      if (fs.readFileSync(file, 'utf8') === token) fs.rmSync(file, { force: true });
+      if (fs.readFileSync(file, 'utf8') === token) removeFile(file);
     } catch {
       // Already gone.
     }
@@ -148,7 +161,7 @@ export function writeWhole(file: string, data: string | Buffer): void {
     }
     fs.renameSync(tmp, file);
   } catch (e) {
-    fs.rmSync(tmp, { force: true });
+    removeFile(tmp);
     throw e;
   }
 }
@@ -302,7 +315,7 @@ export function store(root: string) {
     removeState(id: string, state: string): void {
       const dir = dirOf(id);
       const file = dir && path.join(dir, 'revisions', `${path.basename(state)}.json`);
-      if (file && fs.existsSync(file)) fs.rmSync(file);
+      if (file) removeFile(file);
     },
 
     /** Deleted boards, the most recently deleted first; a folder that cannot be read is left out. */
