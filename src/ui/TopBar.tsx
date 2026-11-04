@@ -10,6 +10,7 @@ import { ICON } from './icons';
 import type { Doc } from '../model/types';
 import { inlineImages, safeName } from '../platform/storage';
 import { ask, pickTextFile, saveFile, tell } from '../platform/io';
+import { startUpdate, useUpdate } from '../platform/update';
 
 /** Export the board as one self-contained file, pictures included. */
 export async function saveBoardFile(): Promise<void> {
@@ -34,6 +35,25 @@ async function openFile(): Promise<void> {
   } catch (e) {
     void tell(`開けませんでした: ${e instanceof Error ? e.message : e}`);
   }
+}
+
+/** A newer version of the app, when one is found (the desktop app): one press updates to it. */
+function UpdateButton() {
+  const { update, phase, share } = useUpdate();
+  if (!update) return null;
+  const label =
+    phase === 'downloading' ? `ダウンロード中…${share == null ? '' : ` ${Math.round(share * 100)}%`}`
+    : phase === 'installing' ? 'アップデート中…'
+    : phase === 'restarting' ? '再起動中…'
+    : phase === 'offered' ? `${update.version} にアップデート`
+    : `再起動して ${update.version} に`;
+  const working = phase === 'downloading' || phase === 'installing' || phase === 'restarting';
+  return (
+    <button className="update-btn" disabled={working} onClick={() => void startUpdate()} data-tip={phase === 'offered' ? `新しい keito ${update.version} があります。ダウンロードして、ボードを保存してから再起動します` : 'ボードを保存してから再起動して、新しい版にします'}>
+      {ICON.update}
+      {label}
+    </button>
+  );
 }
 
 export function TopBar() {
@@ -113,6 +133,7 @@ export function TopBar() {
         </span>
       )}
       <span className="grow" />
+      <UpdateButton />
       {/* Panels that open beside the drawing, then the one thing the board is made for: export. */}
       {kind.lists.length > 0 && (
         <button className={`ghost${docks.lists ? ' on' : ''}`} onClick={() => st().setDock('lists')}>

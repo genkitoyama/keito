@@ -1,14 +1,17 @@
+import { getVersion } from '@tauri-apps/api/app';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { ask as askDialog, message } from '@tauri-apps/plugin-dialog';
 import { openUrl } from '@tauri-apps/plugin-opener';
+import { check } from '@tauri-apps/plugin-updater';
 import { boardKind, readBoard, readSerial } from '../model/load';
 import { boot, flushBeforeClose, useStore } from '../model/store';
 import { upgradePreset } from '../model/video';
 import type { Doc, UserPreset } from '../model/types';
 import { type Platform, usePlatform } from './io';
 import { type Backend, type BoardInfo, type BoardNews, Conflict, Gone, type TrashedBoard, WRITER, assetOf } from './storage';
+import { offerUpdate, startUpdate } from './update';
 
 /**
  * The desktop app (Tauri): boards in a folder on this machine through the app's own commands
@@ -176,6 +179,45 @@ async function settleFolder(): Promise<void> {
   await invoke('set_boards_folder', { path: folder.path });
 }
 
+/** How often the app looks for a newer version while it stays open (it looks on starting too). */
+const LOOK_EVERY = 6 * 60 * 60 * 1000;
+
+/**
+ * Look for a newer version of the app (on the releases, see plugins.updater in tauri.conf.json) and
+ * offer it. Asked for from the menu, it says what it found and offers to update at once; looking by
+ * itself, it says nothing unless one is found (the app is often used where there is no network).
+ */
+async function lookForUpdate(asked: boolean): Promise<void> {
+  // A build being worked on is not an installed app: there is nothing in it to replace.
+  if (import.meta.env.DEV) return void (asked && (await system.tell('開発中のビルドはアップデートしません。')));
+  let found: Awaited<ReturnType<typeof check>>;
+  try {
+    found = await check({ timeout: 30_000 });
+  } catch (e) {
+    if (asked) await system.tell(`アップデートを確認できませんでした。\n\n理由: ${e instanceof Error ? e.message : String(e)}`);
+    return;
+  }
+  if (!found) return void (asked && (await system.tell(`お使いの keito ${await getVersion()} が最新です。`)));
+  const update = found;
+  offerUpdate({
+    version: update.version,
+    download: (progress) => {
+      let total = 0;
+      let got = 0;
+      return update.download((e) => {
+        if (e.event === 'Started') total = e.data.contentLength ?? 0;
+        else if (e.event === 'Progress') got += e.data.chunkLength;
+        else got = total;
+        progress(total ? Math.min(1, got / total) : null);
+      });
+    },
+    install: () => update.install(),
+    relaunch: () => invoke('relaunch'),
+    close: () => void update.close().catch(() => {}),
+  });
+  if (asked) await startUpdate();
+}
+
 /** Start the desktop app: its ways in, its folder settled, its store connected, and its window closing only once all is written. */
 export async function startDesktop(): Promise<void> {
   usePlatform(system);
@@ -199,6 +241,8 @@ export async function startDesktop(): Promise<void> {
   });
   // keito > 設定… (⌘,)
   void listen('open-settings', () => useStore.getState().setPanel('settings'));
+  // keito > アップデートを確認…
+  void listen('check-update', () => void lookForUpdate(true));
   try {
     await settleFolder();
     await boot(desktop);
@@ -206,4 +250,7 @@ export async function startDesktop(): Promise<void> {
     console.error(e);
     await system.tell(`ボードのフォルダを開けませんでした。\n\n${e instanceof Error ? e.message : String(e)}\n\n表示 > 再読み込み（⌘R）でやり直せます。`);
   }
+  // Looked for once the boards are open, so that the folder asked for on first launch comes first.
+  void lookForUpdate(false);
+  setInterval(() => void lookForUpdate(false), LOOK_EVERY);
 }
