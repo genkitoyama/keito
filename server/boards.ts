@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Server, ServerResponse } from 'node:http';
 import type { Connect, Plugin } from 'vite';
-import { Busy, Conflict, Gone, ID, SERVER_FILE, boardsRoot, store } from './store';
+import { Busy, Conflict, Gone, ID, SERVER_FILE, boardsRoot, removeFile, store } from './store';
 
 /**
  * Board storage on disk, served by the dev / preview server:
@@ -191,7 +191,7 @@ export function keitoBoards(root = boardsRoot()): Plugin {
           return boards.writeInto(id, 'revisions', `${name}.json`, text) ? send(204) : send(404, { error: 'save the board first' });
         }
         if (req.method === 'DELETE') {
-          if (file && fs.existsSync(file)) fs.rmSync(file);
+          if (file) removeFile(file);
           return send(204);
         }
         return send(405);
@@ -256,7 +256,7 @@ export function keitoBoards(root = boardsRoot()): Plugin {
     });
     const unsay = () => {
       try {
-        if (JSON.parse(fs.readFileSync(file, 'utf8')).pid === process.pid) fs.rmSync(file);
+        if (JSON.parse(fs.readFileSync(file, 'utf8')).pid === process.pid) removeFile(file);
       } catch {
         // Not ours, or gone already.
       }
