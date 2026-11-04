@@ -107,6 +107,9 @@ export function QuickBar() {
       open.classList.toggle('up', above ? roomUp >= need || roomUp >= roomDown : roomDown < need && roomUp > roomDown);
     }
   });
+  // (Every hook above this: what is selected may leave the board without the selection changing,
+  // and the bar is then gone, not broken.)
+  const burst = useBurst();
   if (!anchor) return null;
   const one = nodes.length === 1 ? nodes[0] : undefined;
   const patch = (p: Partial<Node>) => {
@@ -119,7 +122,6 @@ export function QuickBar() {
   const toggle = (m: 'shape' | 'color' | 'size' | 'line') => () => setMenu(menu === m ? null : m);
   // Cables are colour-coded by type, so a new colour goes to the whole type unless told otherwise; arrows are coloured one by one.
   const all = wide ?? (!!edge && edge.signal !== 'flow');
-  const burst = useBurst();
   // A colour from the picker arrives over and over while it is dragged round: one undo step for it all.
   const paint = (c: string | null, close = true) => {
     if (!close) burst();
