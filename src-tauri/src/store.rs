@@ -446,6 +446,25 @@ mod tests {
     }
 
     #[test]
+    fn writes_board_keys_in_received_order() {
+        let s = temp();
+        // Key order, including inside objects, is part of the page's drawing fingerprint.
+        let text = r#"{
+  "version": 1,
+  "id": "aaa111",
+  "meta": {
+    "title": "配置図",
+    "project": "P"
+  },
+  "nodes": [],
+  "edges": [],
+  "serial": 1
+}"#;
+        s.write(serde_json::from_str(text).unwrap(), None).unwrap();
+        assert_eq!(s.read("aaa111").unwrap().unwrap(), text);
+    }
+
+    #[test]
     fn never_brings_back_a_board_deleted_meanwhile() {
         let s = temp();
         s.write(board("aaa111", "配置図"), None).unwrap();
