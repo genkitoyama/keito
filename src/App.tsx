@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { flushSync } from 'react-dom';
 import { Canvas, inGesture, insertImages, insertText, spawnFrom, zoomBy } from './canvas/Canvas';
-import { isCatcher, onControl } from './ui/keys';
+import { isCatcher, isField, onControl, overBoard } from './ui/keys';
 import { hasText } from './model/types';
 import { copyText, getSetting, setSetting } from './platform/io';
 import { copySelection, duplicateSelection, pasteClipboard, saveNow, useStore } from './model/store';
@@ -49,7 +49,7 @@ function useHotkeys() {
       // keys as composing, though the IME no longer takes them.)
       const catcher = isCatcher(t);
       if (catcher && e.keyCode === 229) return;
-      if (t instanceof HTMLElement && !catcher && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) {
+      if (isField(t)) {
         // Typing in a field keeps its keys, but saving, the project menu and search still answer
         // (in a browser, ⌘S would otherwise save the web page).
         // Escape leaves the field: a window it is in closes, the library closes from its search,
@@ -156,10 +156,10 @@ function useHotkeys() {
     // copied on the board.
     const onPaste = (e: ClipboardEvent) => {
       const t = e.target;
-      if (t instanceof HTMLElement && !isCatcher(t) && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (isField(t)) return;
       // A window over the board (export, the boards list) or the project menu: the board is out of
       // reach, and nothing lands on it unseen.
-      if (document.querySelector('.modal-bg, .project-menu')) return;
+      if (overBoard()) return;
       const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
       const text = e.clipboardData?.getData('text/plain') ?? '';
       e.preventDefault();
