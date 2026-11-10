@@ -14,7 +14,7 @@ import { shortcuts, tell } from '../platform/io';
 import { EdgeView, HopCaps, INK, LabelChip, NodeView, SCREEN, STICKY_HEAD, TEXT, edgeLabelBox, edgeTags, frameTitleHeight, framesInOrder, textHeightFor, textSize, textWeight, textWidth } from './render';
 import { QuickBar } from '../ui/QuickBar';
 import { ContextMenu } from './ContextMenu';
-import { composing, isCatcher, onControl } from '../ui/keys';
+import { composing, isCatcher, isField, onControl, overBoard } from '../ui/keys';
 import { type Corner, type Drag, type Ghost, type Plan, SIDES, ACCENT, canConnect, st } from './drag';
 import { planConnect, planReconnect, planSpawn, ConnectGhost } from './connect';
 import { SharedMarks, CommentPins, EdgeHandles, segmentHits, distToSegment, previewLine, arrowGlyph } from './overlays';
@@ -348,8 +348,6 @@ export function Canvas() {
   }, []);
 
   useEffect(() => {
-    const typing = (t: EventTarget | null): boolean =>
-      t instanceof HTMLElement && !isCatcher(t) && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
     const down = (e: KeyboardEvent) => {
       // ⌘/Ctrl+Space switches the input source or opens Spotlight; the OS then
       // swallows the key-up, which would leave the canvas stuck in pan mode.
@@ -357,7 +355,7 @@ export function Canvas() {
       // (On the field that takes the IME's typing, a key the IME does not take is not converting,
       // whatever Chrome says: see the keys in App.)
       const composing = e.isComposing && !(isCatcher(e.target) && e.keyCode !== 229);
-      if (e.code !== 'Space' || composing || typing(e.target) || onControl(e.target)) return;
+      if (e.code !== 'Space' || composing || isField(e.target) || onControl(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return setSpace(false);
       e.preventDefault();
       setSpace(true);
@@ -1097,9 +1095,6 @@ function EmptyHint({ doc }: { doc: Doc }) {
  * IME converts in it, shown over the shape, and what it puts down opens the shape's editor.
  */
 const CATCHES_IME = typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows');
-
-/** A window (export, the boards list …) or the project menu over the board. */
-const overBoard = (): boolean => !!document.querySelector('.modal-bg, .project-menu');
 
 function ImeCatcher({ onSpace }: { onSpace: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
