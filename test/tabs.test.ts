@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import type { Doc } from '../src/model/types';
+import type { BoardInfo } from '../src/platform/storage';
 import { blank } from './helpers';
 import { stubPage, versionedDisk } from './page';
 
@@ -38,5 +40,34 @@ describe('going to another tab and back', () => {
     await vi.advanceTimersByTimeAsync(10);
     expect(s().doc.meta.title).toBe('A from the command line');
     expect(s().past).toHaveLength(0);
+  });
+});
+
+describe('the next and the previous tab (⌘⇧] / ⌘⇧[)', () => {
+  const boards: BoardInfo[] = [
+    { id: 'seq', title: 'A', updated: 0, project: 'P', kind: 'sequence' },
+    { id: 'c', title: 'C', updated: 0, project: 'P' },
+    { id: 'b', title: 'B', updated: 0, project: 'P', kind: 'system' },
+    { id: 'free', title: 'Z', updated: 0, project: 'P', kind: 'free' },
+    { id: 'other', title: 'O', updated: 0, project: 'Q' },
+  ];
+  const open = (id: string): Doc => {
+    const b = boards.find((x) => x.id === id)!;
+    return { ...blank(id), kind: b.kind, meta: { title: b.title, project: b.project ?? '' } };
+  };
+
+  it('goes along the tabs as they are shown, and round from either end', async () => {
+    const { boardBeside } = await import('../src/ui/BoardTabs');
+    // The tabs: B, C (system), A (sequence), Z (free).
+    expect(boardBeside(open('b'), boards, 1)).toBe('c');
+    expect(boardBeside(open('c'), boards, 1)).toBe('seq');
+    expect(boardBeside(open('free'), boards, 1)).toBe('b');
+    expect(boardBeside(open('b'), boards, -1)).toBe('free');
+  });
+
+  it('goes nowhere from a board alone in its project, or in none', async () => {
+    const { boardBeside } = await import('../src/ui/BoardTabs');
+    expect(boardBeside(open('other'), boards, 1)).toBeUndefined();
+    expect(boardBeside({ ...blank('x'), meta: { title: 'X', project: '' } }, boards, -1)).toBeUndefined();
   });
 });

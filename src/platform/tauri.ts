@@ -9,6 +9,7 @@ import { boardKind, readBoard, readSerial } from '../model/load';
 import { boot, flushBeforeClose, useStore } from '../model/store';
 import { upgradePreset } from '../model/video';
 import { isCatcher } from '../ui/keys';
+import { listenTabKeys } from '../ui/tabKeys';
 import type { Doc, UserPreset } from '../model/types';
 import { type Platform, shortcuts, usePlatform } from './io';
 import { type Backend, type BoardInfo, type BoardNews, Conflict, Gone, type TrashedBoard, WRITER, assetOf } from './storage';
@@ -274,6 +275,7 @@ export async function startDesktop(): Promise<void> {
         t instanceof HTMLElement && !isCatcher(t) && (t.isContentEditable || /^(INPUT|TEXTAREA)$/.test(t.tagName));
       if (!editable && !window.getSelection()?.toString()) e.preventDefault();
     });
+  listenTabKeys();
   // keito > アップデートを確認…
   void listen('check-update', () => void lookForUpdate(true));
   try {

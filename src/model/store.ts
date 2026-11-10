@@ -239,7 +239,8 @@ export const useStore = create<State>((set, get) => ({
     set({ view: { k, x: (width - box.w * k) / 2 - box.x * k, y: (height - box.h * k) / 2 - box.y * k } });
   },
   openBoard: (id) => void run(async (b) => {
-    if (id === get().doc.id) return;
+    // Opening the board on screen cancels a load still in progress (a quick click back to its tab).
+    if (id === get().doc.id) return void (loading = undefined);
     const was = get();
     const doc = await switchTo(b, id);
     if (doc === 'stayed') return showInUrl(get().doc.id);
@@ -776,8 +777,14 @@ async function flush(): Promise<boolean> {
   return !!s.viewing || !s.ready || (s.doc === stored && s.saving !== 'conflict' && s.saving !== 'gone' && s.saving !== 'error');
 }
 
-/** The latest request to open a board: an earlier one that finishes later is dropped. */
-let opening = 0;
+/**
+ * The latest request to open a board, until its load ends or is cancelled: an earlier one that
+ * finishes later is dropped.
+ */
+let loading: { id: string } | undefined;
+
+/** The id of the board being loaded, if any. */
+export const boardLoading = (): string | undefined => loading?.id;
 
 /** Leave the board on screen: its state kept in the history, its changes written (or let go). */
 async function leave(b: Backend): Promise<boolean> {
@@ -791,10 +798,15 @@ async function leave(b: Backend): Promise<boolean> {
  * asked for meanwhile (that one is shown, not this).
  */
 async function switchTo(b: Backend, id: string): Promise<Doc | null | 'stayed' | 'superseded'> {
-  const ticket = ++opening;
-  if (!(await leave(b))) return 'stayed';
-  const doc = await tryLoad(b, id);
-  return ticket === opening ? doc : 'superseded';
+  const request = { id };
+  loading = request;
+  try {
+    if (!(await leave(b))) return 'stayed';
+    const doc = await tryLoad(b, id);
+    return loading === request ? doc : 'superseded';
+  } finally {
+    if (loading === request) loading = undefined;
+  }
 }
 
 /**
