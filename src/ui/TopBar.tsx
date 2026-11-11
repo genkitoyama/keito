@@ -132,23 +132,24 @@ export function TopBar() {
           {saving === 'error' && <button onClick={() => void saveNow()}>もう一度</button>}
         </span>
       )}
-      <span className="grow" />
-      <UpdateButton />
-      {/* Panels that open beside the drawing, then the one thing the board is made for: export. */}
-      {kind.lists.length > 0 && (
-        <button className={`ghost${docks.lists ? ' on' : ''}`} onClick={() => st().setDock('lists')}>
-          {ICON.table}
-          {kind.listsLabel}
+      <div className="topbar-end">
+        <UpdateButton />
+        {/* Panels that open beside the drawing, then the one thing the board is made for: export. */}
+        {kind.lists.length > 0 && (
+          <button className={`ghost${docks.lists ? ' on' : ''}`} onClick={() => st().setDock('lists')}>
+            {ICON.table}
+            {kind.listsLabel}
+          </button>
+        )}
+        <button className={`ghost${docks.comments ? ' on' : ''}`} onClick={() => st().setDock('comments')} data-tip="付箋（コメント）の一覧">
+          {ICON.comment}
+          コメント{comments > 0 && <b className="count">{comments}</b>}
         </button>
-      )}
-      <button className={`ghost${docks.comments ? ' on' : ''}`} onClick={() => st().setDock('comments')} data-tip="付箋（コメント）の一覧">
-        {ICON.comment}
-        コメント{comments > 0 && <b className="count">{comments}</b>}
-      </button>
-      <button className="primary export-btn" onClick={() => st().setPanel('export')}>
-        {ICON.download}
-        エクスポート
-      </button>
+        <button className="primary export-btn" onClick={() => st().setPanel('export')}>
+          {ICON.download}
+          エクスポート
+        </button>
+      </div>
     </header>
   );
 }
