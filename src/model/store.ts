@@ -240,14 +240,10 @@ export const useStore = create<State>((set, get) => ({
   },
   openBoard: (id) => void run(async (b) => {
     if (id === get().doc.id) return;
-    const was = get();
     const doc = await switchTo(b, id);
     if (doc === 'stayed') return showInUrl(get().doc.id);
     if (doc === 'superseded') return;
-    if (doc) {
-      if (!was.viewing) kept.set(was.doc.id, { past: was.past, future: was.future, view: was.view, print: fingerprint(was.doc) });
-      return show(doc);
-    }
+    if (doc) return show(doc);
     // Deleted elsewhere (another tab, the command line), or its file broken: the list follows.
     set({ boards: await b.list() });
     showInUrl(get().doc.id);
@@ -786,15 +782,19 @@ async function leave(b: Backend): Promise<boolean> {
 }
 
 /**
- * Leave the board on screen for another and read that one in: the board, or null when it cannot
- * be read; 'stayed' when the user kept the one on screen, 'superseded' when another board was
- * asked for meanwhile (that one is shown, not this).
+ * Leave the board on screen for another and read that one in: the board, the one left keeping its
+ * undo steps and view for coming back to it; null when it cannot be read; 'stayed' when the user
+ * kept the one on screen, 'superseded' when another board was asked for meanwhile (that one is
+ * shown, not this).
  */
 async function switchTo(b: Backend, id: string): Promise<Doc | null | 'stayed' | 'superseded'> {
   const ticket = ++opening;
+  const was = useStore.getState();
   if (!(await leave(b))) return 'stayed';
   const doc = await tryLoad(b, id);
-  return ticket === opening ? doc : 'superseded';
+  if (ticket !== opening) return 'superseded';
+  if (doc && !was.viewing) kept.set(was.doc.id, { past: was.past, future: was.future, view: was.view, print: fingerprint(was.doc) });
+  return doc;
 }
 
 /**

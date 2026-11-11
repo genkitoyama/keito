@@ -39,4 +39,21 @@ describe('going to another tab and back', () => {
     expect(s().doc.meta.title).toBe('A from the command line');
     expect(s().past).toHaveLength(0);
   });
+
+  it('keeps the board’s undo steps when it was left for a part of another board (the shared panel)', async () => {
+    const { boot, useStore } = await import('../src/model/store');
+    const part = { id: 'n1', type: 'text' as const, x: 0, y: 0, w: 10, h: 10, text: 'shared' };
+    const { backend } = versionedDisk([{ ...blank('aaa'), meta: { title: 'A', project: 'P' } }, { ...blank('bbb'), meta: { title: 'B', project: 'P' }, nodes: [part] }]);
+    page.storage.set('keito:current', 'aaa');
+    await boot(backend);
+    const s = () => useStore.getState();
+    s().mutate((d) => ({ ...d, meta: { ...d.meta, title: 'A2' } }));
+    s().openAt('bbb', 'n1');
+    await vi.advanceTimersByTimeAsync(10);
+    expect(s().doc.id).toBe('bbb');
+    s().openBoard('aaa');
+    await vi.advanceTimersByTimeAsync(10);
+    s().undo();
+    expect(s().doc.meta.title).toBe('A');
+  });
 });
