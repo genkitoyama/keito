@@ -63,3 +63,34 @@ describe('⌘⇧] / ⌘⇧[ pressed again before the board opens', () => {
     expect(await shown()).toBe('a');
   });
 });
+
+describe('the keys for the next and the previous tab', () => {
+  type Mods = Partial<Pick<KeyboardEvent, 'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey'>>;
+  const key = (k: string, mods: Mods = {}) => ({ key: k, metaKey: true, ctrlKey: false, shiftKey: true, altKey: false, ...mods });
+
+  it('takes ⌘⇧] / ⌘⇧[, shifted or not, and Ctrl in place of ⌘', async () => {
+    const { tabStep } = await import('../src/ui/tabKeys');
+    expect(tabStep(key(']'), false)).toBe(1);
+    expect(tabStep(key('}'), false)).toBe(1);
+    expect(tabStep(key('['), false)).toBe(-1);
+    expect(tabStep(key('{', { metaKey: false, ctrlKey: true }), false)).toBe(-1);
+    // From a text field too: the edit is committed first.
+    expect(tabStep(key(']'), true)).toBe(1);
+  });
+
+  it('takes ⌘⇧→ / ⌘⇧← too, but leaves them to select text in a field', async () => {
+    const { tabStep } = await import('../src/ui/tabKeys');
+    expect(tabStep(key('ArrowRight'), false)).toBe(1);
+    expect(tabStep(key('ArrowLeft', { metaKey: false, ctrlKey: true }), false)).toBe(-1);
+    expect(tabStep(key('ArrowRight'), true)).toBe(0);
+    expect(tabStep(key('ArrowLeft'), true)).toBe(0);
+  });
+
+  it('leaves other keys alone: ⌘+arrow (the next shape), ⌘⇧↑, and any with ⌥', async () => {
+    const { tabStep } = await import('../src/ui/tabKeys');
+    expect(tabStep(key('ArrowRight', { shiftKey: false }), false)).toBe(0);
+    expect(tabStep(key('ArrowUp'), false)).toBe(0);
+    expect(tabStep(key(']', { altKey: true }), false)).toBe(0);
+    expect(tabStep(key(']', { metaKey: false }), false)).toBe(0);
+  });
+});

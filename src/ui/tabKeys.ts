@@ -3,14 +3,18 @@ import { boardBeside } from './BoardTabs';
 import { composing, isCatcher, isField, overBoard } from './keys';
 
 /**
- * ⌘⇧] and ⌘⇧[ (Ctrl+Shift on Windows), the keys other apps use for the next and the previous tab:
- * 1, −1, or 0 for any other key. Matched by e.key, not e.code: the keys sit elsewhere on a Japanese
- * keyboard, and with ⌘ held the character may come shifted ({ }) or not.
+ * The tab a key goes to: 1 (the next), −1 (the previous), or 0 for any other key.
+ *
+ * ⌘⇧] and ⌘⇧[ (Ctrl+Shift on Windows) are the keys other apps use for the next and the previous
+ * tab. They are matched by e.key, not e.code: the keys sit elsewhere on a Japanese keyboard, and with
+ * ⌘ held the character may come shifted ({ }) or not. ⌘⇧→ and ⌘⇧← do the same on any keyboard, but
+ * not while `typing` in a text field, where they select the text to the line's ends (by words on
+ * Windows).
  */
-function tabStep(e: KeyboardEvent): -1 | 0 | 1 {
+export function tabStep(e: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey'>, typing: boolean): -1 | 0 | 1 {
   if (!(e.metaKey || e.ctrlKey) || !e.shiftKey || e.altKey) return 0;
-  if (e.key === '[' || e.key === '{') return -1;
-  if (e.key === ']' || e.key === '}') return 1;
+  if (e.key === '[' || e.key === '{' || (e.key === 'ArrowLeft' && !typing)) return -1;
+  if (e.key === ']' || e.key === '}' || (e.key === 'ArrowRight' && !typing)) return 1;
   return 0;
 }
 
@@ -27,7 +31,7 @@ export function nextTab(step: 1 | -1): string | undefined {
 let pressed = false;
 
 function onTabKey(e: KeyboardEvent): void {
-  const step = tabStep(e);
+  const step = tabStep(e, isField(e.target));
   if (!step) return;
   // Ignored during IME conversion (on the hidden IME field of a selected shape, keyCode 229 alone
   // tells it, as in App), during a drag, and under a dialog or the project menu.
@@ -37,8 +41,9 @@ function onTabKey(e: KeyboardEvent): void {
   e.stopPropagation();
   let to = nextTab(step);
   if (!to) return;
-  // As a click on a tab does, blur the focused field first: its edit is committed, and a project
-  // name just typed there changes the tabs, so the target is computed again.
+  // As a click on a tab does, blur the focused field first (only ⌘⇧] / ⌘⇧[ come this far from one):
+  // its edit is committed, and a project name just typed there changes the tabs, so the target is
+  // computed again.
   const field = document.activeElement;
   if (isField(field)) {
     field.blur();
@@ -48,8 +53,8 @@ function onTabKey(e: KeyboardEvent): void {
 }
 
 /**
- * ⌘⇧] / ⌘⇧[ in the desktop app (in a browser, these keys switch the browser's own tabs). Listened
- * to in the capture phase: the board's text editor stops key events from bubbling.
+ * ⌘⇧] / ⌘⇧[ and ⌘⇧→ / ⌘⇧← in the desktop app (in a browser, the first switch the browser's own
+ * tabs). Listened to in the capture phase: the board's text editor stops key events from bubbling.
  */
 export function listenTabKeys(): void {
   const track = (e: PointerEvent) => void (pressed = e.buttons !== 0);

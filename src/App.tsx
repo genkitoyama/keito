@@ -120,7 +120,8 @@ function useHotkeys() {
       // On a Japanese keyboard ＋ is Shift+; — with Ctrl alone the key arrives as ';'.
       else if (mod && (key === '=' || key === '+' || key === ';')) zoomBy(1.25);
       else if (mod && key === '-') zoomBy(0.8);
-      else if (mod && key.startsWith('arrow') && nodeIds.length === 1) spawnFrom(nodeIds[0], key === 'arrowleft' ? 'left' : key === 'arrowright' ? 'right' : key === 'arrowup' ? 'top' : 'bottom');
+      // ⌘+arrow alone: with Shift, it goes to the next or the previous board in the desktop app (see tabKeys).
+      else if (mod && !e.shiftKey && key.startsWith('arrow') && nodeIds.length === 1) spawnFrom(nodeIds[0], key === 'arrowleft' ? 'left' : key === 'arrowright' ? 'right' : key === 'arrowup' ? 'top' : 'bottom');
       else if (mod) handled = false;
       else if (key === 'backspace' || key === 'delete') s.removeIds(s.selection);
       // Escape lets go of the nearest thing first: what waits to be placed, the tool, the selection,
