@@ -12,13 +12,31 @@ export function tabOrder<T extends { kind?: Doc['kind']; title: string }>(list: 
 }
 
 /** The open board's project as tabs (the open board as it is now, its title or kind just edited included). */
-export function useProjectTabs(): BoardInfo[] {
-  const doc = useStore((s) => s.doc);
-  const boards = useStore((s) => s.boards);
+function projectTabs(doc: Doc, boards: BoardInfo[]): BoardInfo[] {
   const project = doc.meta.project?.trim();
   const here: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now(), project: doc.meta.project || undefined, kind: doc.kind };
   if (!project) return [here];
   return tabOrder([here, ...boards.filter((b) => b.id !== doc.id && (b.project ?? '').trim() === project)]);
+}
+
+/** projectTabs for the store's open board, re-rendered as it or the boards change. */
+export function useProjectTabs(): BoardInfo[] {
+  const doc = useStore((s) => s.doc);
+  const boards = useStore((s) => s.boards);
+  return projectTabs(doc, boards);
+}
+
+/**
+ * The id of the tab `step` tabs away (−1: back) from the tab `from`, or from the open board's tab when
+ * `from` is not one of them; past either end, it wraps round. Undefined when the open board's project
+ * has only one tab.
+ */
+export function boardBeside(doc: Doc, boards: BoardInfo[], step: 1 | -1, from?: string): string | undefined {
+  const tabs = projectTabs(doc, boards);
+  if (tabs.length < 2) return undefined;
+  const at = tabs.findIndex((b) => b.id === from);
+  const here = at >= 0 ? at : tabs.findIndex((b) => b.id === doc.id);
+  return tabs[(here + step + tabs.length) % tabs.length].id;
 }
 
 /** The project's boards as tabs under the top bar: one click to another board of the same project. */
