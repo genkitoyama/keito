@@ -37,9 +37,19 @@ fi
 export APPLE_SIGNING_IDENTITY
 notarize=1
 [ "${KEITO_SKIP_NOTARIZE:-}" = 1 ] && notarize=0
-if [ "$notarize" = 1 ] && ! xcrun notarytool history --keychain-profile "$profile" >/dev/null 2>&1; then
-  echo "公証用の認証情報（キーチェーンのプロファイル \"$profile\"）が見つかりません。先にこれを一度実行してください:" >&2
-  echo "  xcrun notarytool store-credentials $profile --apple-id <Apple ID> --team-id <チーム ID>" >&2
+# The notarization credentials, tried now rather than after the build. Not kept at all, it says how
+# to keep them; refused by Apple (an agreement to accept, the network …), it shows Apple's own words.
+if [ "$notarize" = 1 ] && ! notary="$(xcrun notarytool history --keychain-profile "$profile" 2>&1)"; then
+  if [[ "$notary" == *"No Keychain password item found"* ]]; then
+    echo "公証用の認証情報（キーチェーンのプロファイル \"$profile\"）が見つかりません。先にこれを一度実行してください:" >&2
+    echo "  xcrun notarytool store-credentials $profile --apple-id <Apple ID> --team-id <チーム ID>" >&2
+  else
+    echo "公証用の認証情報（キーチェーンのプロファイル \"$profile\"）で、Apple に受け付けてもらえませんでした:" >&2
+    printf '%s\n' "$notary" | sed 's/^/  /' >&2
+    if [[ "$notary" == *"agreement"* ]]; then
+      echo "Apple Developer Program の規約が更新されて、同意が要るようです。チームのアカウント所有者が https://developer.apple.com/account で同意すると、数分で通るようになります。" >&2
+    fi
+  fi
   exit 1
 fi
 

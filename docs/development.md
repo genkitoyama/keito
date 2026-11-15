@@ -58,6 +58,7 @@ macOS 版は、ほかの Mac でも警告なしに開けるように、Developer
 
 - 署名には、キーチェーンにある「Developer ID Application」証明書を使います。複数あるときはどれを使うか決めないと止まるので、`KEITO_SIGNING_TEAM=<チーム ID> npm run app:release` で選びます（証明書の名前ごと `APPLE_SIGNING_IDENTITY` で指定してもかまいません）。公証の認証情報も、同じチームのものを保存します。
 - 公証に使うプロファイル名は `KEITO_NOTARY_PROFILE` で変えられます（既定は `keito`）。
+- ビルドの前に、公証の認証情報で Apple に問い合わせて確かめます。Apple に断られたときは、Apple のメッセージをそのまま出して止まります。「A required agreement is missing or has expired」と出たときは、Apple Developer Program の規約が更新されています。チームのアカウント所有者が https://developer.apple.com/account で同意すると、数分で通るようになります。
 - 署名だけで公証しないときは `KEITO_SKIP_NOTARIZE=1 npm run app:release` です。この Mac で使うだけなら、これで足ります。このときは、アップデート用の署名鍵がなければアップデート用のファイルを作らずに終わります。
 - アップデート用の署名鍵の場所は `TAURI_SIGNING_PRIVATE_KEY_PATH`（既定は `~/.tauri/keito.key`）、パスワードは `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` で渡せます。`tauri.conf.json` の公開鍵がこの鍵のものでなければ、ビルドの前に止まります。
 - アプリは起動したときと、開いている間は 6 時間ごとに新しい版を探します（ネットワークにつながっていなければ何も言いません）。開発モード（`npm run app`）では探しません。
