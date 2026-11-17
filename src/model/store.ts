@@ -241,6 +241,8 @@ export const useStore = create<State>((set, get) => ({
   openBoard: (id) => void run(async (b) => {
     // Opening the board on screen cancels a load still in progress (a quick click back to its tab).
     if (id === get().doc.id) return void (loading = undefined);
+    // The board still loading, asked for again (its tab clicked twice): its load goes on, rather than start over.
+    if (id === loading?.id) return;
     const doc = await switchTo(b, id);
     if (doc === 'stayed') return showInUrl(get().doc.id);
     if (doc === 'superseded') return;

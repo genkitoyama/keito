@@ -21,6 +21,8 @@ async function start(...ids: string[]) {
     press: (step: 1 | -1) => useStore.getState().openBoard(nextTab(step)!),
     click: (id: string) => useStore.getState().openBoard(id),
     wait: (ms: number) => vi.advanceTimersByTimeAsync(ms),
+    /** The board on screen at this moment (`shown` waits for the loads under way first). */
+    now: () => useStore.getState().doc.id,
     shown: async () => {
       await vi.advanceTimersByTimeAsync(1000);
       return useStore.getState().doc.id;
@@ -61,6 +63,17 @@ describe('⌘⇧] / ⌘⇧[ pressed again before the board opens', () => {
     click('d');
     press(1); // a, the tab after d
     expect(await shown()).toBe('a');
+  });
+});
+
+describe('a tab clicked again while its board is still loading', () => {
+  it('lets the load go on, rather than start it over', async () => {
+    const { click, wait, now } = await start('a', 'b');
+    click('b');
+    await wait(50);
+    click('b');
+    await wait(60); // 110 ms: the first load has ended; one begun at the second click would not have
+    expect(now()).toBe('b');
   });
 });
 
