@@ -1,9 +1,10 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { blank } from './helpers';
 import { stubPage, versionedDisk } from './page';
 
 let page: ReturnType<typeof stubPage>;
 beforeAll(() => void (page = stubPage()));
+afterEach(() => vi.restoreAllMocks());
 afterAll(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -13,14 +14,20 @@ afterAll(() => {
 async function start(...ids: string[]) {
   const { boot, useStore } = await import('../src/model/store');
   const { nextTab } = await import('../src/ui/tabKeys');
-  const { backend, box } = versionedDisk(ids.map((id) => ({ ...blank(id), meta: { title: id, project: 'P' } })));
+  const shape = { id: 'n1', type: 'text' as const, x: 0, y: 0, w: 10, h: 10, text: 'hello' };
+  const { backend, box } = versionedDisk(ids.map((id) => ({ ...blank(id), meta: { title: id, project: 'P' }, nodes: [shape] })));
   page.storage.set('keito:current', ids[0]);
   await boot(backend);
   box.delay = 100;
   return {
+    backend,
+    box,
+    state: useStore.getState,
     press: (step: 1 | -1) => useStore.getState().openBoard(nextTab(step)!),
     click: (id: string) => useStore.getState().openBoard(id),
     wait: (ms: number) => vi.advanceTimersByTimeAsync(ms),
+    /** The board on screen at this moment (`shown` waits for the loads under way first). */
+    now: () => useStore.getState().doc.id,
     shown: async () => {
       await vi.advanceTimersByTimeAsync(1000);
       return useStore.getState().doc.id;
@@ -61,6 +68,83 @@ describe('⌘⇧] / ⌘⇧[ pressed again before the board opens', () => {
     click('d');
     press(1); // a, the tab after d
     expect(await shown()).toBe('a');
+  });
+});
+
+describe('a tab clicked again while its board is still loading', () => {
+  it('lets the load go on, rather than start it over', async () => {
+    const { click, wait, now } = await start('a', 'b');
+    click('b');
+    await wait(50);
+    click('b');
+    await wait(60); // 110 ms: the first load has ended; one begun at the second click would not have
+    expect(now()).toBe('b');
+  });
+});
+
+describe('editing the board on screen while another loads', () => {
+  it.each([
+    ['with another click on its tab', true],
+    ['without another click on its tab', false],
+  ] as const)('saves the edit before showing the next board %s', async (_when, clickAgain) => {
+    const { box, state, click, wait, now } = await start('a', 'b');
+    click('b');
+    await wait(50);
+    expect(now()).toBe('a');
+    state().updateNode('n1', { x: 12 });
+    const view = { x: 24, y: 36, k: 2 };
+    state().setView(view);
+    if (clickAgain) click('b');
+    await wait(60);
+    expect(now()).toBe('b');
+    expect(box.kept.get('a')?.doc.nodes[0].x).toBe(12);
+
+    state().setView({ x: 0, y: 0, k: 1 });
+    click('a');
+    await wait(110);
+    expect(now()).toBe('a');
+    expect(state().view).toEqual(view);
+    state().undo();
+    expect(state().doc.nodes[0].x).toBe(0);
+  });
+
+  it('saves another edit made while the first is being written', async () => {
+    const { backend, box, state, click, wait, now } = await start('aaa', 'bbb');
+    const save = backend.save;
+    const saving = vi.spyOn(backend, 'save').mockImplementationOnce(async (doc) => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await save(doc);
+    });
+    click('bbb');
+    await wait(50);
+    state().updateNode('n1', { x: 12 });
+    await wait(60);
+    expect(now()).toBe('aaa');
+    expect(saving.mock.calls[0]?.[0].nodes[0].x).toBe(12);
+    expect(box.kept.get('aaa')?.doc.nodes[0].x).toBe(0);
+    state().updateNode('n1', { x: 24 });
+    await wait(100);
+    expect(now()).toBe('bbb');
+    expect(box.kept.get('aaa')?.doc.nodes[0].x).toBe(24);
+  });
+
+  it.each(['conflict', 'error'] as const)('stays on the board when the edit meets a save %s', async (saving) => {
+    const { backend, box, state, click, wait, now } = await start('a', 'b');
+    click('b');
+    await wait(50);
+    state().updateNode('n1', { x: 12 });
+    if (saving === 'conflict') {
+      const a = box.kept.get('a')!;
+      box.kept.set('a', { ...a, serial: a.serial + 1 });
+    } else {
+      vi.spyOn(backend, 'save').mockRejectedValueOnce(new Error('busy'));
+      vi.spyOn(window, 'confirm').mockReturnValueOnce(false);
+    }
+    await wait(60);
+    expect(now()).toBe('a');
+    expect(state().doc.nodes[0].x).toBe(12);
+    expect(state().saving).toBe(saving);
+    expect(box.kept.get('a')?.doc.nodes[0].x).toBe(0);
   });
 });
 

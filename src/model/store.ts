@@ -241,6 +241,8 @@ export const useStore = create<State>((set, get) => ({
   openBoard: (id) => void run(async (b) => {
     // Opening the board on screen cancels a load still in progress (a quick click back to its tab).
     if (id === get().doc.id) return void (loading = undefined);
+    // The board still loading, asked for again (its tab clicked twice): its load goes on, rather than start over.
+    if (id === loading?.id) return;
     const doc = await switchTo(b, id);
     if (doc === 'stayed') return showInUrl(get().doc.id);
     if (doc === 'superseded') return;
@@ -797,12 +799,20 @@ async function leave(b: Backend): Promise<boolean> {
 async function switchTo(b: Backend, id: string): Promise<Doc | null | 'stayed' | 'superseded'> {
   const request = { id };
   loading = request;
-  const was = useStore.getState();
   try {
     if (!(await leave(b))) return 'stayed';
+    const before = useStore.getState().doc;
     const doc = await tryLoad(b, id);
     if (loading !== request) return 'superseded';
-    if (doc && !was.viewing) kept.set(was.doc.id, { past: was.past, future: was.future, view: was.view, print: fingerprint(was.doc) });
+    if (!doc) return null;
+    const { doc: now, viewing } = useStore.getState();
+    if (!viewing && now !== before) {
+      const left = await leave(b);
+      if (loading !== request) return 'superseded';
+      if (!left) return 'stayed';
+    }
+    const was = useStore.getState();
+    if (!was.viewing) kept.set(was.doc.id, { past: was.past, future: was.future, view: was.view, print: fingerprint(was.doc) });
     return doc;
   } finally {
     if (loading === request) loading = undefined;
@@ -814,7 +824,9 @@ async function switchTo(b: Backend, id: string): Promise<Doc | null | 'stayed' |
  * those that cannot be (changed or deleted elsewhere, or the store unreachable).
  */
 async function mayLeave(): Promise<boolean> {
-  if (await flush()) return true;
+  let saved = await flush();
+  while (!saved && useStore.getState().saving === 'saving') saved = await flush();
+  if (saved) return true;
   const saving = useStore.getState().saving;
   if (saving === 'conflict') {
     await tell('このボードはほかの場所で更新されています。先に上の「読み込む」か「この画面で上書き」を選んでください。');
