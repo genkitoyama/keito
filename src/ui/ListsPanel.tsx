@@ -13,6 +13,7 @@ import { copyText, linkClick } from '../platform/io';
 export function ListsPanel() {
   const doc = useStore((s) => s.doc);
   const selection = useStore((s) => s.selection);
+  const viewing = useStore((s) => !!s.viewing);
   const [tab, setTab] = useState(0);
   // The cell being edited in place, by its row and column in the table on show.
   const [copied, setCopied] = useState(false);
@@ -26,6 +27,9 @@ export function ListsPanel() {
   const t = tables[at];
   // A board with no lists (a sequence or free board) shows none, even if the panel was left open.
   if (!t) return null;
+  // A state from the history on screen takes no edit (see setDoc): no cell to fill, no row to drag.
+  const cellEdit = (row: number, col: number): CellEdit | null => (viewing ? null : editable(t, row, col));
+  const reorder = viewing ? undefined : t.reorder;
   // The rows in the order they are shown: while a row is dragged, already where it would go.
   const order = t.rows.map((_, i) => i);
   if (drag) order.splice(drag.to, 0, ...order.splice(drag.from, 1));
@@ -33,7 +37,7 @@ export function ListsPanel() {
   const nextCell = (row: number, col: number, step: 1 | -1): { row: number; col: number } | null => {
     const cells = order.flatMap((r) => t.head.map((_, c) => ({ row: r, col: c })));
     let k = cells.findIndex((x) => x.row === row && x.col === col);
-    for (k += step; k >= 0 && k < cells.length; k += step) if (editable(t, cells[k].row, cells[k].col)) return cells[k];
+    for (k += step; k >= 0 && k < cells.length; k += step) if (cellEdit(cells[k].row, cells[k].col)) return cells[k];
     return null;
   };
 
@@ -174,8 +178,8 @@ export function ListsPanel() {
             総ケーブル長 <b>{totalLength}</b> m
           </span>
         )}
-        {t.reorder && doc.listOrder?.[t.reorder] && (
-          <button className="list-tool" title="ドラッグで決めた並びをやめ、この表のいつもの順に戻します" onClick={() => useStore.getState().setDoc(clearOrder(useStore.getState().doc, t.reorder!))}>
+        {reorder && doc.listOrder?.[reorder] && (
+          <button className="list-tool" title="ドラッグで決めた並びをやめ、この表のいつもの順に戻します" onClick={() => useStore.getState().setDoc(clearOrder(useStore.getState().doc, reorder))}>
             {ICON.reset}
             並びを元に戻す
           </button>
@@ -205,7 +209,7 @@ export function ListsPanel() {
         <table>
           <thead>
             <tr>
-              {t.reorder && <th className="grip" />}
+              {reorder && <th className="grip" />}
               {t.head.map((h) => (
                 <th key={h} className={t.numeric?.includes(h) ? 'num' : ''}>
                   {h}
@@ -234,7 +238,7 @@ export function ListsPanel() {
                   reveal(t.refs[i]);
                 }}
               >
-                {t.reorder &&
+                {reorder &&
                   (t.total && i === t.rows.length - 1 ? (
                     <td className="grip" />
                   ) : (
@@ -245,9 +249,9 @@ export function ListsPanel() {
                     </td>
                   ))}
                 {row.map((c, j) => {
-                  const edit = editable(t, i, j);
+                  const edit = cellEdit(i, j);
                   // The row number is a handle too: a wider target than the grip alone.
-                  const handle = !!t.reorder && t.head[j] === 'No' && !(t.total && i === t.rows.length - 1);
+                  const handle = !!reorder && t.head[j] === 'No' && !(t.total && i === t.rows.length - 1);
                   const cls = [t.numeric?.includes(t.head[j]) ? 'num' : '', edit ? 'editable' : '', handle ? 'handle' : ''].filter(Boolean).join(' ');
                   if (edit && editing?.row === i && editing.col === j)
                     return (
@@ -281,7 +285,7 @@ export function ListsPanel() {
             })}
             {!t.rows.length && (
               <tr>
-                <td colSpan={t.head.length + (t.reorder ? 1 : 0)} className="empty">{t.empty ?? '機材ライブラリから機材を置き、ポート同士をドラッグで結ぶとここに自動で一覧が出ます。'}</td>
+                <td colSpan={t.head.length + (reorder ? 1 : 0)} className="empty">{t.empty ?? '機材ライブラリから機材を置き、ポート同士をドラッグで結ぶとここに自動で一覧が出ます。'}</td>
               </tr>
             )}
           </tbody>
