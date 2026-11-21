@@ -125,14 +125,16 @@ function useHotkeys() {
       else if (mod) handled = false;
       else if (key === 'backspace' || key === 'delete') s.removeIds(s.selection);
       // Escape lets go of the nearest thing first: what waits to be placed, the tool, the selection,
-      // and only then a panel left open to work beside.
+      // and only then a panel left open to work beside. A panel out of sight (the library or the
+      // lists, on a board whose kind has none) stays open for the board that has it.
       else if (key === 'escape') {
+        const kind = kindOf(s.doc);
         if (s.placing) s.setPlacing(null);
         else if (s.tool !== 'select') s.setTool('select');
         else if (s.selection.length) s.select([]);
-        else if (s.docks.library) s.setDock('library', false);
+        else if (s.docks.library && kind.library) s.setDock('library', false);
         else if (s.docks.comments) s.setDock('comments', false);
-        else if (s.docks.lists) s.setDock('lists', false);
+        else if (s.docks.lists && kind.lists.length) s.setDock('lists', false);
       } else if (key === 'enter' && editable) s.setEditing(only);
       // A pixel a press, ten with Shift, as in other drawing tools.
       else if (key.startsWith('arrow') && nodeIds.length) {
