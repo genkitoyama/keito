@@ -766,7 +766,7 @@ export function say(text: string): void {
 /** Write any pending change now (before switching boards or leaving the page); whether it is all written. */
 async function flush(): Promise<boolean> {
   clearTimeout(timer);
-  if (pushTimer !== undefined) await pushOut().catch(() => {});
+  while (pushTimer !== undefined || pushesInFlight) await (pushTimer === undefined ? pushing : push());
   const { doc, ready, viewing, saving } = useStore.getState();
   // An old revision on screen is never written over the live board, nor a conflict settled unasked.
   if (ready && !viewing && saving !== 'conflict' && saving !== 'gone' && doc !== stored) await persist(doc);
@@ -799,22 +799,28 @@ async function leave(b: Backend): Promise<boolean> {
 async function switchTo(b: Backend, id: string): Promise<Doc | null | 'stayed' | 'superseded'> {
   const request = { id };
   loading = request;
+  let was = useStore.getState();
+  const stopFollowingEdits = useStore.subscribe(() => {
+    const now = useStore.getState();
+    if (!now.viewing && now.doc !== was.doc) was = now;
+  });
   try {
-    if (!(await leave(b))) return 'stayed';
-    const before = useStore.getState().doc;
-    const doc = await tryLoad(b, id);
-    if (loading !== request) return 'superseded';
-    if (!doc) return null;
-    const { doc: now, viewing } = useStore.getState();
-    if (!viewing && now !== before) {
-      const left = await leave(b);
+    for (;;) {
+      const saved = await leave(b);
       if (loading !== request) return 'superseded';
-      if (!left) return 'stayed';
+      if (!saved) return 'stayed';
+      const beforeLoad = currentBoard();
+      const doc = await tryLoad(b, id);
+      if (loading !== request) return 'superseded';
+      if (!doc) return null;
+      const changedWhileLoading = currentBoard() !== beforeLoad;
+      if (changedWhileLoading) continue;
+      const now = useStore.getState();
+      if (!was.viewing) kept.set(was.doc.id, { past: was.past, future: was.future, view: now.viewing ? was.view : now.view, print: fingerprint(was.doc) });
+      return doc;
     }
-    const was = useStore.getState();
-    if (!was.viewing) kept.set(was.doc.id, { past: was.past, future: was.future, view: was.view, print: fingerprint(was.doc) });
-    return doc;
   } finally {
+    stopFollowingEdits();
     if (loading === request) loading = undefined;
   }
 }
@@ -941,15 +947,25 @@ async function shareKey(b: Backend, target: Entry): Promise<string | null> {
 }
 
 let pushTimer: number | undefined;
+let pushing: Promise<void> = Promise.resolve();
+let pushesInFlight = 0;
 function schedulePush(): void {
   clearTimeout(pushTimer);
-  pushTimer = window.setTimeout(() => void pushOut(), 800);
+  pushTimer = window.setTimeout(() => void push(), 800);
+}
+function push(): Promise<void> {
+  clearTimeout(pushTimer);
+  pushTimer = undefined;
+  pushesInFlight++;
+  pushing = pushing
+    .then(pushOut)
+    .catch((e) => console.warn('[keito] shared changes not written', e))
+    .finally(() => pushesInFlight--);
+  return pushing;
 }
 
 /** Write the shared things edited here through to the other boards of the project. */
 async function pushOut(): Promise<void> {
-  clearTimeout(pushTimer);
-  pushTimer = undefined;
   const b = backend;
   const s = useStore.getState();
   if (!b || s.viewing || !s.doc.meta.project?.trim()) return;

@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { blank } from './helpers';
 import { stubPage, versionedDisk } from './page';
+import type { DeviceNode } from '../src/model/types';
 
 let page: ReturnType<typeof stubPage>;
 beforeAll(() => void (page = stubPage()));
@@ -14,7 +15,7 @@ afterAll(() => {
 async function start(...ids: string[]) {
   const { boot, useStore } = await import('../src/model/store');
   const { nextTab } = await import('../src/ui/tabKeys');
-  const shape = { id: 'n1', type: 'text' as const, x: 0, y: 0, w: 10, h: 10, text: 'hello' };
+  const shape: DeviceNode = { id: 'n1', type: 'device', x: 0, y: 0, w: 160, h: 0, text: 'old', maker: '', model: '', category: '', note: '', ports: [], shared: 'pc', sharedAt: 1 };
   const { backend, box } = versionedDisk(ids.map((id) => ({ ...blank(id), meta: { title: id, project: 'P' }, nodes: [shape] })));
   page.storage.set('keito:current', ids[0]);
   await boot(backend);
@@ -28,6 +29,18 @@ async function start(...ids: string[]) {
     wait: (ms: number) => vi.advanceTimersByTimeAsync(ms),
     /** The board on screen at this moment (`shown` waits for the loads under way first). */
     now: () => useStore.getState().doc.id,
+    keepState: async () => {
+      box.delay = 0;
+      useStore.getState().nameState('kept');
+      await vi.advanceTimersByTimeAsync(1000);
+      box.delay = 100;
+      vi.spyOn(backend, 'loadRevision').mockResolvedValue({ ...blank(ids[0]), meta: { title: ids[0], project: 'P' } });
+      return useStore.getState().doc.revisions!.at(-1)!.id;
+    },
+    justShown: async (id: string) => {
+      for (let ms = 0; ms < 10_000 && useStore.getState().doc.id !== id; ms++) await vi.advanceTimersByTimeAsync(1);
+      return useStore.getState().doc.id;
+    },
     shown: async () => {
       await vi.advanceTimersByTimeAsync(1000);
       return useStore.getState().doc.id;
@@ -95,7 +108,7 @@ describe('editing the board on screen while another loads', () => {
     const view = { x: 24, y: 36, k: 2 };
     state().setView(view);
     if (clickAgain) click('b');
-    await wait(60);
+    await wait(170);
     expect(now()).toBe('b');
     expect(box.kept.get('a')?.doc.nodes[0].x).toBe(12);
 
@@ -123,7 +136,7 @@ describe('editing the board on screen while another loads', () => {
     expect(saving.mock.calls[0]?.[0].nodes[0].x).toBe(12);
     expect(box.kept.get('aaa')?.doc.nodes[0].x).toBe(0);
     state().updateNode('n1', { x: 24 });
-    await wait(100);
+    await wait(210);
     expect(now()).toBe('bbb');
     expect(box.kept.get('aaa')?.doc.nodes[0].x).toBe(24);
   });
@@ -145,6 +158,103 @@ describe('editing the board on screen while another loads', () => {
     expect(state().doc.nodes[0].x).toBe(12);
     expect(state().saving).toBe(saving);
     expect(box.kept.get('a')?.doc.nodes[0].x).toBe(0);
+  });
+});
+
+describe('a state from the history opened while another board loads', () => {
+  it.each([
+    ['left open', false],
+    ['closed again', true],
+  ] as const)('keeps the undo steps of the board left, with the state %s', async (_how, closeAgain) => {
+    const { state, click, wait, now, keepState } = await start('a', 'b');
+    state().updateNode('n1', { x: 12 });
+    const revision = await keepState();
+    click('b');
+    await wait(50);
+    state().viewRevision(revision);
+    await wait(10);
+    expect(state().viewing).toBeTruthy();
+    if (closeAgain) state().exitRevision();
+    await wait(100);
+    expect(now()).toBe('b');
+
+    click('a');
+    await wait(200);
+    expect(now()).toBe('a');
+    state().undo();
+    expect(state().doc.nodes[0].x).toBe(0);
+  });
+
+  it('keeps the undo step of an edit made just before the state is opened', async () => {
+    const { state, click, wait, now, keepState } = await start('a', 'b');
+    const revision = await keepState();
+    click('b');
+    await wait(50);
+    state().updateNode('n1', { x: 24 });
+    state().viewRevision(revision);
+    await wait(10);
+    expect(state().viewing).toBeTruthy();
+    await wait(200);
+    expect(now()).toBe('b');
+
+    click('a');
+    await wait(200);
+    expect(now()).toBe('a');
+    expect(state().doc.nodes[0].x).toBe(24);
+    state().undo();
+    expect(state().doc.nodes[0].x).toBe(0);
+  });
+});
+
+describe('a shared device edited while another board loads', () => {
+  it('keeps the edit on every board when the next one is edited as soon as it is shown', async () => {
+    const { box, state, click, wait, justShown } = await start('a', 'b');
+    click('b');
+    await wait(50);
+    state().updateNode('n1', { text: 'new' });
+    expect(await justShown('b')).toBe('b');
+    expect(state().doc.nodes[0]).toMatchObject({ text: 'new' });
+    state().updateNode('n1', { ip: '10.0.0.2' });
+    await wait(2000);
+    for (const id of ['a', 'b']) expect(box.kept.get(id)?.doc.nodes[0]).toMatchObject({ text: 'new', ip: '10.0.0.2' });
+  });
+
+  it('shows the edit made while the one before it is being written to the other boards', async () => {
+    const { state, click, wait, justShown } = await start('a', 'b');
+    click('b');
+    await wait(50);
+    state().updateNode('n1', { text: 'ne' });
+    await wait(100);
+    state().updateNode('n1', { text: 'new' });
+    expect(await justShown('b')).toBe('b');
+    expect(state().doc.nodes[0]).toMatchObject({ text: 'new' });
+  });
+
+  it('shows the edit still being written to the other boards when the load ends', async () => {
+    const { box, state, click, wait, justShown } = await start('a', 'c', 'b');
+    await wait(200);
+    box.delay = 900;
+    click('b');
+    await wait(10);
+    state().updateNode('n1', { text: 'new' });
+    expect(await justShown('b')).toBe('b');
+    expect(state().doc.nodes[0]).toMatchObject({ text: 'new' });
+  });
+
+  it('shows the edit when a state from the history is opened over it before the load ends', async () => {
+    const { backend, box, state, click, wait, justShown, keepState } = await start('a', 'b');
+    const revision = await keepState();
+    const readAtRequest = structuredClone(box.kept.get('b')!.doc);
+    vi.spyOn(backend, 'load').mockImplementationOnce(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      return readAtRequest;
+    });
+    click('b');
+    await wait(50);
+    state().updateNode('n1', { text: 'new' });
+    state().viewRevision(revision);
+    expect(await justShown('b')).toBe('b');
+    expect(state().doc.nodes[0]).toMatchObject({ text: 'new' });
   });
 });
 
