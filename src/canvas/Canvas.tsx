@@ -6,6 +6,7 @@ import { hopOrder, DEVICE_NAME, deviceHead, type Dir, center, contains, intersec
 import { type CreateKind, allIds, makeEdge, makeImage, makeNode } from '../model/presets';
 import { SEQUENCE_SAMPLE, seqLayout, seqScale } from '../model/sequence';
 import { STRONG } from '../model/signals';
+import { type Gap, equalGaps, spacingSnap } from '../model/spacing';
 import { kindOf } from '../model/kinds';
 import { type Placing, duplicateInPlace, storeImage, useStore } from '../model/store';
 import { type Doc, type EdgeEnd, type Node, type Pt, type Rect, hasText } from '../model/types';
@@ -15,9 +16,9 @@ import { EdgeView, HopCaps, INK, LabelChip, NodeView, SCREEN, STICKY_HEAD, TEXT,
 import { QuickBar } from '../ui/QuickBar';
 import { ContextMenu } from './ContextMenu';
 import { composing, isCatcher, isField, onControl, overBoard } from '../ui/keys';
-import { type Corner, type Drag, type Ghost, type Plan, SIDES, ACCENT, canConnect, st } from './drag';
+import { type Corner, type Drag, type Ghost, type Plan, SIDES, ACCENT, GUIDE, canConnect, st } from './drag';
 import { planConnect, planReconnect, planSpawn, ConnectGhost } from './connect';
-import { SharedMarks, CommentPins, EdgeHandles, segmentHits, distToSegment, previewLine, arrowGlyph } from './overlays';
+import { SharedMarks, CommentPins, EdgeHandles, SpacingMarks, segmentHits, distToSegment, previewLine, arrowGlyph } from './overlays';
 
 const MIN = { w: 40, h: 30 };
 
@@ -250,7 +251,7 @@ export function Canvas() {
   /** The box a line was just connected on: no dots on it until the pointer has left it. */
   const [hush, setHush] = useState<string | null>(null);
   const [ghost, setGhost] = useState<Ghost>(null);
-  const [guides, setGuides] = useState<{ x?: number; y?: number }>({});
+  const [guides, setGuides] = useState<{ x?: number; y?: number; gaps?: Gap[] }>({});
   const [busy, setBusy] = useState(false);
   const [space, setSpace] = useState(false);
   const drag = useRef<Drag | null>(null);
@@ -563,8 +564,11 @@ export function Canvas() {
     begin(e, { kind: 'resize', id: n.id, corner, start: world(e), orig: nodeRect(n), moved: false, lock: n.type === 'image' ? n.w / n.h : undefined });
   };
 
-  /** Snap the dragged node's edges / centre to those of its neighbours; falls back to the grid. */
-  const smartSnap = (d: Extract<Drag, { kind: 'move' }>, dx: number, dy: number, free: boolean) => {
+  /**
+   * Snap the dragged node's edges / centre to those of its neighbours, or what is dragged to an even
+   * spacing in its row or column; falls back to the grid. `locked`: the axis Shift holds still.
+   */
+  const smartSnap = (d: Extract<Drag, { kind: 'move' }>, dx: number, dy: number, free: boolean, locked?: 'x' | 'y') => {
     const s = st();
     const lead = s.doc.nodes.find((n) => n.id === d.lead)!;
     const o = d.orig.get(d.lead)!;
@@ -604,8 +608,22 @@ export function Canvas() {
     }
     const ax = axis(o.x + dx, w, (r) => [r.x, r.x + r.w / 2, r.x + r.w]);
     const ay = level ?? axis(o.y + dy, h, (r) => [r.y, r.y + r.h / 2, r.y + r.h]);
-    setGuides({ x: ax.guide, y: ay.guide });
-    return { sx: dx + ax.delta, sy: dy + ay.delta };
+    // Spaced as a whole, like with like: an area among the other areas, anything else among the
+    // things that are not areas. The floor plan under the drawing is no neighbour.
+    const moved = s.doc.nodes.filter((n) => d.orig.has(n.id));
+    const areas = moved.some((n) => n.type === 'frame');
+    const rects = moved.filter((n) => !areas || n.type === 'frame').map((n) => ({ ...nodeRect(n), ...d.orig.get(n.id)! }));
+    const left = Math.min(...rects.map((r) => r.x));
+    const top = Math.min(...rects.map((r) => r.y));
+    const whole = { x: left, y: top, w: Math.max(...rects.map((r) => r.x + r.w)) - left, h: Math.max(...rects.map((r) => r.y + r.h)) - top };
+    const peers = s.doc.nodes.filter((n) => !d.orig.has(n.id) && !isUnderlay(n) && (n.type === 'frame') === areas).map(nodeRect);
+    // The closer of the two wins; the grid is only what is left when neither is near.
+    const even = (near: { delta: number; guide?: number }, spaced: number | null) => (spaced !== null && (near.guide === undefined || Math.abs(spaced) < Math.abs(near.delta)) ? { delta: spaced } : near);
+    const fx = locked === 'x' ? ax : even(ax, spacingSnap({ ...whole, x: left + dx, y: top + dy + ay.delta }, peers, 'x', tol));
+    const fy = locked === 'y' || level ? ay : even(ay, spacingSnap({ ...whole, x: left + dx + ax.delta, y: top + dy }, peers, 'y', tol));
+    const there = { ...whole, x: left + dx + fx.delta, y: top + dy + fy.delta };
+    setGuides({ x: fx.guide, y: fy.guide, gaps: [...equalGaps(there, peers, 'x'), ...equalGaps(there, peers, 'y')] });
+    return { sx: dx + fx.delta, sy: dy + fy.delta };
   };
 
   const onMove = (e: RPointerEvent) => {
@@ -708,11 +726,13 @@ export function Canvas() {
     const grid = (v: number): number => (e.altKey ? Math.round(v) : snap(v));
     if (d.kind === 'move') {
       // Shift constrains the drag to one axis.
+      let locked: 'x' | 'y' | undefined;
       if (e.shiftKey) {
-        if (Math.abs(dx) > Math.abs(dy)) dy = 0;
+        locked = Math.abs(dx) > Math.abs(dy) ? 'y' : 'x';
+        if (locked === 'y') dy = 0;
         else dx = 0;
       }
-      const { sx, sy } = smartSnap(d, dx, dy, e.metaKey || e.ctrlKey);
+      const { sx, sy } = smartSnap(d, dx, dy, e.metaKey || e.ctrlKey, locked);
       s.mutate(
         (doc) => ({
           ...doc,
@@ -1030,8 +1050,9 @@ export function Canvas() {
               Math.hypot(p.x - ghost.b.x, p.y - ghost.b.y) <= 10 ? <circle key={key} cx={p.x} cy={p.y} r={9} fill="rgba(37,99,235,0.2)" stroke={ACCENT} strokeWidth={2} pointerEvents="none" /> : null,
             )}
 
-          {guides.x != null && <line x1={guides.x} y1={-1e5} x2={guides.x} y2={1e5} stroke="#f43f5e" strokeWidth={1 / view.k} pointerEvents="none" />}
-          {guides.y != null && <line x1={-1e5} y1={guides.y} x2={1e5} y2={guides.y} stroke="#f43f5e" strokeWidth={1 / view.k} pointerEvents="none" />}
+          {guides.x != null && <line x1={guides.x} y1={-1e5} x2={guides.x} y2={1e5} stroke={GUIDE} strokeWidth={1 / view.k} pointerEvents="none" />}
+          {guides.y != null && <line x1={-1e5} y1={guides.y} x2={1e5} y2={guides.y} stroke={GUIDE} strokeWidth={1 / view.k} pointerEvents="none" />}
+          {!!guides.gaps?.length && <SpacingMarks gaps={guides.gaps} k={view.k} />}
           {ghost?.kind === 'connect' && <ConnectGhost ghost={ghost} doc={doc} k={view.k} />}
           {waiting && pointer && !ghost && (
             <g pointerEvents="none">

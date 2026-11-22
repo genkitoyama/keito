@@ -3,9 +3,11 @@ import { useMemo } from 'react';
 import type { PointerEvent as RPointerEvent } from 'react';
 import { pinTarget } from '../model/comments';
 import { type Dir, center, intersects, nodeRect } from '../model/geometry';
+import type { Gap } from '../model/spacing';
 import { useStore } from '../model/store';
 import { type Doc, type Pt, type Rect } from '../model/types';
-import { ACCENT } from './drag';
+import { ACCENT, GUIDE } from './drag';
+import { SCREEN } from './render';
 
 /**
  * 🔗 on devices that are the same thing as one on another board of the project. A key no other
@@ -31,6 +33,42 @@ export function SharedMarks({ doc }: { doc: Doc }) {
               <rect x={-4.6} y={-1.8} width={5} height={3.6} rx={1.8} />
               <rect x={-0.4} y={-1.8} width={5} height={3.6} rx={1.8} />
             </g>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+/** The equal gaps of a row or column while a box is dragged: a measure across each, with its length. */
+export function SpacingMarks({ gaps, k }: { gaps: Gap[]; k: number }) {
+  const tick = 4 / k;
+  return (
+    <g pointerEvents="none" stroke={GUIDE} strokeWidth={1 / k}>
+      {gaps.map((g) => {
+        const across = g.axis === 'x';
+        const mid = (g.from + g.to) / 2;
+        const bar = (along: number, a: number, b: number) => (across ? <line x1={along} y1={a} x2={along} y2={b} /> : <line x1={a} y1={along} x2={b} y2={along} />);
+        return (
+          <g key={`${g.axis}${g.from}`}>
+            {across ? <line x1={g.from} y1={g.at} x2={g.to} y2={g.at} /> : <line x1={g.at} y1={g.from} x2={g.at} y2={g.to} />}
+            {bar(g.from, g.at - tick, g.at + tick)}
+            {bar(g.to, g.at - tick, g.at + tick)}
+            <text
+              x={across ? mid : g.at + 7 / k}
+              y={across ? g.at - 7 / k : mid}
+              textAnchor={across ? 'middle' : 'start'}
+              dominantBaseline={across ? 'auto' : 'central'}
+              fontSize={11 / k}
+              fontWeight={700}
+              fontFamily={SCREEN.font}
+              fill={GUIDE}
+              stroke="#fff"
+              strokeWidth={3 / k}
+              paintOrder="stroke"
+            >
+              {Math.round((g.to - g.from) * 10) / 10}
+            </text>
           </g>
         );
       })}

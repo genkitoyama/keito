@@ -50,6 +50,9 @@ export const SIDES: Dir[] = ['left', 'right', 'top', 'bottom'];
 
 export const ACCENT = '#2563eb';
 
+/** The marks that show what a dragged box has snapped to. */
+export const GUIDE = '#f43f5e';
+
 type Flowable = Extract<Node, { type: 'shape' | 'sticky' | 'text' }>;
 
 export const canConnect = (n: Node): n is Flowable => n.type === 'shape' || n.type === 'sticky' || n.type === 'text';
