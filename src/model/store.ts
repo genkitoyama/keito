@@ -1011,7 +1011,7 @@ useStore.subscribe((s, prev) => {
   if (!s.ready || s.viewing || s.doc === prev.doc || s.doc === stored || s.saving === 'conflict' || s.saving === 'gone') return;
   clearTimeout(timer);
   if (s.saving !== 'saving') useStore.setState({ saving: 'saving' });
-  timer = window.setTimeout(() => void persist(useStore.getState().doc), 500);
+  timer = window.setTimeout(() => void persist(currentBoard()), 500);
 });
 
 /** Store a picture for the current board; returns the `src` an image node should keep. */

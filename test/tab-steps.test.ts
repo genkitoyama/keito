@@ -226,6 +226,22 @@ describe('a state from the history clicked again while a shared edit is being wr
   });
 });
 
+describe('a board edited while a state from the history waits for a shared edit to be written', () => {
+  it('saves the board, never the state opened over it', async () => {
+    const { box, state, wait, keepState } = await start('a', 'b', 'c');
+    await wait(200);
+    const revision = await keepState();
+    state().updateNode('n1', { text: 'new' });
+    await wait(850);
+    state().viewRevision(revision);
+    await wait(50);
+    state().updateNode('n1', { x: 9 });
+    await wait(3000);
+    expect(state().viewing).toBeTruthy();
+    expect(box.kept.get('a')?.doc.nodes[0]).toMatchObject({ text: 'new', x: 9 });
+  });
+});
+
 describe('a shared device edited while another board loads', () => {
   it('keeps the edit on every board when the next one is edited as soon as it is shown', async () => {
     const { box, state, click, wait, justShown } = await start('a', 'b');
