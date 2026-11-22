@@ -732,7 +732,7 @@ async function write(doc: Doc): Promise<void> {
     retries = 0;
     clearTimeout(retryTimer);
     const info: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now(), project: doc.meta.project || undefined, kind: doc.kind };
-    useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], ...(here() ? { saving: s.doc === doc ? 'saved' : 'saving', saveError: null } : {}) }));
+    useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], ...(here() ? { saving: currentBoard() === doc ? 'saved' : 'saving', saveError: null } : {}) }));
   } catch (e) {
     if (!here()) return console.error(e);
     // Written or deleted elsewhere since it was read here: the user settles it (see resolveConflict).

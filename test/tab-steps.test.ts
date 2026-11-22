@@ -206,6 +206,26 @@ describe('a state from the history opened while another board loads', () => {
   });
 });
 
+describe('a state from the history clicked again while a shared edit is being written', () => {
+  it('says the board is saved once it is', async () => {
+    const { backend, state, wait, keepState } = await start('a', 'b');
+    await wait(200);
+    const revision = await keepState();
+    const save = backend.save;
+    vi.spyOn(backend, 'save').mockImplementation(async (doc) => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await save(doc);
+    });
+    state().updateNode('n1', { text: 'new' });
+    state().viewRevision(revision);
+    await wait(80);
+    state().viewRevision(revision);
+    await wait(1000);
+    state().exitRevision();
+    expect(state().saving).toBe('saved');
+  });
+});
+
 describe('a shared device edited while another board loads', () => {
   it('keeps the edit on every board when the next one is edited as soon as it is shown', async () => {
     const { box, state, click, wait, justShown } = await start('a', 'b');
