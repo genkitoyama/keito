@@ -18,6 +18,8 @@ async function start(...ids: string[]) {
   const shape: DeviceNode = { id: 'n1', type: 'device', x: 0, y: 0, w: 160, h: 0, text: 'old', maker: '', model: '', category: '', note: '', ports: [], shared: 'pc', sharedAt: 1 };
   const { backend, box } = versionedDisk(ids.map((id) => ({ ...blank(id), meta: { title: id, project: 'P' }, nodes: [shape] })));
   page.storage.set('keito:current', ids[0]);
+  // A board of the same id left on screen by an earlier test would make this one's opening look like an edit of it.
+  useStore.setState({ ready: false, doc: blank('none') });
   await boot(backend);
   box.delay = 100;
   return {
