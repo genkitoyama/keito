@@ -241,6 +241,8 @@ export const useStore = create<State>((set, get) => ({
   openBoard: (id) => void run(async (b) => {
     // Opening the board on screen cancels a load still in progress (a quick click back to its tab).
     if (id === get().doc.id) return void (loading = undefined);
+    // The board still loading, asked for again (its tab clicked twice): its load goes on, rather than start over.
+    if (id === loading?.id) return;
     const doc = await switchTo(b, id);
     if (doc === 'stayed') return showInUrl(get().doc.id);
     if (doc === 'superseded') return;
@@ -730,7 +732,7 @@ async function write(doc: Doc): Promise<void> {
     retries = 0;
     clearTimeout(retryTimer);
     const info: BoardInfo = { id: doc.id, title: doc.meta.title, updated: Date.now(), project: doc.meta.project || undefined, kind: doc.kind };
-    useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], ...(here() ? { saving: s.doc === doc ? 'saved' : 'saving', saveError: null } : {}) }));
+    useStore.setState((s) => ({ boards: [info, ...s.boards.filter((x) => x.id !== doc.id)], ...(here() ? { saving: currentBoard() === doc ? 'saved' : 'saving', saveError: null } : {}) }));
   } catch (e) {
     if (!here()) return console.error(e);
     // Written or deleted elsewhere since it was read here: the user settles it (see resolveConflict).
@@ -764,7 +766,7 @@ export function say(text: string): void {
 /** Write any pending change now (before switching boards or leaving the page); whether it is all written. */
 async function flush(): Promise<boolean> {
   clearTimeout(timer);
-  if (pushTimer !== undefined) await pushOut().catch(() => {});
+  while (pushTimer !== undefined || pushesInFlight) await (pushTimer === undefined ? pushing : push());
   const { doc, ready, viewing, saving } = useStore.getState();
   // An old revision on screen is never written over the live board, nor a conflict settled unasked.
   if (ready && !viewing && saving !== 'conflict' && saving !== 'gone' && doc !== stored) await persist(doc);
@@ -797,14 +799,28 @@ async function leave(b: Backend): Promise<boolean> {
 async function switchTo(b: Backend, id: string): Promise<Doc | null | 'stayed' | 'superseded'> {
   const request = { id };
   loading = request;
-  const was = useStore.getState();
+  let was = useStore.getState();
+  const stopFollowingEdits = useStore.subscribe(() => {
+    const now = useStore.getState();
+    if (!now.viewing && now.doc !== was.doc) was = now;
+  });
   try {
-    if (!(await leave(b))) return 'stayed';
-    const doc = await tryLoad(b, id);
-    if (loading !== request) return 'superseded';
-    if (doc && !was.viewing) kept.set(was.doc.id, { past: was.past, future: was.future, view: was.view, print: fingerprint(was.doc) });
-    return doc;
+    for (;;) {
+      const saved = await leave(b);
+      if (loading !== request) return 'superseded';
+      if (!saved) return 'stayed';
+      const beforeLoad = currentBoard();
+      const doc = await tryLoad(b, id);
+      if (loading !== request) return 'superseded';
+      if (!doc) return null;
+      const changedWhileLoading = currentBoard() !== beforeLoad;
+      if (changedWhileLoading) continue;
+      const now = useStore.getState();
+      if (!was.viewing) kept.set(was.doc.id, { past: was.past, future: was.future, view: now.viewing ? was.view : now.view, print: fingerprint(was.doc) });
+      return doc;
+    }
   } finally {
+    stopFollowingEdits();
     if (loading === request) loading = undefined;
   }
 }
@@ -814,7 +830,9 @@ async function switchTo(b: Backend, id: string): Promise<Doc | null | 'stayed' |
  * those that cannot be (changed or deleted elsewhere, or the store unreachable).
  */
 async function mayLeave(): Promise<boolean> {
-  if (await flush()) return true;
+  let saved = await flush();
+  while (!saved && useStore.getState().saving === 'saving') saved = await flush();
+  if (saved) return true;
   const saving = useStore.getState().saving;
   if (saving === 'conflict') {
     await tell('このボードはほかの場所で更新されています。先に上の「読み込む」か「この画面で上書き」を選んでください。');
@@ -929,15 +947,25 @@ async function shareKey(b: Backend, target: Entry): Promise<string | null> {
 }
 
 let pushTimer: number | undefined;
+let pushing: Promise<void> = Promise.resolve();
+let pushesInFlight = 0;
 function schedulePush(): void {
   clearTimeout(pushTimer);
-  pushTimer = window.setTimeout(() => void pushOut(), 800);
+  pushTimer = window.setTimeout(() => void push(), 800);
+}
+function push(): Promise<void> {
+  clearTimeout(pushTimer);
+  pushTimer = undefined;
+  pushesInFlight++;
+  pushing = pushing
+    .then(pushOut)
+    .catch((e) => console.warn('[keito] shared changes not written', e))
+    .finally(() => pushesInFlight--);
+  return pushing;
 }
 
 /** Write the shared things edited here through to the other boards of the project. */
 async function pushOut(): Promise<void> {
-  clearTimeout(pushTimer);
-  pushTimer = undefined;
   const b = backend;
   const s = useStore.getState();
   if (!b || s.viewing || !s.doc.meta.project?.trim()) return;
@@ -983,7 +1011,7 @@ useStore.subscribe((s, prev) => {
   if (!s.ready || s.viewing || s.doc === prev.doc || s.doc === stored || s.saving === 'conflict' || s.saving === 'gone') return;
   clearTimeout(timer);
   if (s.saving !== 'saving') useStore.setState({ saving: 'saving' });
-  timer = window.setTimeout(() => void persist(useStore.getState().doc), 500);
+  timer = window.setTimeout(() => void persist(currentBoard()), 500);
 });
 
 /** Store a picture for the current board; returns the `src` an image node should keep. */
